@@ -5,6 +5,7 @@ import { tronBalanceUsd } from './collectors/tron.ts'
 import { tronRpcBalanceUsd } from './collectors/tronrpc.ts'
 import { evmChainsBalanceUsd } from './collectors/evmchains.ts'
 import { matchCasinoMeta, brandKey, brandName, CasinoMeta } from './casinometa.ts'
+import { reviewScores } from './collectors/reviews.ts'
 
 const DAY = 86_400_000
 
@@ -31,6 +32,7 @@ export interface EntityAgg {
   firstSeen: number | null
   byChain: { chain: string; value: number }[] // 7d volume split across the chains this entity transacts on
   meta: CasinoMeta | null // public reference profile (license, house edge, …)
+  safetyIndex: number | null // casino.guru third-party Safety Index (0–10)
 }
 
 const aggSql = db.prepare(`
@@ -79,6 +81,7 @@ export function aggregateEntities(): EntityAgg[] {
     arr.push({ chain: r.chain, value: r.v ?? 0 })
     byChainMap.set(r.watch_id, arr)
   }
+  const reviews = reviewScores()
 
   for (const w of rows) {
     const a = aggSql.get({ id: w.id, ...params }) as any
@@ -122,6 +125,7 @@ export function aggregateEntities(): EntityAgg[] {
       firstSeen: a.firstSeen ?? null,
       byChain: (byChainMap.get(w.id) ?? []).sort((x, y) => y.value - x.value),
       meta: w.category === 'casino' ? matchCasinoMeta(w.label) : null,
+      safetyIndex: w.category === 'casino' ? reviews.get(brandKey(w.label))?.score ?? null : null,
     })
   }
   out.sort((x, y) => y.volume7d - x.volume7d)
@@ -152,6 +156,7 @@ export interface BrandAgg {
   trust: number
   byChain: { chain: string; value: number }[]
   meta: CasinoMeta | null
+  safetyIndex: number | null
   members: { id: number; label: string; chain: string; address: string; volume7d: number }[]
 }
 
@@ -192,6 +197,7 @@ export function aggregateBrands(): BrandAgg[] {
       trust: vol7 > 0 ? Math.round(sum((e) => e.trust * e.volume7d) / vol7) : head.trust, // volume-weighted
       byChain: [...chainVol.entries()].map(([chain, value]) => ({ chain, value })).sort((a, b) => b.value - a.value),
       meta: members.map((e) => e.meta).find(Boolean) ?? null,
+      safetyIndex: members.map((e) => e.safetyIndex).find((s) => s != null) ?? null,
       members: members
         .map((e) => ({ id: e.id, label: e.label, chain: e.chain, address: e.address, volume7d: e.volume7d }))
         .sort((a, b) => b.volume7d - a.volume7d),

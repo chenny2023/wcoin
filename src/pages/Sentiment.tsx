@@ -79,6 +79,7 @@ export default function Sentiment() {
                   <th className="px-4 py-3 font-medium">Entity</th>
                   <th className="px-4 py-3 font-medium">Trust (blended)</th>
                   <th className="px-4 py-3 font-medium">On-chain</th>
+                  <th className="px-4 py-3 font-medium" title="casino.guru third-party Safety Index">Safety ·guru</th>
                   <th className="px-4 py-3 font-medium">Community</th>
                   <th className="px-4 py-3 font-medium">Mentions 7d</th>
                   <th className="px-4 py-3 font-medium">24h</th>
@@ -103,6 +104,13 @@ export default function Sentiment() {
                       </td>
                       <td className="px-4 py-3"><TrustBadge score={s.trust} /></td>
                       <td className="px-4 py-3 tabular-nums text-white/55">{s.onchainTrust}</td>
+                      <td className="px-4 py-3">
+                        {s.safetyIndex != null ? (
+                          <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[12px] font-bold tabular-nums ${s.safetyIndex >= 8 ? 'bg-mint-400/12 text-mint-400' : s.safetyIndex >= 5 ? 'bg-gold-500/12 text-gold-400' : 'bg-rose-400/12 text-rose-400'}`}>{s.safetyIndex.toFixed(1)}</span>
+                        ) : (
+                          <span className="text-white/25">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">
                           <button

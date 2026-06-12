@@ -101,6 +101,16 @@ CREATE TABLE IF NOT EXISTS votes (
   PRIMARY KEY(user_id, watch_id)
 );
 
+CREATE TABLE IF NOT EXISTS reviews (
+  brand_key  TEXT NOT NULL,                 -- normalized brand key
+  source     TEXT NOT NULL,                 -- 'casino.guru'
+  score      REAL NOT NULL,                 -- safety index / rating
+  score_max  REAL NOT NULL DEFAULT 10,
+  url        TEXT,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY(brand_key, source)
+);
+
 CREATE TABLE IF NOT EXISTS alert_rules (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id     INTEGER NOT NULL,
