@@ -176,6 +176,8 @@ export const api = {
     return getJson<Transfer[]>('/transfers?' + p.toString())
   },
   series: (days = 7) => getJson<SeriesPoint[]>(`/series?days=${days}`),
+  entitySeries: (id: number, days = 30) =>
+    getJson<{ chains: string[]; series: ({ t: number } & Record<string, number>)[] }>(`/entity/${id}/series?days=${days}`),
   flow: () => getJson<FlowBucket[]>('/flow'),
   streamers: () =>
     getJson<{ enabled: boolean; twitch: boolean; roster: number; streamers: StreamerRow[]; offline: StreamerRow[] }>(

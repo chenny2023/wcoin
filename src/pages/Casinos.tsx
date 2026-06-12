@@ -1,8 +1,55 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Search, SlidersHorizontal, Wallet, ExternalLink, ChevronDown, ShieldCheck, Calendar, Percent, Coins } from 'lucide-react'
 import { Card, PageHead, Bubble, TrustBadge, Delta, CategoryBadge, Skeleton } from '../components/ui'
 import { api, usePoll, Entity } from '../data/api'
 import { fmtUsd, fmtNum, shortHash, CHAIN_COLOR } from '../data/format'
+
+// 30d daily volume history for one entity, stacked by chain — loads when a row
+// expands; thin until the chain backfills deepen, then fills in automatically
+function EntityHistory({ id }: { id: number }) {
+  const [data, setData] = useState<{ chains: string[]; series: ({ t: number } & Record<string, number>)[] } | null>(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    let alive = true
+    api.entitySeries(id, 30).then((d) => alive && setData(d)).catch(() => alive && setFailed(true))
+    return () => { alive = false }
+  }, [id])
+  if (failed) return null
+  if (!data) return <Skeleton className="h-28 w-full" />
+  const hasData = data.series.some((p) => data.chains.some((c) => (p[c] ?? 0) > 0))
+  if (!hasData) return <p className="text-[12px] text-white/35">No indexed history in the last 30 days yet — backfill in progress.</p>
+  const rows = data.series.map((p) => ({ ...p, label: new Date(p.t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }))
+  return (
+    <div className="h-36">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={rows} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
+          <XAxis dataKey="label" tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 10 }} tickLine={false} axisLine={false} minTickGap={28} />
+          <YAxis hide />
+          <Tooltip
+            content={({ active, payload, label }) =>
+              active && payload?.length ? (
+                <div className="glass rounded-lg px-3 py-2 text-xs">
+                  <div className="mb-1 text-white/50">{label}</div>
+                  {payload.filter((p: any) => p.value > 0).map((p: any) => (
+                    <div key={p.name} className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />
+                      <span className="text-white/70">{p.name}</span>
+                      <span className="ml-auto pl-3 font-semibold">{fmtUsd(p.value)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null
+            }
+          />
+          {data.chains.map((c) => (
+            <Area key={c} type="monotone" dataKey={c} stackId="v" stroke={CHAIN_COLOR[c] ?? '#888'} fill={CHAIN_COLOR[c] ?? '#888'} fillOpacity={0.25} strokeWidth={1.5} />
+          ))}
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
 
 // real multi-chain deposit split for one entity — the per-chain data we index
 function ChainDist({ byChain }: { byChain: Entity['byChain'] }) {
@@ -184,6 +231,10 @@ export default function Casinos() {
                                 </div>
                               </div>
                             )}
+                            <div className="mt-4">
+                              <div className="mb-2 text-[11px] uppercase tracking-wider text-white/40">Daily volume · 30d, stacked by chain</div>
+                              <EntityHistory id={c.id} />
+                            </div>
                           </td>
                         </tr>
                       )}

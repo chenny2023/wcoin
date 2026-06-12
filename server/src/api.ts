@@ -118,6 +118,37 @@ export async function registerApi(app: FastifyInstance) {
     return out
   })
 
+  // ── per-entity daily volume series, split by chain (REAL) ───────────────────
+  // ?days=30 — daily buckets of indexed volume per chain for one watch entry.
+  // An EVM entity's single watch row accrues transfers from every EVM chain,
+  // so this surfaces the entity's real multi-chain history.
+  app.get('/api/entity/:id/series', async (req) => {
+    const { id } = req.params as { id: string }
+    const q = req.query as { days?: string }
+    const days = Math.min(90, Math.max(7, Number(q.days ?? 30)))
+    const now = Date.now()
+    const from = now - days * 86_400_000
+    const rows = db
+      .prepare(
+        `SELECT chain, CAST((ts - ?) / 86400000 AS INTEGER) AS b, SUM(usd) v
+         FROM transfers WHERE watch_id = ? AND ts >= ? GROUP BY chain, b`,
+      )
+      .all(from, Number(id), from) as { chain: string; b: number; v: number }[]
+    const chains = [...new Set(rows.map((r) => r.chain))].sort()
+    const byBucket = new Map<number, Record<string, number>>()
+    for (const r of rows) {
+      const o = byBucket.get(r.b) ?? {}
+      o[r.chain] = r.v ?? 0
+      byBucket.set(r.b, o)
+    }
+    const out: ({ t: number } & Record<string, number>)[] = []
+    for (let i = 0; i < days; i++) {
+      const o = byBucket.get(i) ?? {}
+      out.push({ t: from + i * 86_400_000, ...Object.fromEntries(chains.map((c) => [c, o[c] ?? 0])) } as any)
+    }
+    return { chains, series: out }
+  })
+
   // ── flow intelligence: tx-size distribution (REAL, derived) ──────────────────
   app.get('/api/flow', async () => {
     const d7 = Date.now() - 7 * 86_400_000
