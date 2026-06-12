@@ -65,6 +65,30 @@ const L2S = [
     explorerHosts: ['optimistic.etherscan.io'],
     nominalBlockMs: 2_000,
   },
+  {
+    key: 'POLYGON',
+    name: 'Polygon',
+    env: 'POLYGON',
+    rpcs: ['https://polygon-bor-rpc.publicnode.com', 'https://polygon.llamarpc.com'],
+    tokens: [
+      { symbol: 'USDC', address: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359', decimals: 6 },
+      { symbol: 'USDT', address: '0xc2132d05d31c914a87c6611c10748aeb04b58e8f', decimals: 6 },
+    ],
+    explorerHosts: ['polygonscan.com'],
+    nominalBlockMs: 2_100,
+  },
+  {
+    key: 'AVAX',
+    name: 'Avalanche',
+    env: 'AVAX',
+    rpcs: ['https://avalanche-c-chain-rpc.publicnode.com', 'https://api.avax.network/ext/bc/C/rpc'],
+    tokens: [
+      { symbol: 'USDC', address: '0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e', decimals: 6 },
+      { symbol: 'USDT', address: '0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7', decimals: 6 },
+    ],
+    explorerHosts: ['snowtrace.io', 'snowscan.xyz'],
+    nominalBlockMs: 2_000,
+  },
 ] as const
 
 for (const c of L2S) {

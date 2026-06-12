@@ -3,6 +3,7 @@ import { db, stmt, stateGet, stateSet } from '../db.ts'
 import { webFetch } from '../net.ts'
 import { rpc as evmRpc } from './evm.ts'
 import { evmChains } from './evmchains.ts'
+import { b58ToHex20, hex20ToB58 } from '../tronaddr.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Casino-wallet attribution via the public circus.fyi whale feed.
@@ -32,6 +33,8 @@ const EVM_RESOLVERS: Record<string, { rpc: (m: string, p: unknown[]) => Promise<
 for (const c of evmChains) {
   EVM_RESOLVERS[c.key] = { rpc: c.rpc, stable: c.stable }
 }
+// circus labels Polygon as either "MATIC" or "POLYGON" — alias to our key
+if (EVM_RESOLVERS.POLYGON) EVM_RESOLVERS.MATIC = EVM_RESOLVERS.POLYGON
 
 const NAME_RE = /"children":"([A-Z][A-Za-z0-9.\s]{1,22})"\}/g
 const CHAIN_RE = /"children":"(ETH|TRX|BSC|SOL|ARB|BASE|AVAX|OP|MATIC|POLYGON|XRP|BTC|LTC)"\}/g
@@ -54,8 +57,9 @@ async function fetchFeed(): Promise<WhaleRow[]> {
     try { blob += JSON.parse('"' + c + '"') } catch { blob += c }
   }
   const rows: WhaleRow[] = []
-  // any block-explorer tx link; the chain is read from the row's chain pill
-  for (const m of blob.matchAll(/[a-z0-9.-]+\/tx\/(0x[0-9a-fA-F]{64})/g)) {
+  // any explorer tx link — EVM `/tx/0x<64>` or TRON `/transaction/<64>`; the
+  // chain comes from the row's chain pill, the hash is stored as the chain wants
+  for (const m of blob.matchAll(/\/(?:tx|transaction)\/(0x)?([0-9a-fA-F]{64})/g)) {
     const at = m.index ?? 0
     const before = blob.slice(Math.max(0, at - 1800), at)
     const names = [...before.matchAll(NAME_RE)].map((x) => x[1].trim()).filter((n) => !NAME_NOISE.test(n) && !/^(ETH|TRX|BSC|SOL|ARB|BASE|AVAX|OP|MATIC|POLYGON|XRP|BTC|LTC)$/.test(n))
@@ -64,7 +68,8 @@ async function fetchFeed(): Promise<WhaleRow[]> {
     const dir: 'in' | 'out' = before.lastIndexOf('arrow-down-left') > before.lastIndexOf('arrow-up-right') ? 'in' : 'out'
     const chains = [...before.matchAll(CHAIN_RE)].map((x) => x[1])
     const chain = chains[chains.length - 1] ?? 'ETH'
-    rows.push({ casino, hash: m[1], chain, dir })
+    const hash = (m[1] ?? '') + m[2] // EVM keeps 0x; TRON is bare hex
+    rows.push({ casino, hash, chain, dir })
   }
   return rows
 }
@@ -85,9 +90,33 @@ async function resolveEvmWallet(chain: string, hash: string, dir: 'in' | 'out'):
   return (dir === 'in' ? best.to : best.from).toLowerCase()
 }
 
+// resolve a TRON tx to the casino-side TRC20-USDT address (returns base58)
+const TRON_TRANSFER = TRANSFER_TOPIC.replace(/^0x/, '')
+const TRON_USDT_HEX = b58ToHex20(config.tronUsdt.address).toLowerCase()
+async function resolveTronWallet(hash: string, dir: 'in' | 'out'): Promise<string | null> {
+  const res = await fetch(config.tronApi + '/wallet/gettransactioninfobyid', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value: hash }),
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const j = (await res.json()) as any
+  let best: { amt: bigint; from: string; to: string } | null = null
+  for (const l of j.log ?? []) {
+    if ((l.address ?? '').toLowerCase() !== TRON_USDT_HEX || l.topics?.[0] !== TRON_TRANSFER) continue
+    const amt = BigInt('0x' + (l.data || '0'))
+    if (!best || amt > best.amt) best = { amt, from: l.topics[1].slice(24), to: l.topics[2].slice(24) }
+  }
+  if (!best) return null
+  return hex20ToB58(dir === 'in' ? best.to : best.from)
+}
+
 function alreadyWatched(chain: string, address: string): boolean {
   return !!db.prepare('SELECT 1 FROM watchlist WHERE chain=? AND address=?').get(chain, address)
 }
+
+const isTron = (chain: string) => chain === 'TRX' || chain === 'TRON'
 
 export async function runCircusOnce() {
   let rows: WhaleRow[]
@@ -99,19 +128,21 @@ export async function runCircusOnce() {
   }
   let added = 0
   for (const row of rows) {
-    // resolve on the EVM chains we index (ETH, BSC); other chains' rows are
-    // skipped until their collectors exist
-    if (!EVM_RESOLVERS[row.chain]) continue
+    const tron = isTron(row.chain)
+    // resolve on the chains we can: every registered EVM chain, plus TRON. Other
+    // chains' rows (SOL, XRP, BTC, LTC) are skipped until their collectors exist
+    if (!tron && !EVM_RESOLVERS[row.chain]) continue
     const seenKey = `circus:tx:${row.hash}`
     if (stateGet(seenKey)) continue
     try {
-      const wallet = await resolveEvmWallet(row.chain, row.hash, row.dir)
+      const wallet = tron ? await resolveTronWallet(row.hash, row.dir) : await resolveEvmWallet(row.chain, row.hash, row.dir)
       stateSet(seenKey, 1)
       if (!wallet) continue
-      // store under the canonical EVM key 'ETH' — both the ETH and BSC indexers
-      // watch every 0x address, so one entry accrues flow on all EVM chains
-      if (alreadyWatched('ETH', wallet)) continue
-      stmt.addWatch.run('ETH', wallet, row.casino.slice(0, 48), 'casino', Date.now())
+      // EVM wallets stored under canonical 'ETH' (every EVM indexer watches all
+      // 0x addresses); TRON wallets stored under 'TRON'
+      const storeChain = tron ? 'TRON' : 'ETH'
+      if (alreadyWatched(storeChain, wallet)) continue
+      stmt.addWatch.run(storeChain, wallet, row.casino.slice(0, 48), 'casino', Date.now())
       added++
       console.log(`[circus] attributed ${row.casino} → ${wallet} (${row.chain} whale tx, ${row.dir})`)
     } catch (e) {
