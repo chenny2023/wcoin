@@ -84,46 +84,41 @@ function insertHistorical(logs: any[], byAddr: Map<string, WatchRow>, anchorBloc
   return added
 }
 
-export async function runBackfill() {
-  if (config.deepBackfillDays <= 0) return
-  const rows = stmt.watchByChain.all('ETH') as WatchRow[]
-  if (rows.length === 0) return
+// Walk one address segment backward for a bounded number of ranges, then yield
+// (so segments interleave). Returns true while the segment still has history to
+// index, false when complete. Each segment keeps its own adaptive range + cursor
+// so the sparse casino set never inherits the exchange set's collapsed range.
+async function backfillSegment(
+  seg: string,
+  rows: WatchRow[],
+  anchorBlock: number,
+  anchorTs: number,
+  target: number,
+  maxOps: number,
+): Promise<boolean> {
+  if (rows.length === 0) return false
   const byAddr = new Map(rows.map((r) => [r.address.toLowerCase(), r]))
   const watched = rows.map((r) => r.address.toLowerCase())
   const tokens = config.evmTokens.map((t) => t.address)
 
-  // anchor = head at first backfill run (fixed so the cursor is monotonic)
-  let anchorBlock = Number(stateGet('backfill:anchor') ?? 0)
-  let anchorTs = Number(stateGet('backfill:anchorTs') ?? 0)
-  if (!anchorBlock) {
-    anchorBlock = Number(BigInt(await rpc('eth_blockNumber', [])))
-    anchorTs = Date.now()
-    stateSet('backfill:anchor', anchorBlock)
-    stateSet('backfill:anchorTs', anchorTs)
-  }
-  const target = anchorBlock - Math.ceil((config.deepBackfillDays * 86_400_000) / BLOCK_MS)
-  let cursor = Number(stateGet('backfill:cursor') ?? anchorBlock)
-
+  let cursor = Number(stateGet(`backfill:${seg}:cursor`) ?? anchorBlock)
   if (cursor <= target) {
-    // done — but if the watchlist has grown meaningfully (label harvest), rescan
-    const doneCount = Number(stateGet('backfill:doneWatchCount') ?? 0)
-    if (doneCount && rows.length >= doneCount + 10) {
-      console.log(`[backfill] watchlist grew ${doneCount} → ${rows.length}, rescanning history`)
+    const doneCount = Number(stateGet(`backfill:${seg}:done`) ?? 0)
+    if (doneCount && rows.length >= doneCount + 5) {
+      console.log(`[backfill:${seg}] watchlist grew ${doneCount} → ${rows.length}, rescanning history`)
       cursor = anchorBlock
-      stateSet('backfill:cursor', cursor)
+      stateSet(`backfill:${seg}:cursor`, cursor)
     } else {
-      if (!doneCount) stateSet('backfill:doneWatchCount', rows.length)
-      return
+      if (!doneCount) stateSet(`backfill:${seg}:done`, rows.length)
+      return false
     }
   }
 
-  let range = Number(stateGet('backfill:range') ?? config.deepBackfillStartRange)
+  let range = Number(stateGet(`backfill:${seg}:range`) ?? config.deepBackfillStartRange)
   let failsAtFloor = 0
-  console.log(
-    `[backfill] walking ${cursor} → ${target} (${(((cursor - target) * BLOCK_MS) / 86_400_000).toFixed(1)}d of history remaining)`,
-  )
-
-  while (cursor > target) {
+  let ops = 0
+  while (cursor > target && ops < maxOps) {
+    ops++
     const from = Math.max(target, cursor - range)
     const to = cursor
     try {
@@ -133,32 +128,65 @@ export async function runBackfill() {
       ])
       const added = insertHistorical([...deposits, ...withdrawals], byAddr, anchorBlock, anchorTs)
       cursor = from - 1
-      stateSet('backfill:cursor', cursor)
+      stateSet(`backfill:${seg}:cursor`, cursor)
       range = Math.min(RANGE_CAP, Math.ceil(range * 1.5))
-      stateSet('backfill:range', range)
+      stateSet(`backfill:${seg}:range`, range)
       failsAtFloor = 0
       if (added > 0) {
         const daysLeft = ((cursor - target) * BLOCK_MS) / 86_400_000
-        console.log(`[backfill] blocks ${from}-${to}: +${added} transfers · ${Math.max(0, daysLeft).toFixed(1)}d left`)
+        console.log(`[backfill:${seg}] +${added} transfers · ${Math.max(0, daysLeft).toFixed(1)}d of history left`)
       }
-    } catch (e) {
+    } catch {
       if (range > RANGE_FLOOR) {
-        range = Math.max(RANGE_FLOOR, Math.floor(range / 2)) // bisect on error
-        stateSet('backfill:range', range)
-      } else {
-        failsAtFloor++
-        if (failsAtFloor >= 4) {
-          console.warn(`[backfill] blocks ${from}-${to} unreadable after retries, skipping range`)
-          cursor = from - 1
-          stateSet('backfill:cursor', cursor)
-          failsAtFloor = 0
-        }
+        range = Math.max(RANGE_FLOOR, Math.floor(range / 2))
+        stateSet(`backfill:${seg}:range`, range)
+      } else if (++failsAtFloor >= 4) {
+        cursor = from - 1
+        stateSet(`backfill:${seg}:cursor`, cursor)
+        failsAtFloor = 0
       }
     }
-    await new Promise((r) => setTimeout(r, 350))
+    await new Promise((r) => setTimeout(r, 250))
   }
-  stateSet('backfill:doneWatchCount', rows.length)
-  console.log(`[backfill] complete — ${config.deepBackfillDays}d of ETH history indexed`)
+  if (cursor <= target) {
+    stateSet(`backfill:${seg}:done`, rows.length)
+    console.log(`[backfill:${seg}] complete — ${config.deepBackfillDays}d indexed`)
+    return false
+  }
+  return true
+}
+
+export async function runBackfill() {
+  if (config.deepBackfillDays <= 0) return
+  const rows = stmt.watchByChain.all('ETH') as WatchRow[]
+  if (rows.length === 0) return
+
+  let anchorBlock = Number(stateGet('backfill:anchor') ?? 0)
+  let anchorTs = Number(stateGet('backfill:anchorTs') ?? 0)
+  if (!anchorBlock) {
+    anchorBlock = Number(BigInt(await rpc('eth_blockNumber', [])))
+    anchorTs = Date.now()
+    stateSet('backfill:anchor', anchorBlock)
+    stateSet('backfill:anchorTs', anchorTs)
+  }
+  const target = anchorBlock - Math.ceil((config.deepBackfillDays * 86_400_000) / BLOCK_MS)
+
+  // one-time migration: seed both segment cursors from the old combined cursor
+  // so we don't re-scan history already indexed by the pre-split backfill
+  if (stateGet('backfill:cursor') && !stateGet('backfill:cas:cursor')) {
+    const old = String(stateGet('backfill:cursor'))
+    stateSet('backfill:cas:cursor', old)
+    stateSet('backfill:exch:cursor', old)
+    console.log('[backfill] migrated to segmented cursors (casino fast-track + exchange)')
+  }
+
+  // PRIORITY: casinos / services / whales are sparse → wide ranges → fast.
+  // The dense exchange set runs only once the casino history is caught up, so
+  // exchange volume never throttles the casino backfill that powers the UI.
+  const casinoRows = rows.filter((r) => r.category !== 'exchange')
+  const exchangeRows = rows.filter((r) => r.category === 'exchange')
+  const casinoBusy = await backfillSegment('cas', casinoRows, anchorBlock, anchorTs, target, 400)
+  if (!casinoBusy) await backfillSegment('exch', exchangeRows, anchorBlock, anchorTs, target, 120)
 }
 
 export function startBackfill() {
