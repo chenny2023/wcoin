@@ -12,7 +12,7 @@ import { startEvm } from './collectors/evm.ts'
 import { startBackfill } from './collectors/backfill.ts'
 import { startTron } from './collectors/tron.ts'
 import { startTronRpc } from './collectors/tronrpc.ts'
-import { startBsc } from './collectors/bsc.ts'
+import { startEvmChains } from './collectors/evmchains.ts'
 import { startTwitch } from './collectors/twitch.ts'
 import { startKick } from './collectors/kick.ts'
 import { startReddit } from './collectors/reddit.ts'
@@ -58,7 +58,7 @@ async function main() {
   } else {
     startTron() // TRON via TronGrid REST polling (fallback, TRON_MODE=v1)
   }
-  startBsc() // BNB Chain transfer indexer (EVM, via proxy, 18-dec BEP20)
+  startEvmChains() // extra EVM chains (BSC, Base, Arbitrum, Optimism) — one indexer each
   startLabels() // casino-wallet attribution harvester (Etherscan/Tronscan labels)
   startWayback() // etherscan-nametag attribution via Wayback snapshots (keyless)
   startCircus() // casino attribution via circus.fyi whale-feed → on-chain tx resolution

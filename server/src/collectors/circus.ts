@@ -2,7 +2,7 @@ import { config, TRANSFER_TOPIC } from '../config.ts'
 import { db, stmt, stateGet, stateSet } from '../db.ts'
 import { webFetch } from '../net.ts'
 import { rpc as evmRpc } from './evm.ts'
-import { bscRpc } from './bsc.ts'
+import { evmChains } from './evmchains.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Casino-wallet attribution via the public circus.fyi whale feed.
@@ -24,10 +24,13 @@ import { bscRpc } from './bsc.ts'
 const FEED_URL = 'https://circus.fyi/blockchain'
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 
-// EVM chains we can resolve a tx on: explorer host → rpc + stablecoin set
+// EVM chains we can resolve a tx on: chain key → rpc + stablecoin set. ETH keeps
+// its dedicated collector; BSC/BASE/ARB/OP come from the EVM-chain registry.
 const EVM_RESOLVERS: Record<string, { rpc: (m: string, p: unknown[]) => Promise<any>; stable: string[] }> = {
   ETH: { rpc: evmRpc, stable: config.evmTokens.map((t) => t.address.toLowerCase()) },
-  BSC: { rpc: bscRpc, stable: config.bscTokens.map((t) => t.address.toLowerCase()) },
+}
+for (const c of evmChains) {
+  EVM_RESOLVERS[c.key] = { rpc: c.rpc, stable: c.stable }
 }
 
 const NAME_RE = /"children":"([A-Z][A-Za-z0-9.\s]{1,22})"\}/g
@@ -51,7 +54,8 @@ async function fetchFeed(): Promise<WhaleRow[]> {
     try { blob += JSON.parse('"' + c + '"') } catch { blob += c }
   }
   const rows: WhaleRow[] = []
-  for (const m of blob.matchAll(/(?:etherscan\.io|bscscan\.com)\/tx\/(0x[0-9a-fA-F]{64})/g)) {
+  // any block-explorer tx link; the chain is read from the row's chain pill
+  for (const m of blob.matchAll(/[a-z0-9.-]+\/tx\/(0x[0-9a-fA-F]{64})/g)) {
     const at = m.index ?? 0
     const before = blob.slice(Math.max(0, at - 1800), at)
     const names = [...before.matchAll(NAME_RE)].map((x) => x[1].trim()).filter((n) => !NAME_NOISE.test(n) && !/^(ETH|TRX|BSC|SOL|ARB|BASE|AVAX|OP|MATIC|POLYGON|XRP|BTC|LTC)$/.test(n))

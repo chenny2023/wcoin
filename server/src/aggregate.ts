@@ -3,7 +3,7 @@ import { db, stmt, WatchRow } from './db.ts'
 import { evmBalanceUsd } from './collectors/evm.ts'
 import { tronBalanceUsd } from './collectors/tron.ts'
 import { tronRpcBalanceUsd } from './collectors/tronrpc.ts'
-import { bscBalanceUsd } from './collectors/bsc.ts'
+import { evmChainsBalanceUsd } from './collectors/evmchains.ts'
 
 const DAY = 86_400_000
 
@@ -156,9 +156,9 @@ export async function refreshBalances() {
     for (const w of rows) {
       let usd: number
       if (w.chain === 'ETH') {
-        // EVM address — sum reserves across the EVM chains we index
-        usd = await evmBalanceUsd(w.address)
-        if (config.bscEnabled) usd += await bscBalanceUsd(w.address)
+        // EVM address — sum reserves across mainnet + every extra EVM chain
+        const balances = await Promise.all([evmBalanceUsd(w.address), ...evmChainsBalanceUsd(w.address)])
+        usd = balances.reduce((a, b) => a + b, 0)
       } else {
         usd = config.tronMode === 'jsonrpc' ? await tronRpcBalanceUsd(w.address) : await tronBalanceUsd(w.address)
       }
