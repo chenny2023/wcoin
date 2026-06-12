@@ -125,6 +125,53 @@ export function discoverServices(): number {
   return added
 }
 
+// ── Behavioral classification of discovered services ─────────────────────────
+// Gamblers play at several casinos, so a service whose counterparty set
+// overlaps a KNOWN casino's far above the exchange baseline (~7% vs Stake) is
+// gambling infrastructure with high confidence. We mark such services as
+// casino-pattern — category becomes 'casino', the label stays clearly
+// unattributed until a real nametag arrives (wayback/labels harvests).
+const CLASSIFY_MIN_CPS = 200 // service must have this many counterparties
+const CLASSIFY_REF_MIN_CPS = 10_000 // reference casino must be this mature
+const CLASSIFY_MIN_OVERLAP = 0.15 // ≥15% shared users ≈ 2× exchange baseline
+
+export function classifyServices(): number {
+  const refs = db
+    .prepare("SELECT id, label FROM watchlist WHERE active=1 AND category='casino' AND label NOT LIKE '%casino-pattern%'")
+    .all() as { id: number; label: string }[]
+  const refSets: { label: string; set: Set<string> }[] = []
+  for (const r of refs) {
+    const cps = (db.prepare('SELECT DISTINCT counterparty c FROM transfers WHERE watch_id=?').all(r.id) as any[]).map((x) => x.c)
+    if (cps.length >= CLASSIFY_REF_MIN_CPS) refSets.push({ label: r.label, set: new Set(cps) })
+  }
+  if (refSets.length === 0) return 0
+
+  const services = db
+    .prepare("SELECT id, label, chain FROM watchlist WHERE active=1 AND label LIKE 'Service %'")
+    .all() as { id: number; label: string; chain: string }[]
+  let flagged = 0
+  for (const s of services) {
+    const cps = (db.prepare('SELECT DISTINCT counterparty c FROM transfers WHERE watch_id=?').all(s.id) as any[]).map((x) => x.c)
+    if (cps.length < CLASSIFY_MIN_CPS) continue
+    for (const ref of refSets) {
+      let shared = 0
+      for (const c of cps) if (ref.set.has(c)) shared++
+      const overlap = shared / cps.length
+      if (overlap >= CLASSIFY_MIN_OVERLAP) {
+        const newLabel = s.label.replace(/^Service /, 'Casino-pattern ').slice(0, 48)
+        db.prepare('UPDATE watchlist SET label=?, category=? WHERE id=?').run(newLabel, 'casino', s.id)
+        db.prepare('UPDATE transfers SET label=?, category=? WHERE watch_id=?').run(newLabel, 'casino', s.id)
+        flagged++
+        console.log(
+          `[labels] ${s.chain} ${s.label} → casino-pattern (${(overlap * 100).toFixed(1)}% user overlap with ${ref.label}, n=${cps.length})`,
+        )
+        break
+      }
+    }
+  }
+  return flagged
+}
+
 export async function runLabelHarvest(force = false) {
   const last = Number(stateGet('labels:lastRun') ?? 0)
   if (!force && Date.now() - last < REFRESH_DAYS * 86_400_000) return
@@ -165,6 +212,14 @@ export function startLabels() {
   setInterval(() => {
     try {
       discoverServices()
+      classifyServices()
     } catch {}
   }, 24 * 3600_000)
+  // classification needs accumulated history — run once after the indexers
+  // have had a while to build the new services' profiles
+  setTimeout(() => {
+    try {
+      classifyServices()
+    } catch {}
+  }, 45 * 60_000)
 }

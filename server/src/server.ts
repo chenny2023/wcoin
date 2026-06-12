@@ -17,6 +17,7 @@ import { startKick } from './collectors/kick.ts'
 import { startReddit } from './collectors/reddit.ts'
 import { startNews } from './collectors/news.ts'
 import { startLabels } from './collectors/labels.ts'
+import { startWayback } from './collectors/wayback.ts'
 import { startAggregation } from './aggregate.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -56,6 +57,7 @@ async function main() {
     startTron() // TRON via TronGrid REST polling (fallback, TRON_MODE=v1)
   }
   startLabels() // casino-wallet attribution harvester (Etherscan/Tronscan labels)
+  startWayback() // etherscan-nametag attribution via Wayback snapshots (keyless)
   startKick() // streamer monitoring (Kick public API, keyless)
   startTwitch() // streamer monitoring (Twitch Helix, optional creds)
   startReddit() // social mentions (Reddit OAuth, optional creds)
