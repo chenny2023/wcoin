@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { db, stmt } from './db.ts'
 import { bus, TransferEvent } from './bus.ts'
-import { aggregateEntities } from './aggregate.ts'
+import { aggregateEntities, aggregateBrands } from './aggregate.ts'
 import { twitchEnabled } from './collectors/twitch.ts'
 import { redditEnabled } from './collectors/reddit.ts'
 import { newsEnabled } from './collectors/news.ts'
@@ -75,6 +75,14 @@ export async function registerApi(app: FastifyInstance) {
 
   // alias kept for the casino-centric UI
   app.get('/api/casinos', async () => aggregateEntities())
+
+  // brand-aggregated leaderboard — wallets clustered by known attribution
+  app.get('/api/brands', async (req) => {
+    const { category } = req.query as { category?: string }
+    let list = aggregateBrands()
+    if (category && category !== 'all') list = list.filter((b) => b.category === category)
+    return list
+  })
 
   // ── transfer feed (REAL) with filters ────────────────────────────────────────
   app.get('/api/transfers', async (req) => {

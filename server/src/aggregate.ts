@@ -4,7 +4,7 @@ import { evmBalanceUsd } from './collectors/evm.ts'
 import { tronBalanceUsd } from './collectors/tron.ts'
 import { tronRpcBalanceUsd } from './collectors/tronrpc.ts'
 import { evmChainsBalanceUsd } from './collectors/evmchains.ts'
-import { matchCasinoMeta, CasinoMeta } from './casinometa.ts'
+import { matchCasinoMeta, brandKey, brandName, CasinoMeta } from './casinometa.ts'
 
 const DAY = 86_400_000
 
@@ -126,6 +126,79 @@ export function aggregateEntities(): EntityAgg[] {
   }
   out.sort((x, y) => y.volume7d - x.volume7d)
   aggCache = { at: Date.now(), data: out }
+  return out
+}
+
+// ── Brand-level aggregation (wallet clustering by known attribution) ──────────
+// A real casino runs many wallets across chains (Stake.com + Stake.com(11) +
+// TRON + …). Per-wallet rows badly undercount the brand, so group every entity
+// by its brand key and sum — matching how circus.fyi reports one figure per
+// casino. This is exact, not heuristic: the wallets are grouped by their own
+// block-explorer name-tags, which we already trust.
+export interface BrandAgg {
+  brand: string
+  category: string
+  wallets: number
+  chains: string[]
+  volume24h: number
+  volume7d: number
+  inflow7d: number
+  outflow7d: number
+  net7d: number
+  change24h: number
+  txCount7d: number
+  players: number
+  reserves: number
+  trust: number
+  byChain: { chain: string; value: number }[]
+  meta: CasinoMeta | null
+  members: { id: number; label: string; chain: string; address: string; volume7d: number }[]
+}
+
+let brandCache: { at: number; data: BrandAgg[] } | null = null
+export function aggregateBrands(): BrandAgg[] {
+  if (brandCache && Date.now() - brandCache.at < config.aggregateMs) return brandCache.data
+  const entities = aggregateEntities()
+  const groups = new Map<string, EntityAgg[]>()
+  for (const e of entities) {
+    const key = `${e.category}:${brandKey(e.label)}`
+    const arr = groups.get(key) ?? []
+    arr.push(e)
+    groups.set(key, arr)
+  }
+  const out: BrandAgg[] = []
+  for (const members of groups.values()) {
+    const head = members.reduce((a, b) => (b.volume7d > a.volume7d ? b : a), members[0])
+    const sum = (f: (e: EntityAgg) => number) => members.reduce((s, e) => s + f(e), 0)
+    const chainVol = new Map<string, number>()
+    for (const e of members) for (const c of e.byChain) chainVol.set(c.chain, (chainVol.get(c.chain) ?? 0) + c.value)
+    const vol7 = sum((e) => e.volume7d)
+    const vol24 = sum((e) => e.volume24h)
+    const volPrev = sum((e) => (e.change24h !== 0 ? e.volume24h / (1 + e.change24h / 100) : e.volume24h))
+    out.push({
+      brand: brandName(head.label),
+      category: head.category,
+      wallets: members.length,
+      chains: [...new Set(members.flatMap((e) => e.byChain.map((c) => c.chain)))].sort(),
+      volume24h: vol24,
+      volume7d: vol7,
+      inflow7d: sum((e) => e.inflow7d),
+      outflow7d: sum((e) => e.outflow7d),
+      net7d: sum((e) => e.net7d),
+      change24h: volPrev > 0 ? ((vol24 - volPrev) / volPrev) * 100 : vol24 > 0 ? 100 : 0,
+      txCount7d: sum((e) => e.txCount7d),
+      players: sum((e) => e.players), // upper bound (cross-wallet overlap not deduped)
+      reserves: sum((e) => e.reserves),
+      trust: vol7 > 0 ? Math.round(sum((e) => e.trust * e.volume7d) / vol7) : head.trust, // volume-weighted
+      byChain: [...chainVol.entries()].map(([chain, value]) => ({ chain, value })).sort((a, b) => b.value - a.value),
+      meta: members.map((e) => e.meta).find(Boolean) ?? null,
+      members: members
+        .map((e) => ({ id: e.id, label: e.label, chain: e.chain, address: e.address, volume7d: e.volume7d }))
+        .sort((a, b) => b.volume7d - a.volume7d),
+    })
+  }
+  out.sort((x, y) => y.volume7d - x.volume7d)
+  brandCache = { at: Date.now(), data: out }
   return out
 }
 

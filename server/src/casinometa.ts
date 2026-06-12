@@ -59,3 +59,17 @@ try {
 export function matchCasinoMeta(label: string): CasinoMeta | null {
   return META.get(norm(label)) ?? null
 }
+
+// stable key grouping all wallets of one brand: "Stake.com (11)" and
+// "Stake.com" → same key; prefers the roster's canonical name when matched.
+export function brandKey(label: string): string {
+  return norm(label) || label.toLowerCase()
+}
+
+// human display name for a brand: the roster's canonical name if known,
+// else the label with wallet/index suffixes stripped.
+export function brandName(label: string): string {
+  const m = matchCasinoMeta(label)
+  if (m) return m.name
+  return label.replace(/\s*\([^)]*\)\s*$/, '').replace(/\s+\d+$/, '').replace(/\s*\((ETH|TRON|SOL)\)/i, '').trim() || label
+}

@@ -48,6 +48,26 @@ export interface CasinoMeta {
   logo: string | null
 }
 
+export interface Brand {
+  brand: string
+  category: string
+  wallets: number
+  chains: string[]
+  volume24h: number
+  volume7d: number
+  inflow7d: number
+  outflow7d: number
+  net7d: number
+  change24h: number
+  txCount7d: number
+  players: number
+  reserves: number
+  trust: number
+  byChain: { chain: string; value: number }[]
+  meta: CasinoMeta | null
+  members: { id: number; label: string; chain: string; address: string; volume7d: number }[]
+}
+
 export interface Transfer {
   chain: string
   tx_hash: string
@@ -167,6 +187,7 @@ export const api = {
   entities: (category?: string) =>
     getJson<Entity[]>('/entities' + (category && category !== 'all' ? `?category=${category}` : '')),
   casinos: () => getJson<Entity[]>('/casinos'),
+  brands: (category = 'casino') => getJson<Brand[]>(`/brands?category=${category}`),
   transfers: (q: { chain?: string; dir?: string; min?: number; limit?: number } = {}) => {
     const p = new URLSearchParams()
     if (q.chain) p.set('chain', q.chain)

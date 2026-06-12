@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Search, SlidersHorizontal, Wallet, ExternalLink, ChevronDown, ShieldCheck, Calendar, Percent, Coins } from 'lucide-react'
-import { Card, PageHead, Bubble, TrustBadge, Delta, CategoryBadge, Skeleton } from '../components/ui'
+import { Card, PageHead, Bubble, TrustBadge, Delta, CategoryBadge, ChainPill, Skeleton } from '../components/ui'
 import { api, usePoll, Entity } from '../data/api'
 import { fmtUsd, fmtNum, shortHash, CHAIN_COLOR } from '../data/format'
 
@@ -90,19 +90,76 @@ const EXPLORER: Record<string, (a: string) => string> = {
   SOL: (a) => `https://solscan.io/account/${a}`,
 }
 
+// unified row shape so Brand and per-wallet Entity render through one table
+interface Row {
+  rid: string
+  name: string
+  category: string
+  meta: Entity['meta']
+  volume7d: number
+  change24h: number
+  net7d: number
+  trust: number
+  reserves: number
+  players: number
+  byChain: { chain: string; value: number }[]
+  histId: number
+  address?: string
+  chain?: string
+  wallets?: number
+  members?: { id: number; label: string; chain: string; address: string; volume7d: number }[]
+}
+
 export default function Casinos() {
-  const { data, loading } = usePoll(api.casinos, 15_000)
+  const [view, setView] = useState<'brand' | 'wallet'>('brand')
+  const { data: entityData, loading: el } = usePoll(api.casinos, 15_000)
+  const { data: brandData, loading: bl } = usePoll(() => api.brands('all'), 15_000)
   const [q, setQ] = useState('')
   const [sort, setSort] = useState<SortKey>('volume7d')
   const [cat, setCat] = useState('all')
-  const [open, setOpen] = useState<number | null>(null)
+  const [open, setOpen] = useState<string | null>(null)
+  const loading = view === 'brand' ? bl : el
 
-  const rows = useMemo(() => {
-    return (data ?? [])
-      .filter((c) => c.label.toLowerCase().includes(q.toLowerCase()))
+  const rows: Row[] = useMemo(() => {
+    const src: Row[] =
+      view === 'brand'
+        ? (brandData ?? []).map((b) => ({
+            rid: 'b:' + b.category + ':' + b.brand,
+            name: b.brand,
+            category: b.category,
+            meta: b.meta,
+            volume7d: b.volume7d,
+            change24h: b.change24h,
+            net7d: b.net7d,
+            trust: b.trust,
+            reserves: b.reserves,
+            players: b.players,
+            byChain: b.byChain,
+            histId: b.members[0]?.id ?? 0,
+            wallets: b.wallets,
+            members: b.members,
+          }))
+        : (entityData ?? []).map((e) => ({
+            rid: 'w:' + e.id,
+            name: e.label,
+            category: e.category,
+            meta: e.meta,
+            volume7d: e.volume7d,
+            change24h: e.change24h,
+            net7d: e.net7d,
+            trust: e.trust,
+            reserves: e.reserves,
+            players: e.players,
+            byChain: e.byChain,
+            histId: e.id,
+            address: e.address,
+            chain: e.chain,
+          }))
+    return src
+      .filter((c) => c.name.toLowerCase().includes(q.toLowerCase()))
       .filter((c) => cat === 'all' || c.category === cat)
       .sort((a, b) => (b[sort] as number) - (a[sort] as number))
-  }, [data, q, sort, cat])
+  }, [view, brandData, entityData, q, sort, cat])
 
   const cats = ['all', 'casino', 'exchange', 'whale', 'other']
 
@@ -110,11 +167,20 @@ export default function Casinos() {
     <div className="fade-up">
       <PageHead
         title="Entity Leaderboard"
-        subtitle="Watched entities ranked by real multi-chain volume — expand a casino for its profile & per-chain split"
+        subtitle={view === 'brand' ? 'Casinos clustered across all their wallets & chains — circus-style brand totals from real indexed flow' : 'Every watched wallet, ranked by real multi-chain volume'}
         right={
-          <div className="flex items-center gap-2 rounded-xl border border-white/8 bg-white/4 px-3 py-2 text-sm">
-            <Search size={15} className="text-white/40" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" className="w-36 bg-transparent placeholder:text-white/30 focus:outline-none" />
+          <div className="flex items-center gap-2">
+            <div className="flex gap-0.5 rounded-xl border border-white/8 bg-white/4 p-0.5 text-sm">
+              {(['brand', 'wallet'] as const).map((v) => (
+                <button key={v} onClick={() => { setView(v); setOpen(null) }} className={`rounded-lg px-3 py-1.5 font-semibold capitalize transition ${view === v ? 'bg-gold-500/15 text-gold-400' : 'text-white/50 hover:text-white'}`}>
+                  {v === 'brand' ? 'By brand' : 'By wallet'}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 rounded-xl border border-white/8 bg-white/4 px-3 py-2 text-sm">
+              <Search size={15} className="text-white/40" />
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" className="w-32 bg-transparent placeholder:text-white/30 focus:outline-none" />
+            </div>
           </div>
         }
       />
@@ -152,17 +218,17 @@ export default function Casinos() {
                   <th className="px-4 py-3 font-medium">Trust</th>
                   <th className="px-4 py-3 font-medium">Reserves</th>
                   <th className="px-4 py-3 font-medium">Counterparties</th>
-                  <th className="px-4 py-3 font-medium">Address</th>
+                  <th className="px-4 py-3 font-medium">{view === 'brand' ? 'Wallets' : 'Address'}</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((c: Entity, i) => {
-                  const expandable = !!c.meta || c.byChain.length > 0
-                  const isOpen = open === c.id
+                {rows.map((c, i) => {
+                  const expandable = !!c.meta || c.byChain.length > 0 || (c.members?.length ?? 0) > 0
+                  const isOpen = open === c.rid
                   return (
-                    <Fragment key={c.id}>
+                    <Fragment key={c.rid}>
                       <tr
-                        onClick={() => expandable && setOpen(isOpen ? null : c.id)}
+                        onClick={() => expandable && setOpen(isOpen ? null : c.rid)}
                         className={`border-b border-white/5 transition hover:bg-white/[0.03] ${expandable ? 'cursor-pointer' : ''} ${isOpen ? 'bg-white/[0.03]' : ''}`}
                       >
                         <td className="px-4 py-3 font-bold text-white/30">{i + 1}</td>
@@ -171,12 +237,12 @@ export default function Casinos() {
                             {c.meta?.logo ? (
                               <img src={c.meta.logo} alt="" className="h-7 w-7 rounded-lg object-contain" onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')} />
                             ) : (
-                              <Bubble seed={c.label} />
+                              <Bubble seed={c.name} />
                             )}
                             <div>
                               <div className="flex items-center gap-1.5">
                                 {expandable && <ChevronDown size={13} className={`text-white/30 transition ${isOpen ? 'rotate-180' : ''}`} />}
-                                <span className="font-medium">{c.label}</span>
+                                <span className="font-medium">{c.name}</span>
                                 <CategoryBadge category={c.category} />
                               </div>
                               {c.meta && (
@@ -201,9 +267,13 @@ export default function Casinos() {
                         </td>
                         <td className="px-4 py-3 tabular-nums text-white/70">{fmtNum(c.players)}</td>
                         <td className="px-4 py-3">
-                          <a href={EXPLORER[c.chain]?.(c.address)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1 font-mono text-[12px] text-white/50 hover:text-gold-400">
-                            {shortHash(c.address)} <ExternalLink size={11} />
-                          </a>
+                          {view === 'brand' ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/6 px-2 py-0.5 text-[12px] font-semibold text-white/70">{c.wallets} wallet{c.wallets === 1 ? '' : 's'}</span>
+                          ) : (
+                            <a href={EXPLORER[c.chain ?? '']?.(c.address ?? '')} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1 font-mono text-[12px] text-white/50 hover:text-gold-400">
+                              {shortHash(c.address ?? '')} <ExternalLink size={11} />
+                            </a>
+                          )}
                         </td>
                       </tr>
                       {isOpen && (
@@ -231,10 +301,27 @@ export default function Casinos() {
                                 </div>
                               </div>
                             )}
-                            <div className="mt-4">
-                              <div className="mb-2 text-[11px] uppercase tracking-wider text-white/40">Daily volume · 30d, stacked by chain</div>
-                              <EntityHistory id={c.id} />
-                            </div>
+                            {c.members && c.members.length > 0 && (
+                              <div className="mt-4">
+                                <div className="mb-2 text-[11px] uppercase tracking-wider text-white/40">{c.members.length} clustered wallet{c.members.length === 1 ? '' : 's'} (grouped by block-explorer attribution)</div>
+                                <div className="space-y-1">
+                                  {c.members.map((m) => (
+                                    <div key={m.id} className="flex items-center gap-2 text-[12px]">
+                                      <ChainPill chain={m.chain} />
+                                      <span className="text-white/60">{m.label}</span>
+                                      <a href={EXPLORER[m.chain]?.(m.address)} target="_blank" rel="noreferrer" className="font-mono text-white/40 hover:text-gold-400">{shortHash(m.address)}</a>
+                                      <span className="ml-auto tabular-nums text-white/55">{fmtUsd(m.volume7d)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {c.histId > 0 && (
+                              <div className="mt-4">
+                                <div className="mb-2 text-[11px] uppercase tracking-wider text-white/40">Daily volume · 30d, stacked by chain{view === 'brand' ? ' (largest wallet)' : ''}</div>
+                                <EntityHistory id={c.histId} />
+                              </div>
+                            )}
                           </td>
                         </tr>
                       )}
