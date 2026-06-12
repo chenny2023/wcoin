@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Search, SlidersHorizontal, Wallet, ExternalLink, ChevronDown, ShieldCheck, Calendar, Percent, Coins } from 'lucide-react'
+import { Search, SlidersHorizontal, Wallet, ExternalLink, ChevronDown, ShieldCheck, ShieldAlert, Calendar, Percent, Coins } from 'lucide-react'
 import { Card, PageHead, Bubble, TrustBadge, Delta, CategoryBadge, ChainPill, Skeleton } from '../components/ui'
 import { api, usePoll, Entity } from '../data/api'
 import { fmtUsd, fmtNum, shortHash, CHAIN_COLOR } from '../data/format'
@@ -104,6 +104,8 @@ interface Row {
   players: number
   byChain: { chain: string; value: number }[]
   histId: number
+  safetyIndex: number | null
+  risk: { hits: number; usd: number } | null
   address?: string
   chain?: string
   wallets?: number
@@ -136,6 +138,8 @@ export default function Casinos() {
             players: b.players,
             byChain: b.byChain,
             histId: b.members[0]?.id ?? 0,
+            safetyIndex: b.safetyIndex,
+            risk: b.risk,
             wallets: b.wallets,
             members: b.members,
           }))
@@ -152,6 +156,8 @@ export default function Casinos() {
             players: e.players,
             byChain: e.byChain,
             histId: e.id,
+            safetyIndex: e.safetyIndex,
+            risk: e.risk,
             address: e.address,
             chain: e.chain,
           }))
@@ -244,6 +250,11 @@ export default function Casinos() {
                                 {expandable && <ChevronDown size={13} className={`text-white/30 transition ${isOpen ? 'rotate-180' : ''}`} />}
                                 <span className="font-medium">{c.name}</span>
                                 <CategoryBadge category={c.category} />
+                                {c.risk && (
+                                  <span title={`Transacted with ${c.risk.hits} OFAC-sanctioned counterparty event(s) · ${fmtUsd(c.risk.usd)}`} className="inline-flex items-center gap-1 rounded-md bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-bold text-rose-400">
+                                    <ShieldAlert size={11} /> OFAC
+                                  </span>
+                                )}
                               </div>
                               {c.meta && (
                                 <div className="mt-0.5 text-[11px] text-white/40">

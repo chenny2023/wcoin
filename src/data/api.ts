@@ -35,6 +35,7 @@ export interface Entity {
   byChain: { chain: string; value: number }[]
   meta: CasinoMeta | null
   safetyIndex: number | null
+  risk: { hits: number; usd: number; addresses: string[] } | null
 }
 
 export interface CasinoMeta {
@@ -67,6 +68,7 @@ export interface Brand {
   byChain: { chain: string; value: number }[]
   meta: CasinoMeta | null
   safetyIndex: number | null
+  risk: { hits: number; usd: number } | null
   members: { id: number; label: string; chain: string; address: string; volume7d: number }[]
 }
 

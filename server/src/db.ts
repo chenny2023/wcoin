@@ -44,6 +44,7 @@ CREATE INDEX IF NOT EXISTS idx_transfers_ts ON transfers(ts DESC);
 CREATE INDEX IF NOT EXISTS idx_transfers_watch ON transfers(watch_id, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_transfers_chain_ts ON transfers(chain, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_transfers_usd ON transfers(usd DESC, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_transfers_counterparty ON transfers(counterparty);
 
 CREATE TABLE IF NOT EXISTS balances (
   watch_id   INTEGER PRIMARY KEY,
@@ -99,6 +100,23 @@ CREATE TABLE IF NOT EXISTS votes (
   vote       INTEGER NOT NULL,            -- +1 trust / -1 distrust
   updated_at INTEGER NOT NULL,
   PRIMARY KEY(user_id, watch_id)
+);
+
+CREATE TABLE IF NOT EXISTS risk_addresses (
+  address  TEXT PRIMARY KEY,                 -- ETH lowercased, TRON/SOL base58
+  chain    TEXT NOT NULL,
+  category TEXT NOT NULL,                     -- 'sanctioned' | 'mixer'
+  source   TEXT NOT NULL,                     -- 'OFAC'
+  added_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS risk_flags (
+  watch_id  INTEGER PRIMARY KEY,
+  hits      INTEGER NOT NULL,                 -- transfers touching a risk address
+  usd       REAL NOT NULL,                    -- total value of those transfers
+  last_ts   INTEGER NOT NULL,
+  addresses TEXT,                             -- JSON sample of risk addresses touched
+  updated_at INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS reviews (

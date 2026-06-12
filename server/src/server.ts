@@ -18,6 +18,7 @@ import { startKick } from './collectors/kick.ts'
 import { startReddit } from './collectors/reddit.ts'
 import { startNews } from './collectors/news.ts'
 import { startReviews } from './collectors/reviews.ts'
+import { startRisk } from './collectors/risk.ts'
 import { startLabels } from './collectors/labels.ts'
 import { startWayback } from './collectors/wayback.ts'
 import { startCircus } from './collectors/circus.ts'
@@ -71,6 +72,7 @@ async function main() {
   startReddit() // social mentions (Reddit OAuth, optional creds)
   startNews() // brand mentions (Google News RSS, keyless)
   startReviews() // third-party trust: casino.guru Safety Index per casino
+  startRisk() // compliance: OFAC-sanctioned counterparty exposure flags
   startAggregation()
   startAlerts() // user-defined alert rules: whale stream + net-flow / reserve checks
 }
