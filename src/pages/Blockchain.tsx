@@ -14,6 +14,9 @@ const TX_URL: Record<string, (h: string) => string> = {
   POLYGON: (h) => `https://polygonscan.com/tx/${h}`,
   AVAX: (h) => `https://snowtrace.io/tx/${h}`,
   SOL: (h) => `https://solscan.io/tx/${h}`,
+  XRP: (h) => `https://xrpscan.com/tx/${h}`,
+  BTC: (h) => `https://blockstream.info/tx/${h}`,
+  LTC: (h) => `https://litecoinspace.org/tx/${h}`,
 }
 
 export default function Blockchain() {

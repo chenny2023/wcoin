@@ -24,6 +24,8 @@ import { startWayback } from './collectors/wayback.ts'
 import { startCircus } from './collectors/circus.ts'
 import { startPrices } from './collectors/prices.ts'
 import { startSolana } from './collectors/solana.ts'
+import { startUtxo } from './collectors/utxo.ts'
+import { startXrp } from './collectors/xrp.ts'
 import { startAggregation } from './aggregate.ts'
 import { startAlerts } from './alerts.ts'
 
@@ -66,6 +68,8 @@ async function main() {
   startEvmChains() // extra EVM chains (BSC, Base, Arbitrum, Optimism) — one indexer each
   startPrices() // daily historical price series (SOL) for non-1:1 valuation
   startSolana() // Solana indexer (SPL USDC/USDT + native SOL, historically priced)
+  startUtxo() // Bitcoin + Litecoin indexers (Esplora, historically priced)
+  startXrp() // XRP Ledger indexer (account_tx, historically priced)
   startLabels() // casino-wallet attribution harvester (Etherscan/Tronscan labels)
   startWayback() // etherscan-nametag attribution via Wayback snapshots (keyless)
   startCircus() // casino attribution via circus.fyi whale-feed → on-chain tx resolution

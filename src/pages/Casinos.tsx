@@ -167,6 +167,9 @@ const EXPLORER: Record<string, (a: string) => string> = {
   ETH: (a) => `https://etherscan.io/address/${a}`,
   TRON: (a) => `https://tronscan.org/#/address/${a}`,
   SOL: (a) => `https://solscan.io/account/${a}`,
+  XRP: (a) => `https://xrpscan.com/account/${a}`,
+  BTC: (a) => `https://blockstream.info/address/${a}`,
+  LTC: (a) => `https://litecoinspace.org/address/${a}`,
 }
 
 // unified row shape so Brand and per-wallet Entity render through one table

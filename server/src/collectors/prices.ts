@@ -84,14 +84,24 @@ async function refresh(asset: string, binanceSym: string, geckoId: string) {
   console.log(`[prices] ${asset} daily history loaded — ${data.length} days, spot ~$${(spot.get(asset) ?? 0).toFixed(2)}`)
 }
 
+// assets we value at non-1:1 — native coins of chains we index
+const ASSETS: { asset: string; binance: string; gecko: string }[] = [
+  { asset: 'SOL', binance: 'SOLUSDT', gecko: 'solana' },
+  { asset: 'BTC', binance: 'BTCUSDT', gecko: 'bitcoin' },
+  { asset: 'LTC', binance: 'LTCUSDT', gecko: 'litecoin' },
+  { asset: 'XRP', binance: 'XRPUSDT', gecko: 'ripple' },
+]
+
 export function startPrices() {
-  loadCache('SOL') // serve cached immediately
-  const run = () => refresh('SOL', 'SOLUSDT', 'solana').catch((e) => console.warn('[prices]', (e as Error).message))
+  for (const a of ASSETS) loadCache(a.asset) // serve cached immediately
+  const run = async () => {
+    for (const a of ASSETS) await refresh(a.asset, a.binance, a.gecko).catch((e) => console.warn(`[prices] ${a.asset}`, (e as Error).message))
+  }
   run()
   setInterval(run, 6 * 3600_000) // refresh 4×/day
-  // if the initial load found nothing (transient outage), retry every 2 min
+  // retry until every asset has history (covers transient outages)
   const retry = setInterval(() => {
-    if ((cache.get('SOL')?.size ?? 0) > 0) { clearInterval(retry); return }
+    if (ASSETS.every((a) => (cache.get(a.asset)?.size ?? 0) > 0)) { clearInterval(retry); return }
     run()
   }, 120_000)
 }

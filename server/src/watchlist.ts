@@ -36,17 +36,28 @@ const SEEDS: Seed[] = [
   { chain: 'TRON', address: 'TKHuVq1oKVruCGLvqVexFs6dawKv6fQgFs', label: 'Binance 2 (TRON)', category: 'exchange' },
   { chain: 'TRON', address: 'THPvaUhoh2Qn2y9THCZML3H815hhFhn5YC', label: 'OKX (TRON)', category: 'exchange' },
   { chain: 'TRON', address: 'TMuA6YqfCeX8EhbfYEg5y7S4DqzSJireY9', label: 'Huobi (TRON)', category: 'exchange' },
+
+  // ── XRP Ledger — public exchange hot wallets (XRP native + issued stables) ──
+  { chain: 'XRP', address: 'rLW9gnQo7BQhU6igk5keqYnH3TVrCxGRzm', label: 'Binance (XRP)', category: 'exchange' },
+
+  // ── Bitcoin — public exchange hot wallets (Esplora-indexed) ────────────────
+  { chain: 'BTC', address: 'bc1qgdjqv0av3q56jvd82tkdjpy7gdp9ut8tlqmgrpmv24sq90ecnvqqjwvw97', label: 'Bitfinex (BTC)', category: 'exchange' },
+  { chain: 'BTC', address: '3M219KR5vEneNb47ewrPfWyb5jQ2DjxRP6', label: 'Binance (BTC)', category: 'exchange' },
+
+  // ── Litecoin — public exchange hot wallet ──────────────────────────────────
+  { chain: 'LTC', address: 'MGxNPPB7eBoWPUaprtX9v9CXJZoD2465zN', label: 'Binance (LTC)', category: 'exchange' },
 ]
 
 export function seedWatchlist() {
-  const count = (db.prepare('SELECT COUNT(*) AS n FROM watchlist').get() as { n: number }).n
-  if (count > 0) return
+  // INSERT OR IGNORE — adds any new seeds (e.g. new chains) without disturbing
+  // operator-curated entries or prior data
   const now = Date.now()
+  let added = 0
   const tx = db.transaction(() => {
     for (const s of SEEDS) {
-      stmt.addWatch.run(s.chain, s.chain === 'ETH' ? s.address.toLowerCase() : s.address, s.label, s.category, now)
+      added += stmt.addWatch.run(s.chain, s.chain === 'ETH' ? s.address.toLowerCase() : s.address, s.label, s.category, now).changes
     }
   })
   tx()
-  console.log(`[watchlist] seeded ${SEEDS.length} real on-chain addresses`)
+  if (added) console.log(`[watchlist] seeded ${added} new on-chain addresses (${SEEDS.length} total in seed set)`)
 }
