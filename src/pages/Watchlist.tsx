@@ -8,7 +8,9 @@ import { shortHash } from '../data/format'
 const EXPLORER: Record<string, (a: string) => string> = {
   ETH: (a) => `https://etherscan.io/address/${a}`,
   TRON: (a) => `https://tronscan.org/#/address/${a}`,
+  SOL: (a) => `https://solscan.io/account/${a}`,
 }
+const ADDR_HINT: Record<string, string> = { ETH: '0x…', TRON: 'T…', SOL: 'base58 account…' }
 
 export default function Watchlist() {
   const { data, loading } = usePoll(api.watchlist, 8_000)
@@ -57,13 +59,14 @@ export default function Watchlist() {
           <form onSubmit={add} className="space-y-3">
             <div>
               <label className="mb-1 block text-[13px] text-white/55">Chain</label>
-              <div className="grid grid-cols-2 gap-2">
-                {['ETH', 'TRON'].map((c) => (
+              <div className="grid grid-cols-3 gap-2">
+                {['ETH', 'TRON', 'SOL'].map((c) => (
                   <button key={c} type="button" onClick={() => setForm({ ...form, chain: c })} className={`rounded-xl border py-2 text-sm font-semibold transition ${form.chain === c ? 'border-gold-500/40 bg-gold-500/12 text-gold-400' : 'border-white/10 bg-white/3 text-white/55 hover:bg-white/6'}`}>
                     {c}
                   </button>
                 ))}
               </div>
+              {form.chain === 'ETH' && <p className="mt-1 text-[11px] text-white/35">ETH covers all EVM chains — one address is indexed on Ethereum, BSC, Base, Arbitrum, Optimism, Polygon & Avalanche.</p>}
             </div>
             <div>
               <label className="mb-1 block text-[13px] text-white/55">Label</label>
@@ -71,7 +74,7 @@ export default function Watchlist() {
             </div>
             <div>
               <label className="mb-1 block text-[13px] text-white/55">Address</label>
-              <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder={form.chain === 'ETH' ? '0x…' : 'T…'} className="w-full rounded-xl border border-white/10 bg-white/4 px-3.5 py-2.5 font-mono text-sm placeholder:text-white/30 focus:border-gold-500/40 focus:outline-none" />
+              <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder={ADDR_HINT[form.chain] ?? '0x…'} className="w-full rounded-xl border border-white/10 bg-white/4 px-3.5 py-2.5 font-mono text-sm placeholder:text-white/30 focus:border-gold-500/40 focus:outline-none" />
             </div>
             <div>
               <label className="mb-1 block text-[13px] text-white/55">Category</label>

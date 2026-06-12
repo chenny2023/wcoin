@@ -210,7 +210,11 @@ export async function registerApi(app: FastifyInstance) {
       return reply.code(400).send({ error: 'chain, address and label are required' })
     }
     const chain = b.chain.toUpperCase()
-    if (chain !== 'ETH' && chain !== 'TRON') return reply.code(400).send({ error: 'chain must be ETH or TRON' })
+    // ETH covers every EVM chain (the indexers watch each 0x address on all of
+    // them); TRON and SOL have their own collectors.
+    if (!['ETH', 'TRON', 'SOL'].includes(chain)) {
+      return reply.code(400).send({ error: 'chain must be ETH (covers all EVM chains), TRON or SOL' })
+    }
     const address = chain === 'ETH' ? b.address.toLowerCase().trim() : b.address.trim()
     stmt.addWatch.run(chain, address, b.label.trim(), b.category ?? 'casino', Date.now())
     return { ok: true }
