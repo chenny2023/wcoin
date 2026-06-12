@@ -4,6 +4,7 @@ import { bus, TransferEvent } from './bus.ts'
 import { aggregateEntities } from './aggregate.ts'
 import { twitchEnabled } from './collectors/twitch.ts'
 import { redditEnabled } from './collectors/reddit.ts'
+import { newsEnabled } from './collectors/news.ts'
 import { userFromRequest } from './auth.ts'
 import { config } from './config.ts'
 
@@ -184,6 +185,7 @@ export async function registerApi(app: FastifyInstance) {
       : new Map()
     return {
       redditEnabled: redditEnabled(),
+      newsEnabled: newsEnabled(),
       entities: entities.map((e) => {
         const m = mMap.get(e.label)
         return {

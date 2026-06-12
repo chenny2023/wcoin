@@ -42,7 +42,13 @@ const aggSql = db.prepare(`
   FROM transfers WHERE watch_id = @id
 `)
 
+// The per-entity scan is expensive (90+ entities × COUNT DISTINCT over 7d of
+// rows) and three polled endpoints call this — serve a cached snapshot and
+// recompute at most once per aggregation interval.
+let aggCache: { at: number; data: EntityAgg[] } | null = null
+
 export function aggregateEntities(): EntityAgg[] {
+  if (aggCache && Date.now() - aggCache.at < config.aggregateMs) return aggCache.data
   const now = Date.now()
   const params = { d1: now - DAY, d2: now - 2 * DAY, d7: now - 7 * DAY }
   const rows = stmt.activeWatch.all() as WatchRow[]
@@ -100,7 +106,9 @@ export function aggregateEntities(): EntityAgg[] {
       firstSeen: a.firstSeen ?? null,
     })
   }
-  return out.sort((x, y) => y.volume7d - x.volume7d)
+  out.sort((x, y) => y.volume7d - x.volume7d)
+  aggCache = { at: Date.now(), data: out }
+  return out
 }
 
 // Blend the on-chain heuristic with real community votes (circus-style

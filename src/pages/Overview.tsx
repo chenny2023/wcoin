@@ -209,7 +209,9 @@ export default function Overview() {
             <h3 className="font-display text-lg font-semibold">Streamers Live</h3>
             <Radio size={16} className="text-white/30" />
           </div>
-          {!streamersRes?.enabled ? (
+          {!streamersRes ? (
+            <Skeleton className="h-28 w-full" />
+          ) : !streamersRes.enabled ? (
             <EmptyState
               title="Streamer feed off"
               hint="Add Twitch API credentials to .env to monitor live casino streamers."

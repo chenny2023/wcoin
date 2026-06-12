@@ -1,4 +1,5 @@
 import { config } from '../config.ts'
+import { webFetch } from '../net.ts'
 import { db } from '../db.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -18,7 +19,7 @@ let tokenExp = 0
 
 async function appToken(): Promise<string> {
   if (token && Date.now() < tokenExp) return token
-  const res = await fetch('https://id.twitch.tv/oauth2/token', {
+  const res = await webFetch('https://id.twitch.tv/oauth2/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -35,7 +36,7 @@ async function appToken(): Promise<string> {
 
 async function helix(path: string): Promise<any> {
   const t = await appToken()
-  const res = await fetch('https://api.twitch.tv/helix' + path, {
+  const res = await webFetch('https://api.twitch.tv/helix' + path, {
     headers: { 'Client-Id': config.twitchClientId, Authorization: `Bearer ${t}` },
     signal: AbortSignal.timeout(15_000),
   })

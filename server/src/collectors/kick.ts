@@ -1,4 +1,5 @@
 import { db, stateGet, stateSet } from '../db.ts'
+import { webFetch } from '../net.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // REAL streamer monitoring via Kick's public channel API (keyless).
@@ -14,8 +15,13 @@ import { db, stateGet, stateSet } from '../db.ts'
 const KICK_API = 'https://kick.com/api/v2/channels/'
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) wcoin-analytics/1.0'
 
-// Well-known gambling-category Kick streamers (public channels).
-const ROSTER_SEED = ['roshtein', 'trainwreckstv', 'classybeef', 'xposed', 'ayezee', 'deuceace']
+// Well-known gambling-category Kick streamers (public channels). Unknown or
+// renamed slugs 404 on first poll and deactivate themselves.
+const ROSTER_SEED = [
+  'roshtein', 'trainwreckstv', 'classybeef', 'xposed', 'ayezee', 'deuceace',
+  'xqc', 'adinross', 'cuffem', 'watchgamestv', 'bbjess', 'cheesur',
+  'mvdoom', 'casinodaddy', 'slotspinner', 'letsgiveitaspin', 'fruityslots',
+]
 
 // Common casino brands for affiliation matching (extended at runtime with
 // watchlist casino labels).
@@ -35,14 +41,15 @@ const upsert = db.prepare(`
 `)
 
 export function seedRoster() {
-  const count = (db.prepare("SELECT COUNT(*) n FROM streamer_roster WHERE platform='Kick'").get() as any).n
-  if (count > 0) return
+  // top-up: new seeds reach existing installs too; INSERT OR IGNORE keeps
+  // operator entries and prior deactivations (404'd slugs) untouched
   const now = Date.now()
   const ins = db.prepare(
     'INSERT OR IGNORE INTO streamer_roster(platform, slug, active, created_at) VALUES(?, ?, 1, ?)',
   )
-  for (const slug of ROSTER_SEED) ins.run('Kick', slug, now)
-  console.log(`[kick] roster seeded with ${ROSTER_SEED.length} known casino streamers`)
+  let added = 0
+  for (const slug of ROSTER_SEED) added += ins.run('Kick', slug, now).changes
+  if (added) console.log(`[kick] roster topped up with ${added} known casino streamers`)
 }
 
 function detectAffiliation(...texts: (string | null | undefined)[]): string | null {
@@ -72,7 +79,7 @@ export async function runKickOnce(): Promise<void> {
   rr++
 
   try {
-    const res = await fetch(KICK_API + entry.slug, {
+    const res = await webFetch(KICK_API + entry.slug, {
       headers: { 'User-Agent': UA, Accept: 'application/json' },
       signal: AbortSignal.timeout(15_000),
     })

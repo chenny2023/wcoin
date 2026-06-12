@@ -1,4 +1,5 @@
 import { db } from '../db.ts'
+import { webFetch } from '../net.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // REAL social-mention collection via Reddit's official OAuth API.
@@ -23,7 +24,7 @@ let tokenExp = 0
 async function appToken(): Promise<string> {
   if (token && Date.now() < tokenExp) return token
   const basic = Buffer.from(`${env.REDDIT_CLIENT_ID}:${env.REDDIT_CLIENT_SECRET}`).toString('base64')
-  const res = await fetch('https://www.reddit.com/api/v1/access_token', {
+  const res = await webFetch('https://www.reddit.com/api/v1/access_token', {
     method: 'POST',
     headers: {
       Authorization: `Basic ${basic}`,
@@ -74,7 +75,7 @@ export async function runRedditOnce() {
   try {
     const t = await appToken()
     const q = encodeURIComponent(`"${target.replace(/\.(com|io|gg)$/i, '')}"`)
-    const res = await fetch(
+    const res = await webFetch(
       `https://oauth.reddit.com/search?q=${q}&sort=new&t=week&limit=25&type=link`,
       { headers: { Authorization: `Bearer ${t}`, 'User-Agent': UA }, signal: AbortSignal.timeout(15_000) },
     )

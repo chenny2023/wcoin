@@ -15,6 +15,7 @@ import { startTronRpc } from './collectors/tronrpc.ts'
 import { startTwitch } from './collectors/twitch.ts'
 import { startKick } from './collectors/kick.ts'
 import { startReddit } from './collectors/reddit.ts'
+import { startNews } from './collectors/news.ts'
 import { startLabels } from './collectors/labels.ts'
 import { startAggregation } from './aggregate.ts'
 
@@ -58,6 +59,7 @@ async function main() {
   startKick() // streamer monitoring (Kick public API, keyless)
   startTwitch() // streamer monitoring (Twitch Helix, optional creds)
   startReddit() // social mentions (Reddit OAuth, optional creds)
+  startNews() // brand mentions (Google News RSS, keyless)
   startAggregation()
 }
 

@@ -1,4 +1,5 @@
 import { db, stmt, stateGet, stateSet } from '../db.ts'
+import { webFetch } from '../net.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Casino-wallet attribution harvester. Collects REAL public labels:
@@ -34,7 +35,7 @@ function cleanLabel(raw: string): string {
 }
 
 async function harvestEthGambling(): Promise<number> {
-  const res = await fetch(ETH_GAMBLING_URL, { signal: AbortSignal.timeout(25_000) })
+  const res = await webFetch(ETH_GAMBLING_URL, { signal: AbortSignal.timeout(25_000) })
   if (!res.ok) throw new Error(`labels dump HTTP ${res.status}`)
   const json = (await res.json()) as Record<string, string>
   const now = Date.now()
@@ -80,6 +81,50 @@ async function harvestTronTags(): Promise<number> {
   return added
 }
 
+// ── Service discovery from our own transfer graph ────────────────────────────
+// Public explorers no longer expose tag lookups keylessly, so unknown casino /
+// payment-processor hot wallets can't be named from outside. What our REAL
+// data does show: counterparties that transact with MANY watched entities at
+// high frequency are services, not players. We watch the top ones under an
+// honest "Service <addr>" label (category 'other') so the indexer builds their
+// full flow profile — operators rename them via the Watchlist when identified.
+const DISCOVER_WINDOW_DAYS = 7
+const DISCOVER_MIN_TX = 300 // observed transfers in window
+const DISCOVER_MIN_PEERS = 3 // distinct watched entities touched
+const DISCOVER_MAX_PER_CHAIN = 10
+
+export function discoverServices(): number {
+  const since = Date.now() - DISCOVER_WINDOW_DAYS * 86_400_000
+  const now = Date.now()
+  let added = 0
+  for (const chain of ['ETH', 'TRON'] as const) {
+    const slots =
+      DISCOVER_MAX_PER_CHAIN -
+      ((db.prepare("SELECT COUNT(*) n FROM watchlist WHERE active=1 AND chain=? AND label LIKE 'Service %'").get(chain) as any).n as number)
+    if (slots <= 0) continue
+    const rows = db
+      .prepare(
+        `SELECT t.counterparty AS addr, COUNT(*) AS tx, COUNT(DISTINCT t.watch_id) AS peers
+         FROM transfers t
+         WHERE t.chain = ? AND t.ts >= ?
+           AND NOT EXISTS (SELECT 1 FROM watchlist w WHERE w.chain = t.chain AND w.address = t.counterparty)
+         GROUP BY t.counterparty
+         HAVING tx >= ? AND peers >= ?
+         ORDER BY tx DESC LIMIT ?`,
+      )
+      .all(chain, since, DISCOVER_MIN_TX, DISCOVER_MIN_PEERS, slots) as { addr: string; tx: number; peers: number }[]
+    for (const r of rows) {
+      const short = `${r.addr.slice(0, 8)}…${r.addr.slice(-6)}`
+      const res = stmt.addWatch.run(chain, r.addr, `Service ${short}`, 'other', now)
+      if (res.changes) {
+        added += res.changes
+        console.log(`[labels] discovered ${chain} service ${short} (${r.tx} tx / ${r.peers} watched peers, 7d)`)
+      }
+    }
+  }
+  return added
+}
+
 export async function runLabelHarvest(force = false) {
   const last = Number(stateGet('labels:lastRun') ?? 0)
   if (!force && Date.now() - last < REFRESH_DAYS * 86_400_000) return
@@ -96,12 +141,30 @@ export async function runLabelHarvest(force = false) {
   } catch (e) {
     console.warn('[labels] tron harvest failed:', (e as Error).message)
   }
+  let services = 0
+  try {
+    services = discoverServices()
+  } catch (e) {
+    console.warn('[labels] service discovery failed:', (e as Error).message)
+  }
   stateSet('labels:lastRun', Date.now())
-  console.log(`[labels] done — +${eth} ETH casino wallets, +${tron} TRON tagged wallets`)
+  console.log(`[labels] done — +${eth} ETH casino wallets, +${tron} TRON tagged wallets, +${services} discovered services`)
 }
 
 export function startLabels() {
   // boot harvest (non-blocking) + weekly refresh
   runLabelHarvest().catch(() => {})
   setInterval(() => runLabelHarvest().catch(() => {}), 12 * 3600_000)
+  // graph-based service discovery is cheap — refresh daily regardless of the
+  // explorer-label cadence (delayed past boot so the indexers warm up first)
+  setTimeout(() => {
+    try {
+      discoverServices()
+    } catch {}
+  }, 60_000)
+  setInterval(() => {
+    try {
+      discoverServices()
+    } catch {}
+  }, 24 * 3600_000)
 }

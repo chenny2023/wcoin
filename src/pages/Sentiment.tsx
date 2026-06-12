@@ -57,7 +57,7 @@ export default function Sentiment() {
           <div className="text-[12px] uppercase tracking-wider text-white/45">Mentions · 7d</div>
           <div className="mt-1 flex items-center gap-2 font-display text-2xl font-bold">
             <MessageSquare size={20} className="text-violet-400" />
-            {data?.redditEnabled ? fmtNum(totalMentions) : <span className="text-white/35 text-base">source off</span>}
+            {data?.redditEnabled || data?.newsEnabled ? fmtNum(totalMentions) : <span className="text-white/35 text-base">source off</span>}
           </div>
         </Card>
       </div>
@@ -127,7 +127,7 @@ export default function Sentiment() {
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        {data?.redditEnabled ? (
+                        {data?.redditEnabled || data?.newsEnabled ? (
                           <span className="tabular-nums text-white/70">
                             {fmtNum(s.mentions7d)}
                             {s.mentions7d > 0 && (
@@ -163,7 +163,8 @@ export default function Sentiment() {
       <p className="mt-3 text-[12px] text-white/35">
         Blended trust = on-chain heuristic (reserve coverage, flow balance, track record, depth)
         weighted with real community votes (up to 30%, scaled by sample size).
-        {!data?.redditEnabled && ' Social mentions need free Reddit API credentials in .env (REDDIT_CLIENT_ID / SECRET).'}
+        {data?.newsEnabled && ' Mentions come from live Google News coverage.'}
+        {!data?.redditEnabled && ' Add free Reddit API credentials in .env (REDDIT_CLIENT_ID / SECRET) to include community posts.'}
       </p>
     </div>
   )

@@ -137,6 +137,9 @@ function migrateFromV1() {
 }
 
 // ── forward indexer ───────────────────────────────────────────────────────────
+// Adaptive range (like the backfill): more watched addresses → more logs per
+// block span, and a fixed range would wedge on "more than 10000 results".
+let fwdRange = 0
 export async function runTronRpcOnce() {
   const watched = watchedTron()
   if (watched.length === 0) return
@@ -149,17 +152,27 @@ export async function runTronRpcOnce() {
   if (last === 0) last = head - 100
   if (last >= head) return
 
+  if (!fwdRange) fwdRange = config.tronMaxRange
   let from = last + 1
   while (from <= head) {
-    const to = Math.min(from + config.tronMaxRange - 1, head)
-    // sequential (not parallel) to stay under shared-endpoint burst limits
-    const deposits = await getLogsRange(usdtHex, hexes, from, to, 2)
-    await new Promise((r) => setTimeout(r, 300))
-    const withdrawals = await getLogsRange(usdtHex, hexes, from, to, 1)
-    const added = insertLogs([...deposits, ...withdrawals], byHex, head, Date.now(), true)
-    stateSet('tronrpc:lastBlock', to)
-    if (added) console.log(`[tronrpc] blocks ${from}-${to}: +${added} transfers`)
-    from = to + 1
+    const to = Math.min(from + fwdRange - 1, head)
+    try {
+      // sequential (not parallel) to stay under shared-endpoint burst limits
+      const deposits = await getLogsRange(usdtHex, hexes, from, to, 2)
+      await new Promise((r) => setTimeout(r, 300))
+      const withdrawals = await getLogsRange(usdtHex, hexes, from, to, 1)
+      const added = insertLogs([...deposits, ...withdrawals], byHex, head, Date.now(), true)
+      stateSet('tronrpc:lastBlock', to)
+      if (added) console.log(`[tronrpc] blocks ${from}-${to}: +${added} transfers`)
+      from = to + 1
+      fwdRange = Math.min(config.tronMaxRange, Math.ceil(fwdRange * 1.5))
+    } catch (e) {
+      if (fwdRange > RANGE_FLOOR) {
+        fwdRange = Math.max(RANGE_FLOOR, Math.floor(fwdRange / 2))
+        continue
+      }
+      throw e // stuck at floor — bubble up for the caller's backoff
+    }
   }
 }
 

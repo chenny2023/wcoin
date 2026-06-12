@@ -167,7 +167,7 @@ export const api = {
     getJson<{ enabled: boolean; twitch: boolean; roster: number; streamers: StreamerRow[]; offline: StreamerRow[] }>(
       '/streamers',
     ),
-  sentiment: () => getJson<{ redditEnabled: boolean; entities: SentimentEntity[] }>('/sentiment'),
+  sentiment: () => getJson<{ redditEnabled: boolean; newsEnabled: boolean; entities: SentimentEntity[] }>('/sentiment'),
   watchlist: () => getJson<WatchRow[]>('/watchlist'),
   health: () => getJson<Health>('/health'),
   addWatch: (body: { chain: string; address: string; label: string; category: string }) =>
