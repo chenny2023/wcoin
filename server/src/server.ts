@@ -20,6 +20,7 @@ import { startNews } from './collectors/news.ts'
 import { startLabels } from './collectors/labels.ts'
 import { startWayback } from './collectors/wayback.ts'
 import { startCircus } from './collectors/circus.ts'
+import { startSolana } from './collectors/solana.ts'
 import { startAggregation } from './aggregate.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -59,6 +60,7 @@ async function main() {
     startTron() // TRON via TronGrid REST polling (fallback, TRON_MODE=v1)
   }
   startEvmChains() // extra EVM chains (BSC, Base, Arbitrum, Optimism) — one indexer each
+  startSolana() // Solana indexer (SPL USDC/USDT + native SOL, priced)
   startLabels() // casino-wallet attribution harvester (Etherscan/Tronscan labels)
   startWayback() // etherscan-nametag attribution via Wayback snapshots (keyless)
   startCircus() // casino attribution via circus.fyi whale-feed → on-chain tx resolution

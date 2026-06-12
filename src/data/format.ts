@@ -46,5 +46,5 @@ export const CHAIN_COLOR: Record<string, string> = {
   AVAX: '#e84142',
   SEI: '#2ee6a6',
   BTC: '#ff8a3d',
-  SOL: '#5b8cff',
+  SOL: '#14f195',
 }

@@ -4,6 +4,7 @@ import { webFetch } from '../net.ts'
 import { rpc as evmRpc } from './evm.ts'
 import { evmChains } from './evmchains.ts'
 import { b58ToHex20, hex20ToB58 } from '../tronaddr.ts'
+import { resolveSolWallet } from './solana.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Casino-wallet attribution via the public circus.fyi whale feed.
@@ -117,6 +118,7 @@ function alreadyWatched(chain: string, address: string): boolean {
 }
 
 const isTron = (chain: string) => chain === 'TRX' || chain === 'TRON'
+const isSol = (chain: string) => chain === 'SOL'
 
 export async function runCircusOnce() {
   let rows: WhaleRow[]
@@ -129,18 +131,22 @@ export async function runCircusOnce() {
   let added = 0
   for (const row of rows) {
     const tron = isTron(row.chain)
-    // resolve on the chains we can: every registered EVM chain, plus TRON. Other
-    // chains' rows (SOL, XRP, BTC, LTC) are skipped until their collectors exist
-    if (!tron && !EVM_RESOLVERS[row.chain]) continue
+    const sol = isSol(row.chain)
+    // resolve on the chains we can: every registered EVM chain, plus TRON and
+    // SOL. Other chains' rows (XRP, BTC, LTC) are skipped until collectors exist
+    if (!tron && !sol && !EVM_RESOLVERS[row.chain]) continue
     const seenKey = `circus:tx:${row.hash}`
     if (stateGet(seenKey)) continue
     try {
-      const wallet = tron ? await resolveTronWallet(row.hash, row.dir) : await resolveEvmWallet(row.chain, row.hash, row.dir)
+      const wallet = tron
+        ? await resolveTronWallet(row.hash, row.dir)
+        : sol
+          ? await resolveSolWallet(row.hash, row.dir)
+          : await resolveEvmWallet(row.chain, row.hash, row.dir)
       stateSet(seenKey, 1)
       if (!wallet) continue
-      // EVM wallets stored under canonical 'ETH' (every EVM indexer watches all
-      // 0x addresses); TRON wallets stored under 'TRON'
-      const storeChain = tron ? 'TRON' : 'ETH'
+      // EVM wallets stored under canonical 'ETH'; TRON under 'TRON'; SOL under 'SOL'
+      const storeChain = tron ? 'TRON' : sol ? 'SOL' : 'ETH'
       if (alreadyWatched(storeChain, wallet)) continue
       stmt.addWatch.run(storeChain, wallet, row.casino.slice(0, 48), 'casino', Date.now())
       added++
