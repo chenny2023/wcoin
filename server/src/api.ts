@@ -5,6 +5,8 @@ import { aggregateEntities, aggregateBrands } from './aggregate.ts'
 import { twitchEnabled } from './collectors/twitch.ts'
 import { redditEnabled } from './collectors/reddit.ts'
 import { newsEnabled } from './collectors/news.ts'
+import { telegramSubs } from './collectors/telegram.ts'
+import { brandKey } from './casinometa.ts'
 import { userFromRequest } from './auth.ts'
 import { config } from './config.ts'
 
@@ -251,6 +253,11 @@ export async function registerApi(app: FastifyInstance) {
       )
       .all(d7) as { watch_label: string; mentions: number; pos: number; neg: number }[]
     const mMap = new Map(mentionRows.map((m) => [m.watch_label, m]))
+    // global mention-source breakdown (news / press / telegram / reddit)
+    const sourceRows = db
+      .prepare('SELECT source, COUNT(*) n FROM mentions WHERE ts >= ? GROUP BY source')
+      .all(d7) as { source: string; n: number }[]
+    const subs = telegramSubs()
     const myVotes = user
       ? new Map(
           (db.prepare('SELECT watch_id, vote FROM votes WHERE user_id = ?').all(user.id) as any[]).map(
@@ -261,6 +268,7 @@ export async function registerApi(app: FastifyInstance) {
     return {
       redditEnabled: redditEnabled(),
       newsEnabled: newsEnabled(),
+      mentionsBySource: Object.fromEntries(sourceRows.map((r) => [r.source, r.n])),
       entities: entities.map((e) => {
         const m = mMap.get(e.label)
         return {
@@ -268,6 +276,7 @@ export async function registerApi(app: FastifyInstance) {
           mentions7d: m?.mentions ?? 0,
           mentionsPos: m?.pos ?? 0,
           mentionsNeg: m?.neg ?? 0,
+          telegramSubs: subs.get(brandKey(e.label)) ?? 0,
           myVote: myVotes.get(e.id) ?? 0,
         }
       }),

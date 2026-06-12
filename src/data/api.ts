@@ -35,6 +35,7 @@ export interface Entity {
   byChain: { chain: string; value: number }[]
   meta: CasinoMeta | null
   safetyIndex: number | null
+  trustpilot: number | null
   risk: { hits: number; usd: number; addresses: string[] } | null
 }
 
@@ -68,6 +69,7 @@ export interface Brand {
   byChain: { chain: string; value: number }[]
   meta: CasinoMeta | null
   safetyIndex: number | null
+  trustpilot: number | null
   risk: { hits: number; usd: number } | null
   members: { id: number; label: string; chain: string; address: string; volume7d: number }[]
 }
@@ -121,6 +123,7 @@ export interface SentimentEntity extends Entity {
   mentions7d: number
   mentionsPos: number
   mentionsNeg: number
+  telegramSubs: number
   myVote: number
 }
 
@@ -210,7 +213,7 @@ export const api = {
     getJson<{ enabled: boolean; twitch: boolean; roster: number; streamers: StreamerRow[]; offline: StreamerRow[] }>(
       '/streamers',
     ),
-  sentiment: () => getJson<{ redditEnabled: boolean; newsEnabled: boolean; entities: SentimentEntity[] }>('/sentiment'),
+  sentiment: () => getJson<{ redditEnabled: boolean; newsEnabled: boolean; mentionsBySource: Record<string, number>; entities: SentimentEntity[] }>('/sentiment'),
   watchlist: () => getJson<WatchRow[]>('/watchlist'),
   health: () => getJson<Health>('/health'),
   addWatch: (body: { chain: string; address: string; label: string; category: string }) =>

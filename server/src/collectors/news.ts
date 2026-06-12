@@ -1,4 +1,5 @@
 import { db } from '../db.ts'
+import { score as lexScore } from '../sentiment.ts'
 import { webFetch } from '../net.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -20,22 +21,6 @@ const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36'
 
 export const newsEnabled = () => true
-
-// Same lexicon as reddit.ts (kept local so either module works standalone).
-const POS = new Set(['win', 'won', 'winning', 'paid', 'payout', 'fast', 'legit', 'great', 'good', 'best', 'love', 'profit', 'bonus', 'instant', 'trust', 'trusted', 'recommend', 'awesome', 'fair', 'growth', 'record', 'expands', 'launch', 'partnership'])
-const NEG = new Set(['scam', 'scammed', 'rigged', 'lost', 'lose', 'losing', 'stole', 'stolen', 'fraud', 'banned', 'locked', 'withhold', 'refuse', 'refused', 'delay', 'delayed', 'avoid', 'worst', 'bad', 'lawsuit', 'fine', 'fined', 'hack', 'hacked', 'breach', 'investigation', 'illegal', 'laundering'])
-
-function lexScore(text: string): number {
-  const words = text.toLowerCase().split(/[^a-z.]+/)
-  let pos = 0
-  let neg = 0
-  for (const w of words) {
-    if (POS.has(w)) pos++
-    if (NEG.has(w)) neg++
-  }
-  const total = pos + neg
-  return total === 0 ? 0 : (pos - neg) / total
-}
 
 const insertMention = db.prepare(`
   INSERT OR IGNORE INTO mentions(id, watch_label, source, title, url, score, sentiment, ts)

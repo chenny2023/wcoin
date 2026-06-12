@@ -1,6 +1,6 @@
 import { db } from '../db.ts'
 import { webFetch } from '../net.ts'
-import { brandKey, brandName } from '../casinometa.ts'
+import { brandKey, brandName, matchCasinoMeta } from '../casinometa.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Third-party trust signal — casino.guru "Safety Index" (0–10) per casino.
@@ -18,9 +18,44 @@ const REFRESH_DAYS = 3
 
 const upsert = db.prepare(`
   INSERT INTO reviews(brand_key, source, score, score_max, url, updated_at)
-  VALUES(@brand_key, 'casino.guru', @score, 10, @url, @updated_at)
-  ON CONFLICT(brand_key, source) DO UPDATE SET score=excluded.score, url=excluded.url, updated_at=excluded.updated_at
+  VALUES(@brand_key, @source, @score, @score_max, @url, @updated_at)
+  ON CONFLICT(brand_key, source) DO UPDATE SET score=excluded.score, score_max=excluded.score_max, url=excluded.url, updated_at=excluded.updated_at
 `)
+
+// ── Trustpilot rating via the Wayback Machine (the live site is Cloudflare-walled) ──
+async function fetchTrustpilot(domain: string): Promise<number | null> {
+  try {
+    const cdx = await webFetch(
+      `https://web.archive.org/cdx/search/cdx?url=${encodeURIComponent('trustpilot.com/review/' + domain)}&output=json&limit=-2&filter=statuscode:200`,
+      { signal: AbortSignal.timeout(20_000) },
+    )
+    if (!cdx.ok) return null
+    const rows = (await cdx.json()) as string[][]
+    if (!Array.isArray(rows) || rows.length < 2) return null
+    const ts = rows[rows.length - 1][1]
+    const page = await webFetch(`https://web.archive.org/web/${ts}/https://www.trustpilot.com/review/${domain}`, {
+      headers: { 'User-Agent': UA },
+      signal: AbortSignal.timeout(25_000),
+    })
+    if (!page.ok) return null
+    const html = await page.text()
+    const m = html.match(/"ratingValue"\s*:\s*"?([\d.]+)/)
+    const v = m ? Number(m[1]) : null
+    return v && v > 0 && v <= 5 ? v : null
+  } catch {
+    return null
+  }
+}
+
+function domainOf(brand: string): string | null {
+  const meta = matchCasinoMeta(brand)
+  if (!meta?.website) return null
+  try {
+    return new URL(meta.website).hostname.replace(/^www\./, '')
+  } catch {
+    return null
+  }
+}
 
 // brand name → candidate casino.guru slugs ("BC.Game" → bc-game / bcgame)
 function slugCandidates(name: string): string[] {
@@ -81,27 +116,58 @@ export async function runReviewsOnce() {
   if (cursor >= queue.length) refillQueue()
   if (queue.length === 0) return
   const { key, name } = queue[cursor++]
-  // skip if refreshed recently
-  const row = db.prepare('SELECT updated_at FROM reviews WHERE brand_key=? AND source=?').get(key, 'casino.guru') as any
-  if (row && Date.now() - row.updated_at < REFRESH_DAYS * 86_400_000) return
-
-  for (const slug of slugCandidates(name)) {
-    const score = await fetchSafetyIndex(slug)
-    if (score != null && score > 0) {
-      upsert.run({ brand_key: key, score, url: `https://casino.guru/${slug}-casino-review`, updated_at: Date.now() })
-      console.log(`[reviews] ${name}: casino.guru Safety Index ${score}/10`)
-      return
-    }
-    await new Promise((r) => setTimeout(r, 600))
+  const fresh = (src: string) => {
+    const row = db.prepare('SELECT updated_at FROM reviews WHERE brand_key=? AND source=?').get(key, src) as any
+    return row && Date.now() - row.updated_at < REFRESH_DAYS * 86_400_000
   }
-  // remember the miss so we don't hammer it every sweep
-  upsert.run({ brand_key: key, score: 0, url: null, updated_at: Date.now() })
+
+  // 1) casino.guru Safety Index (skip if recently fetched)
+  if (!fresh('casino.guru')) {
+    let guru = 0
+    for (const slug of slugCandidates(name)) {
+      const s = await fetchSafetyIndex(slug)
+      if (s != null && s > 0) {
+        guru = s
+        upsert.run({ brand_key: key, source: 'casino.guru', score: s, score_max: 10, url: `https://casino.guru/${slug}-casino-review`, updated_at: Date.now() })
+        console.log(`[reviews] ${name}: casino.guru Safety Index ${s}/10`)
+        break
+      }
+      await new Promise((r) => setTimeout(r, 600))
+    }
+    if (!guru) upsert.run({ brand_key: key, source: 'casino.guru', score: 0, score_max: 10, url: null, updated_at: Date.now() })
+  }
+
+  // 2) Trustpilot rating via Wayback (independent freshness — needs the domain)
+  if (!fresh('trustpilot')) {
+    const domain = domainOf(name)
+    if (domain) {
+      const tp = await fetchTrustpilot(domain)
+      if (tp != null) {
+        upsert.run({ brand_key: key, source: 'trustpilot', score: tp, score_max: 5, url: `https://www.trustpilot.com/review/${domain}`, updated_at: Date.now() })
+        console.log(`[reviews] ${name}: Trustpilot ★${tp}/5 (archived)`)
+      } else {
+        upsert.run({ brand_key: key, source: 'trustpilot', score: 0, score_max: 5, url: null, updated_at: Date.now() })
+      }
+    }
+  }
 }
 
-// brand_key → safety index, for aggregation (built fresh each call, tiny table)
-export function reviewScores(): Map<string, { score: number; max: number; url: string | null }> {
-  const rows = db.prepare("SELECT brand_key, score, score_max, url FROM reviews WHERE source='casino.guru' AND score>0").all() as any[]
-  return new Map(rows.map((r) => [r.brand_key, { score: r.score, max: r.score_max, url: r.url }]))
+// brand_key → all third-party review scores (casino.guru Safety Index 0–10 +
+// Trustpilot ★/5), for aggregation. Tiny table, built fresh each call.
+export interface ReviewScore {
+  safety: number | null // casino.guru 0–10
+  trustpilot: number | null // ★/5
+}
+export function reviewScores(): Map<string, ReviewScore> {
+  const out = new Map<string, ReviewScore>()
+  const rows = db.prepare("SELECT brand_key, source, score FROM reviews WHERE score>0").all() as { brand_key: string; source: string; score: number }[]
+  for (const r of rows) {
+    const e = out.get(r.brand_key) ?? { safety: null, trustpilot: null }
+    if (r.source === 'casino.guru') e.safety = r.score
+    else if (r.source === 'trustpilot') e.trustpilot = r.score
+    out.set(r.brand_key, e)
+  }
+  return out
 }
 
 export function startReviews() {

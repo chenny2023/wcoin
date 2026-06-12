@@ -17,6 +17,8 @@ import { startTwitch } from './collectors/twitch.ts'
 import { startKick } from './collectors/kick.ts'
 import { startReddit } from './collectors/reddit.ts'
 import { startNews } from './collectors/news.ts'
+import { startPress } from './collectors/press.ts'
+import { startTelegram } from './collectors/telegram.ts'
 import { startReviews } from './collectors/reviews.ts'
 import { startRisk } from './collectors/risk.ts'
 import { startLabels } from './collectors/labels.ts'
@@ -77,6 +79,8 @@ async function main() {
   startTwitch() // streamer monitoring (Twitch Helix, optional creds)
   startReddit() // social mentions (Reddit OAuth, optional creds)
   startNews() // brand mentions (Google News RSS, keyless)
+  startPress() // brand mentions (iGaming trade-press RSS, keyless)
+  startTelegram() // brand community signal (public Telegram channels, keyless)
   startReviews() // third-party trust: casino.guru Safety Index per casino
   startRisk() // compliance: OFAC-sanctioned counterparty exposure flags
   startAggregation()

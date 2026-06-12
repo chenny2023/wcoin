@@ -57,8 +57,15 @@ export default function Sentiment() {
           <div className="text-[12px] uppercase tracking-wider text-white/45">Mentions · 7d</div>
           <div className="mt-1 flex items-center gap-2 font-display text-2xl font-bold">
             <MessageSquare size={20} className="text-violet-400" />
-            {data?.redditEnabled || data?.newsEnabled ? fmtNum(totalMentions) : <span className="text-white/35 text-base">source off</span>}
+            {fmtNum(totalMentions)}
           </div>
+          {data?.mentionsBySource && (
+            <div className="mt-1.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[11px] text-white/40">
+              {Object.entries(data.mentionsBySource).sort((a, b) => b[1] - a[1]).map(([src, n]) => (
+                <span key={src}>{src} <span className="text-white/65">{fmtNum(n)}</span></span>
+              ))}
+            </div>
+          )}
         </Card>
       </div>
 
@@ -80,6 +87,7 @@ export default function Sentiment() {
                   <th className="px-4 py-3 font-medium">Trust (blended)</th>
                   <th className="px-4 py-3 font-medium">On-chain</th>
                   <th className="px-4 py-3 font-medium" title="casino.guru third-party Safety Index">Safety ·guru</th>
+                  <th className="px-4 py-3 font-medium" title="Trustpilot rating (archived)">Trustpilot</th>
                   <th className="px-4 py-3 font-medium">Community</th>
                   <th className="px-4 py-3 font-medium">Mentions 7d</th>
                   <th className="px-4 py-3 font-medium">24h</th>
@@ -107,6 +115,13 @@ export default function Sentiment() {
                       <td className="px-4 py-3">
                         {s.safetyIndex != null ? (
                           <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[12px] font-bold tabular-nums ${s.safetyIndex >= 8 ? 'bg-mint-400/12 text-mint-400' : s.safetyIndex >= 5 ? 'bg-gold-500/12 text-gold-400' : 'bg-rose-400/12 text-rose-400'}`}>{s.safetyIndex.toFixed(1)}</span>
+                        ) : (
+                          <span className="text-white/25">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {s.trustpilot != null ? (
+                          <span className={`tabular-nums text-[13px] font-semibold ${s.trustpilot >= 3.5 ? 'text-mint-400' : s.trustpilot >= 2.5 ? 'text-gold-400' : 'text-rose-400'}`}>★{s.trustpilot.toFixed(1)}</span>
                         ) : (
                           <span className="text-white/25">—</span>
                         )}

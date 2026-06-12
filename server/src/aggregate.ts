@@ -34,6 +34,7 @@ export interface EntityAgg {
   byChain: { chain: string; value: number }[] // 7d volume split across the chains this entity transacts on
   meta: CasinoMeta | null // public reference profile (license, house edge, …)
   safetyIndex: number | null // casino.guru third-party Safety Index (0–10)
+  trustpilot: number | null // Trustpilot rating (★/5)
   risk: { hits: number; usd: number; addresses: string[] } | null // OFAC-sanctioned exposure
 }
 
@@ -128,7 +129,8 @@ export function aggregateEntities(): EntityAgg[] {
       firstSeen: a.firstSeen ?? null,
       byChain: (byChainMap.get(w.id) ?? []).sort((x, y) => y.value - x.value),
       meta: w.category === 'casino' ? matchCasinoMeta(w.label) : null,
-      safetyIndex: w.category === 'casino' ? reviews.get(brandKey(w.label))?.score ?? null : null,
+      safetyIndex: w.category === 'casino' ? reviews.get(brandKey(w.label))?.safety ?? null : null,
+      trustpilot: w.category === 'casino' ? reviews.get(brandKey(w.label))?.trustpilot ?? null : null,
       risk: risks.get(w.id) ?? null,
     })
   }
@@ -161,6 +163,7 @@ export interface BrandAgg {
   byChain: { chain: string; value: number }[]
   meta: CasinoMeta | null
   safetyIndex: number | null
+  trustpilot: number | null
   risk: { hits: number; usd: number } | null
   members: { id: number; label: string; chain: string; address: string; volume7d: number }[]
 }
@@ -203,6 +206,7 @@ export function aggregateBrands(): BrandAgg[] {
       byChain: [...chainVol.entries()].map(([chain, value]) => ({ chain, value })).sort((a, b) => b.value - a.value),
       meta: members.map((e) => e.meta).find(Boolean) ?? null,
       safetyIndex: members.map((e) => e.safetyIndex).find((s) => s != null) ?? null,
+      trustpilot: members.map((e) => e.trustpilot).find((s) => s != null) ?? null,
       risk: members.some((e) => e.risk)
         ? { hits: sum((e) => e.risk?.hits ?? 0), usd: sum((e) => e.risk?.usd ?? 0) }
         : null,
