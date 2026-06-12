@@ -22,6 +22,7 @@ import { startRisk } from './collectors/risk.ts'
 import { startLabels } from './collectors/labels.ts'
 import { startWayback } from './collectors/wayback.ts'
 import { startCircus } from './collectors/circus.ts'
+import { startPrices } from './collectors/prices.ts'
 import { startSolana } from './collectors/solana.ts'
 import { startAggregation } from './aggregate.ts'
 import { startAlerts } from './alerts.ts'
@@ -63,7 +64,8 @@ async function main() {
     startTron() // TRON via TronGrid REST polling (fallback, TRON_MODE=v1)
   }
   startEvmChains() // extra EVM chains (BSC, Base, Arbitrum, Optimism) — one indexer each
-  startSolana() // Solana indexer (SPL USDC/USDT + native SOL, priced)
+  startPrices() // daily historical price series (SOL) for non-1:1 valuation
+  startSolana() // Solana indexer (SPL USDC/USDT + native SOL, historically priced)
   startLabels() // casino-wallet attribution harvester (Etherscan/Tronscan labels)
   startWayback() // etherscan-nametag attribution via Wayback snapshots (keyless)
   startCircus() // casino attribution via circus.fyi whale-feed → on-chain tx resolution

@@ -1,6 +1,7 @@
 import { db, stmt, stateGet, stateSet, WatchRow } from '../db.ts'
 import { emitTransfer } from '../bus.ts'
 import { webFetch } from '../net.ts'
+import { priceForDay } from './prices.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Solana collector. Solana has no eth_getLogs, so this works differently from
@@ -73,50 +74,55 @@ async function priceSol(): Promise<number> {
   return priceCache.usd
 }
 
-// net per-owner USD delta in a parsed tx: stables 1:1, native SOL × price.
-// returns { gainer, loser, usd, token } for the dominant transfer leg.
-function dominantTransfer(tx: any, solUsd: number): { gainer: string; loser: string; usd: number; token: string } | null {
+// net per-owner USD delta in a parsed tx: stables 1:1, native SOL × the price
+// ON THE DAY of the tx (block-time historical price), not today's spot.
+// returns the dominant leg with both the raw token amount and its USD value.
+function dominantTransfer(tx: any): { gainer: string; loser: string; usd: number; amount: number; token: string } | null {
   const acctKeys: string[] = tx.transaction.message.accountKeys.map((k: any) => k.pubkey ?? k)
-  const owners = new Map<string, { usd: number; token: string }>()
-  const bump = (owner: string, usd: number, token: string) => {
-    const cur = owners.get(owner) ?? { usd: 0, token }
+  const owners = new Map<string, { usd: number; amount: number; token: string }>()
+  const bump = (owner: string, usd: number, amount: number, token: string) => {
+    const cur = owners.get(owner) ?? { usd: 0, amount: 0, token }
     cur.usd += usd
+    cur.amount += amount
     cur.token = token
     owners.set(owner, cur)
   }
-  // SPL stable deltas, grouped by token-account owner
+  // SPL stable deltas (1:1 USD), grouped by token-account owner
   const pre = tx.meta.preTokenBalances ?? []
   const post = tx.meta.postTokenBalances ?? []
   const tBal = (arr: any[], sign: number) => {
     for (const b of arr) {
       if (!STABLE_MINTS.has(b.mint) || !b.owner) continue
-      bump(b.owner, sign * Number(b.uiTokenAmount.uiAmount ?? 0), MINT_SYMBOL[b.mint])
+      const amt = sign * Number(b.uiTokenAmount.uiAmount ?? 0)
+      bump(b.owner, amt, amt, MINT_SYMBOL[b.mint]) // stable: amount == usd
     }
   }
   tBal(post, 1)
   tBal(pre, -1)
-  // native SOL deltas (skip if any stable leg present — avoid double counting fees)
+  // native SOL deltas (skip if any stable leg present — avoid double counting)
+  const solUsd = priceForDay('SOL', (tx.blockTime ?? Math.floor(Date.now() / 1000)) * 1000) || priceCache.usd
   if (owners.size === 0 && solUsd > 0) {
     for (let i = 0; i < acctKeys.length; i++) {
       const d = (tx.meta.postBalances[i] - tx.meta.preBalances[i]) / 1e9
-      if (Math.abs(d) >= 0.5) bump(acctKeys[i], d * solUsd, 'SOL')
+      if (Math.abs(d) >= 0.5) bump(acctKeys[i], d * solUsd, d, 'SOL')
     }
   }
-  let gainer = '', loser = '', gUsd = 0, lUsd = 0, token = 'USDC'
-  for (const [owner, { usd, token: t }] of owners) {
-    if (usd > gUsd) { gainer = owner; gUsd = usd; token = t }
+  let gainer = '', loser = '', gUsd = 0, lUsd = 0, token = 'USDC', gAmt = 0
+  for (const [owner, { usd, amount, token: t }] of owners) {
+    if (usd > gUsd) { gainer = owner; gUsd = usd; token = t; gAmt = Math.abs(amount) }
     if (usd < lUsd) { loser = owner; lUsd = usd }
   }
   const usd = Math.max(gUsd, -lUsd)
   if (!gainer || !loser || usd < 1) return null
-  return { gainer, loser, usd, token }
+  return { gainer, loser, usd, amount: gAmt, token }
 }
 
 // resolve a circus SOL whale tx to the casino-side address
 export async function resolveSolWallet(sig: string, dir: 'in' | 'out'): Promise<string | null> {
   const tx = await solRpc('getTransaction', [sig, { maxSupportedTransactionVersion: 0, encoding: 'jsonParsed' }])
   if (!tx?.meta) return null
-  const d = dominantTransfer(tx, await priceSol())
+  await priceSol() // keep spot fresh for the historical-price fallback
+  const d = dominantTransfer(tx)
   if (!d) return null
   return dir === 'in' ? d.gainer : d.loser
 }
@@ -139,7 +145,7 @@ async function tokenAccounts(owner: string): Promise<string[]> {
 }
 
 let rr = 0
-async function indexAddress(w: WatchRow, solUsd: number) {
+async function indexAddress(w: WatchRow) {
   const owner = w.address
   // accounts to scan: the owner (native SOL) + its stable token accounts (SPL)
   const accounts = [owner, ...(await tokenAccounts(owner))]
@@ -165,7 +171,7 @@ async function indexAddress(w: WatchRow, solUsd: number) {
         continue
       }
       if (!tx?.meta) continue
-      const d = dominantTransfer(tx, solUsd)
+      const d = dominantTransfer(tx)
       if (d && (d.gainer === owner || d.loser === owner)) {
         const direction = d.gainer === owner ? 'in' : 'out'
         const counterparty = direction === 'in' ? d.loser : d.gainer
@@ -177,7 +183,7 @@ async function indexAddress(w: WatchRow, solUsd: number) {
           from_addr: direction === 'in' ? counterparty : owner,
           to_addr: direction === 'in' ? owner : counterparty,
           counterparty,
-          amount: d.usd, // for stables == USD; for SOL it's the USD value (price-derived)
+          amount: d.amount, // raw token units (SOL or USDC); usd is the valued amount
           usd: d.usd,
           watch_id: w.id,
           label: w.label,
@@ -203,12 +209,12 @@ async function indexAddress(w: WatchRow, solUsd: number) {
 export async function runSolanaOnce() {
   const watched = (stmt.activeWatch.all() as WatchRow[]).filter((w) => w.chain === 'SOL' && SOL_ADDR.test(w.address))
   if (watched.length === 0) return
-  const solUsd = await priceSol()
+  await priceSol() // refresh spot for the historical-price fallback
   for (let i = 0; i < Math.min(ADDRS_PER_TICK, watched.length); i++) {
     const w = watched[rr % watched.length]
     rr++
     try {
-      await indexAddress(w, solUsd)
+      await indexAddress(w)
     } catch (e) {
       console.warn(`[sol] ${w.label} failed:`, (e as Error).message)
     }

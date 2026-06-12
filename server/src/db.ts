@@ -102,6 +102,13 @@ CREATE TABLE IF NOT EXISTS votes (
   PRIMARY KEY(user_id, watch_id)
 );
 
+CREATE TABLE IF NOT EXISTS prices (
+  asset TEXT NOT NULL,                        -- 'SOL'
+  day   INTEGER NOT NULL,                     -- UTC day index (floor(ts/86400000))
+  usd   REAL NOT NULL,                        -- daily close
+  PRIMARY KEY(asset, day)
+);
+
 CREATE TABLE IF NOT EXISTS risk_addresses (
   address  TEXT PRIMARY KEY,                 -- ETH lowercased, TRON/SOL base58
   chain    TEXT NOT NULL,
