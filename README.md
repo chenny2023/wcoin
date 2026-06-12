@@ -14,7 +14,7 @@ counterparty segmentation from that live data.
 | Data | Source | Real? |
 |------|--------|-------|
 | Deposit/withdrawal transfers | `eth_getLogs` (ETH) + TronGrid (Tron), keyless public endpoints | ✅ live |
-| Casino-wallet attributions | Etherscan "gambling" label dump (45+ casinos: 1xBet, Bitsler…) + Tronscan public `addressTag` harvest of top USDT holders | ✅ auto-harvested weekly |
+| Casino-wallet attributions | (1) curated, publicly-documented hot wallets carrying block-explorer name-tags — modern high-volume brands: Stake, Rollbit, Roobet, Gamdom, BC.Game, Duelbits, BetFury, Bitcasino, 500 Casino, MetaWin… (2) Etherscan "gambling" label dump harvested across **9 EVM chains** (1xBet, Bitsler, wolf.bet…) (3) Tronscan public `addressTag` harvest of top USDT holders (4) behavioural service discovery + classification from our own transfer graph | ✅ curated loads on boot; dumps auto-harvested weekly |
 | Volume / inflow / outflow / net-flow | derived from indexed transfers | ✅ |
 | On-chain reserves | `balanceOf` (ETH) + account API (Tron) | ✅ live |
 | Whale alerts | transfers ≥ $100K, streamed via SSE | ✅ live |
