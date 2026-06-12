@@ -3,6 +3,7 @@ import { db, stmt, WatchRow } from './db.ts'
 import { evmBalanceUsd } from './collectors/evm.ts'
 import { tronBalanceUsd } from './collectors/tron.ts'
 import { tronRpcBalanceUsd } from './collectors/tronrpc.ts'
+import { bscBalanceUsd } from './collectors/bsc.ts'
 
 const DAY = 86_400_000
 
@@ -153,12 +154,14 @@ export async function refreshBalances() {
   try {
     const rows = stmt.activeWatch.all() as WatchRow[]
     for (const w of rows) {
-      const usd =
-        w.chain === 'ETH'
-          ? await evmBalanceUsd(w.address)
-          : config.tronMode === 'jsonrpc'
-            ? await tronRpcBalanceUsd(w.address)
-            : await tronBalanceUsd(w.address)
+      let usd: number
+      if (w.chain === 'ETH') {
+        // EVM address — sum reserves across the EVM chains we index
+        usd = await evmBalanceUsd(w.address)
+        if (config.bscEnabled) usd += await bscBalanceUsd(w.address)
+      } else {
+        usd = config.tronMode === 'jsonrpc' ? await tronRpcBalanceUsd(w.address) : await tronBalanceUsd(w.address)
+      }
       // skip overwriting a known balance with 0 on a transient fetch failure
       if (usd > 0 || !(db.prepare('SELECT usd FROM balances WHERE watch_id=?').get(w.id) as any)?.usd) {
         stmt.upsertBalance.run(w.id, usd, Date.now())

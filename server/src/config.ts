@@ -49,6 +49,26 @@ export const config = {
   ],
   tronUsdt: { symbol: 'USDT', address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', decimals: 6 },
 
+  // ── BSC (BNB Chain) — EVM-compatible, a dominant crypto-casino rail. Public
+  // nodes are GFW-blocked direct, so the BSC collector routes via webFetch
+  // (proxy). NOTE: BEP20 USDT/USDC use 18 decimals (not 6 like ETH/Tron).
+  // publicnode caps eth_getLogs at ~2000 blocks; the collector adapts.
+  bscEnabled: (env.BSC_ENABLED ?? '1') !== '0',
+  bscRpcs: [
+    ...(env.BSC_RPC ? [env.BSC_RPC] : []),
+    'https://bsc-rpc.publicnode.com',
+    'https://1rpc.io/bnb',
+    'https://bsc-dataseed.binance.org',
+  ],
+  bscTokens: [
+    { symbol: 'USDT', address: '0x55d398326f99059ff775485246999027b3197955', decimals: 18 },
+    { symbol: 'USDC', address: '0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d', decimals: 18 },
+  ],
+  bscMaxRange: Number(env.BSC_MAX_RANGE ?? 1800), // ≤ publicnode's ~2000 cap
+  bscPollMs: Number(env.BSC_POLL_MS ?? 12_000),
+  bscMaxRangesPerTick: Number(env.BSC_MAX_RANGES ?? 12),
+  bscBackfillBlocks: Number(env.BSC_BACKFILL_BLOCKS ?? 400),
+
   // Indexer pacing
   evmBackfillBlocks: Number(env.EVM_BACKFILL_BLOCKS ?? 120), // forward-indexer boot window
   evmChunk: Number(env.EVM_CHUNK ?? 5), // blocks per getLogs range (forward)

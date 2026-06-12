@@ -2,6 +2,7 @@ import { config, TRANSFER_TOPIC } from '../config.ts'
 import { db, stmt, stateGet, stateSet } from '../db.ts'
 import { webFetch } from '../net.ts'
 import { rpc as evmRpc } from './evm.ts'
+import { bscRpc } from './bsc.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Casino-wallet attribution via the public circus.fyi whale feed.
@@ -22,7 +23,12 @@ import { rpc as evmRpc } from './evm.ts'
 
 const FEED_URL = 'https://circus.fyi/blockchain'
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
-const STABLE = config.evmTokens.map((t) => t.address.toLowerCase())
+
+// EVM chains we can resolve a tx on: explorer host → rpc + stablecoin set
+const EVM_RESOLVERS: Record<string, { rpc: (m: string, p: unknown[]) => Promise<any>; stable: string[] }> = {
+  ETH: { rpc: evmRpc, stable: config.evmTokens.map((t) => t.address.toLowerCase()) },
+  BSC: { rpc: bscRpc, stable: config.bscTokens.map((t) => t.address.toLowerCase()) },
+}
 
 const NAME_RE = /"children":"([A-Z][A-Za-z0-9.\s]{1,22})"\}/g
 const CHAIN_RE = /"children":"(ETH|TRX|BSC|SOL|ARB|BASE|AVAX|OP|MATIC|POLYGON|XRP|BTC|LTC)"\}/g
@@ -45,7 +51,7 @@ async function fetchFeed(): Promise<WhaleRow[]> {
     try { blob += JSON.parse('"' + c + '"') } catch { blob += c }
   }
   const rows: WhaleRow[] = []
-  for (const m of blob.matchAll(/etherscan\.io\/tx\/(0x[0-9a-fA-F]{64})/g)) {
+  for (const m of blob.matchAll(/(?:etherscan\.io|bscscan\.com)\/tx\/(0x[0-9a-fA-F]{64})/g)) {
     const at = m.index ?? 0
     const before = blob.slice(Math.max(0, at - 1800), at)
     const names = [...before.matchAll(NAME_RE)].map((x) => x[1].trim()).filter((n) => !NAME_NOISE.test(n) && !/^(ETH|TRX|BSC|SOL|ARB|BASE|AVAX|OP|MATIC|POLYGON|XRP|BTC|LTC)$/.test(n))
@@ -59,13 +65,15 @@ async function fetchFeed(): Promise<WhaleRow[]> {
   return rows
 }
 
-// resolve an ETH tx to the casino-side address of its largest stablecoin leg
-async function resolveEvmWallet(hash: string, dir: 'in' | 'out'): Promise<string | null> {
-  const rc = await evmRpc('eth_getTransactionReceipt', [hash])
+// resolve an EVM tx to the casino-side address of its largest stablecoin leg
+async function resolveEvmWallet(chain: string, hash: string, dir: 'in' | 'out'): Promise<string | null> {
+  const r = EVM_RESOLVERS[chain]
+  if (!r) return null
+  const rc = await r.rpc('eth_getTransactionReceipt', [hash])
   if (!rc?.logs) return null
   let best: { amt: bigint; from: string; to: string } | null = null
   for (const l of rc.logs as any[]) {
-    if (!STABLE.includes(l.address.toLowerCase()) || l.topics?.[0] !== TRANSFER_TOPIC) continue
+    if (!r.stable.includes(l.address.toLowerCase()) || l.topics?.[0] !== TRANSFER_TOPIC) continue
     const amt = BigInt(l.data === '0x' ? '0x0' : l.data)
     if (!best || amt > best.amt) best = { amt, from: '0x' + l.topics[1].slice(26), to: '0x' + l.topics[2].slice(26) }
   }
@@ -87,19 +95,21 @@ export async function runCircusOnce() {
   }
   let added = 0
   for (const row of rows) {
-    // only EVM resolution is wired today (ETH); other chains are skipped until
-    // their collectors exist, but the casino name is remembered for then
-    if (row.chain !== 'ETH') continue
+    // resolve on the EVM chains we index (ETH, BSC); other chains' rows are
+    // skipped until their collectors exist
+    if (!EVM_RESOLVERS[row.chain]) continue
     const seenKey = `circus:tx:${row.hash}`
     if (stateGet(seenKey)) continue
     try {
-      const wallet = await resolveEvmWallet(row.hash, row.dir)
+      const wallet = await resolveEvmWallet(row.chain, row.hash, row.dir)
       stateSet(seenKey, 1)
       if (!wallet) continue
+      // store under the canonical EVM key 'ETH' — both the ETH and BSC indexers
+      // watch every 0x address, so one entry accrues flow on all EVM chains
       if (alreadyWatched('ETH', wallet)) continue
       stmt.addWatch.run('ETH', wallet, row.casino.slice(0, 48), 'casino', Date.now())
       added++
-      console.log(`[circus] attributed ${row.casino} → ${wallet} (from whale tx, ${row.dir})`)
+      console.log(`[circus] attributed ${row.casino} → ${wallet} (${row.chain} whale tx, ${row.dir})`)
     } catch (e) {
       console.warn(`[circus] resolve ${row.hash.slice(0, 12)}… failed:`, (e as Error).message)
     }

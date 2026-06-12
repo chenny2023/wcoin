@@ -37,6 +37,7 @@ export const CHAIN_COLOR: Record<string, string> = {
   ETH: '#8b3df0',
   TRON: '#f5b100',
   TRX: '#f5b100',
+  BSC: '#f0b90b',
   SEI: '#2ee6a6',
   BTC: '#ff8a3d',
   SOL: '#5b8cff',
