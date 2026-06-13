@@ -26,14 +26,15 @@ export default function Contact() {
             Let's talk <span className="text-gradient-gold">intelligence</span>.
           </h1>
           <p className="mt-4 text-white/55">
-            Tell us about your operation and we'll set you up with enterprise access, custom
-            dashboards and API keys. Our team typically replies within one business day.
+            The whole platform is free — no sales call required. Use this form for feature
+            requests, data corrections, partnership ideas or anything else. We usually reply
+            within one business day.
           </p>
           <div className="mt-8 space-y-3">
             {[
-              ['Enterprise analytics & API tiers', '✓'],
-              ['Wallet clustering & whale tracking', '✓'],
-              ['White-label & SLA options', '✓'],
+              ['Every feature free — just sign up with email', '✓'],
+              ['Suggest a casino, source or correction', '✓'],
+              ['Partnership & data-sharing ideas welcome', '✓'],
             ].map(([t]) => (
               <div key={t} className="flex items-center gap-2 text-sm text-white/70">
                 <CheckCircle2 size={16} className="text-mint-400" /> {t}
@@ -42,7 +43,7 @@ export default function Contact() {
           </div>
           <div className="mt-8 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/4 px-4 py-3 text-sm">
             <Mail size={16} className="text-gold-400" />
-            <span className="text-white/70">sales@wcoin.casino</span>
+            <span className="text-white/70">hello@wcoin.casino</span>
           </div>
         </div>
 
@@ -74,12 +75,12 @@ export default function Contact() {
               <Field label="Work email" type="email" placeholder="you@casino.com" />
               <Field label="Company" placeholder="Your casino / studio" />
               <div>
-                <label className="mb-1 block text-[13px] text-white/55">What are you looking for?</label>
+                <label className="mb-1 block text-[13px] text-white/55">What's this about?</label>
                 <select className="w-full rounded-xl border border-white/10 bg-white/4 px-3.5 py-2.5 text-sm focus:border-gold-500/40 focus:outline-none">
-                  <option className="bg-ink-800">Competitor analytics</option>
-                  <option className="bg-ink-800">On-chain / whale tracking</option>
-                  <option className="bg-ink-800">Streamer monitoring</option>
-                  <option className="bg-ink-800">API & data integration</option>
+                  <option className="bg-ink-800">Feature request</option>
+                  <option className="bg-ink-800">Suggest a casino or data source</option>
+                  <option className="bg-ink-800">Report a data correction</option>
+                  <option className="bg-ink-800">Partnership / data sharing</option>
                   <option className="bg-ink-800">Something else</option>
                 </select>
               </div>
@@ -95,7 +96,7 @@ export default function Contact() {
                 type="submit"
                 className="w-full rounded-xl bg-gradient-to-r from-gold-400 to-gold-600 py-2.5 text-sm font-semibold text-ink-950 hover:brightness-110"
               >
-                Request enterprise access
+                Send message
               </button>
             </form>
           )}

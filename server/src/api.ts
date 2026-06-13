@@ -56,6 +56,28 @@ export async function registerApi(app: FastifyInstance) {
       .prepare('SELECT chain, SUM(usd) v FROM transfers WHERE ts>=? GROUP BY chain')
       .all(d7) as any[]
     const liveStreamers = (db.prepare('SELECT COUNT(*) n FROM streamers WHERE live=1').get() as any).n
+    // casino-only breakdown — the iGaming headline figures, with exchange &
+    // whale flow excluded (transfers carry their entity's category)
+    const cas = db
+      .prepare(
+        `SELECT COUNT(*) tx, SUM(usd) vol, COUNT(DISTINCT counterparty) players,
+                SUM(CASE WHEN ts>=? THEN usd ELSE 0 END) vol7
+         FROM transfers WHERE category='casino'`,
+      )
+      .get(d7) as any
+    const casReserves = (
+      db
+        .prepare(
+          `SELECT SUM(b.usd) v FROM balances b JOIN watchlist w ON w.id=b.watch_id WHERE w.category='casino'`,
+        )
+        .get() as any
+    ).v ?? 0
+    const casEntities = (
+      db.prepare("SELECT COUNT(*) n FROM watchlist WHERE active=1 AND category='casino'").get() as any
+    ).n
+    const casChains = db
+      .prepare("SELECT chain, SUM(usd) v FROM transfers WHERE category='casino' AND ts>=? GROUP BY chain")
+      .all(d7) as any[]
     const data = {
       totalVolume: totals.vol ?? 0,
       volume7d: vol7,
@@ -65,6 +87,15 @@ export async function registerApi(app: FastifyInstance) {
       entities: wl,
       liveStreamers,
       chainSplit: chains.map((c) => ({ chain: c.chain, value: c.v ?? 0 })),
+      casino: {
+        totalVolume: cas.vol ?? 0,
+        volume7d: cas.vol7 ?? 0,
+        totalTransfers: cas.tx ?? 0,
+        uniquePlayers: cas.players ?? 0,
+        reserves: casReserves,
+        entities: casEntities,
+        chainSplit: casChains.map((c) => ({ chain: c.chain, value: c.v ?? 0 })),
+      },
     }
     statsCache = { data, at: Date.now() }
     return data
@@ -73,20 +104,22 @@ export async function registerApi(app: FastifyInstance) {
   // ── entities (a.k.a. casinos/exchanges) leaderboard ──────────────────────────
   app.get('/api/entities', async (req) => {
     const { category } = req.query as { category?: string }
-    let list = aggregateEntities()
-    if (category && category !== 'all') list = list.filter((e) => e.category === category)
-    return list
+    // the generic leaderboard intentionally spans every category by default
+    return aggregateEntities(category ?? 'all')
   })
 
-  // alias kept for the casino-centric UI
-  app.get('/api/casinos', async () => aggregateEntities())
+  // casino-centric leaderboard — defaults to iGaming only so exchanges/whales
+  // never get grouped in with casinos. ?category=all|exchange|whale to override.
+  app.get('/api/casinos', async (req) => {
+    const { category } = req.query as { category?: string }
+    return aggregateEntities(category ?? 'casino')
+  })
 
-  // brand-aggregated leaderboard — wallets clustered by known attribution
+  // brand-aggregated leaderboard — wallets clustered by known attribution.
+  // Also casino-only by default (exchanges/whales excluded unless requested).
   app.get('/api/brands', async (req) => {
     const { category } = req.query as { category?: string }
-    let list = aggregateBrands()
-    if (category && category !== 'all') list = list.filter((b) => b.category === category)
-    return list
+    return aggregateBrands(category ?? 'casino')
   })
 
   // ── transfer feed (REAL) with filters ────────────────────────────────────────
@@ -108,19 +141,21 @@ export async function registerApi(app: FastifyInstance) {
 
   // ── time-series flow chart (REAL) — ?days=7|14|30, bucket scales with window ─
   app.get('/api/series', async (req) => {
-    const q = req.query as { days?: string }
+    const q = req.query as { days?: string; category?: string }
     const days = Math.min(30, Math.max(1, Number(q.days ?? 7)))
     const now = Date.now()
     const from = now - days * 86_400_000
     const bucketMs = days <= 7 ? 6 * 3600_000 : 24 * 3600_000 // 6h buckets ≤7d, daily beyond
+    const catFilter = q.category && q.category !== 'all' ? ' AND category = ?' : ''
+    const catArg = catFilter ? [q.category] : []
     const rows = db
       .prepare(
         `SELECT CAST((ts - ?) / ? AS INTEGER) AS b,
                 SUM(CASE WHEN direction='in'  THEN usd ELSE 0 END) deposits,
                 SUM(CASE WHEN direction='out' THEN usd ELSE 0 END) withdrawals
-         FROM transfers WHERE ts >= ? GROUP BY b ORDER BY b`,
+         FROM transfers WHERE ts >= ?${catFilter} GROUP BY b ORDER BY b`,
       )
-      .all(from, bucketMs, from) as any[]
+      .all(from, bucketMs, from, ...catArg) as any[]
     const map = new Map(rows.map((r) => [r.b, r]))
     const out: { t: number; deposits: number; withdrawals: number }[] = []
     const buckets = Math.ceil((now - from) / bucketMs)
@@ -199,7 +234,11 @@ export async function registerApi(app: FastifyInstance) {
   })
 
   // ── flow intelligence: tx-size distribution (REAL, derived) ──────────────────
-  app.get('/api/flow', async () => {
+  // Casino-only by default so exchange/whale flow doesn't pollute the player
+  // segmentation; ?category=all|exchange|… to widen.
+  app.get('/api/flow', async (req) => {
+    const { category } = req.query as { category?: string }
+    const cat = category ?? 'casino'
     const d7 = Date.now() - 7 * 86_400_000
     const buckets = [
       { name: 'Whale', min: 100_000, max: Infinity, color: '#f5b100' },
@@ -207,7 +246,11 @@ export async function registerApi(app: FastifyInstance) {
       { name: 'Regular', min: 500, max: 10_000, color: '#2ee6a6' },
       { name: 'Casual', min: 0, max: 500, color: '#5b8cff' },
     ]
-    const rows = db.prepare('SELECT usd, counterparty FROM transfers WHERE ts>=?').all(d7) as any[]
+    const catFilter = cat && cat !== 'all' ? ' AND category = ?' : ''
+    const catArg = catFilter ? [cat] : []
+    const rows = db
+      .prepare(`SELECT usd, counterparty FROM transfers WHERE ts>=?${catFilter}`)
+      .all(d7, ...catArg) as any[]
     const res = buckets.map((b) => {
       const inB = rows.filter((r) => r.usd >= b.min && r.usd < b.max)
       const vol = inB.reduce((s, r) => s + r.usd, 0)
@@ -244,7 +287,10 @@ export async function registerApi(app: FastifyInstance) {
   // ── sentiment: blended trust + community votes + real social mentions ────────
   app.get('/api/sentiment', async (req) => {
     const user = userFromRequest(req)
-    const entities = aggregateEntities()
+    const { category } = req.query as { category?: string }
+    // trust / reviews / social sentiment are casino concepts — default to
+    // iGaming only so exchange & whale wallets don't pollute the sentiment board
+    const entities = aggregateEntities(category ?? 'casino')
     const d7 = Date.now() - 7 * 86_400_000
     const mentionRows = db
       .prepare(

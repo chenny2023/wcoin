@@ -1,18 +1,23 @@
 import { FastifyInstance, FastifyRequest } from 'fastify'
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
+import { randomBytes, randomInt } from 'node:crypto'
 import { db } from './db.ts'
+import { config } from './config.ts'
+import { sendVerificationCode } from './email.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Real authentication: scrypt-hashed passwords, opaque session tokens (30d),
-// roles (casino | streamer | admin — first registered user becomes admin).
+// Passwordless authentication. The product is 100% free: anyone signs up with
+// just an email + a 6-digit verification code (no password, no payment). A code
+// is emailed (Resend) — or logged to the console when email isn't configured —
+// then exchanged for a 30-day opaque session token. First user becomes admin.
 // Community trust votes are tied to authenticated users (one vote per entity).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SESSION_DAYS = 30
+const CODE_TTL_MS = 10 * 60_000 // codes expire in 10 minutes
+const MAX_CODES_PER_WINDOW = 5 // max codes requested per email per TTL window
+const MAX_VERIFY_ATTEMPTS = 5 // wrong-code guesses before a code is burned
 
-function hash(password: string, salt: string): string {
-  return scryptSync(password, salt, 64).toString('hex')
-}
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 
 export interface AuthUser {
   id: number
@@ -45,43 +50,90 @@ function issueSession(userId: number): string {
   return token
 }
 
-export async function registerAuth(app: FastifyInstance) {
-  app.post('/api/auth/register', async (req, reply) => {
-    const b = req.body as { email?: string; password?: string; role?: string }
-    const email = b?.email?.trim().toLowerCase()
-    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-      return reply.code(400).send({ error: 'valid email required' })
-    }
-    if (!b?.password || b.password.length < 8) {
-      return reply.code(400).send({ error: 'password must be at least 8 characters' })
-    }
-    const exists = db.prepare('SELECT id FROM users WHERE email = ?').get(email)
-    if (exists) return reply.code(409).send({ error: 'email already registered' })
+// Find an existing account by email or create one (passwordless — no hash).
+// The first account ever created becomes the admin. The count-then-insert runs
+// inside a transaction so the "first user → admin" decision is atomic.
+const findOrCreateTx = db.transaction((email: string): AuthUser => {
+  const existing = db.prepare('SELECT id, email, role FROM users WHERE email = ?').get(email) as
+    | AuthUser
+    | undefined
+  if (existing) return existing
+  const isFirst = (db.prepare('SELECT COUNT(*) n FROM users').get() as any).n === 0
+  const role = isFirst ? 'admin' : 'casino'
+  const info = db
+    .prepare('INSERT INTO users(email, pass_hash, salt, role, created_at) VALUES(?, ?, ?, ?, ?)')
+    .run(email, '', '', role, Date.now())
+  return { id: Number(info.lastInsertRowid), email, role }
+})
 
-    const isFirst = (db.prepare('SELECT COUNT(*) n FROM users').get() as any).n === 0
-    const role = isFirst ? 'admin' : ['casino', 'streamer'].includes(b.role ?? '') ? b.role! : 'casino'
-    const salt = randomBytes(16).toString('hex')
-    const info = db
-      .prepare('INSERT INTO users(email, pass_hash, salt, role, created_at) VALUES(?, ?, ?, ?, ?)')
-      .run(email, hash(b.password, salt), salt, role, Date.now())
-    const token = issueSession(Number(info.lastInsertRowid))
-    return { token, user: { id: Number(info.lastInsertRowid), email, role } }
+function findOrCreateUser(email: string): AuthUser {
+  return findOrCreateTx(email)
+}
+
+export async function registerAuth(app: FastifyInstance) {
+  // ── step 1: request a sign-in code ─────────────────────────────────────────
+  app.post('/api/auth/request-code', async (req, reply) => {
+    const b = req.body as { email?: string }
+    const email = b?.email?.trim().toLowerCase()
+    if (!email || !EMAIL_RE.test(email)) {
+      return reply.code(400).send({ error: 'A valid email is required' })
+    }
+    const now = Date.now()
+    // rate-limit: cap codes per email within one TTL window (anti-bombing)
+    const recent = (
+      db
+        .prepare('SELECT COUNT(*) n FROM verification_codes WHERE email = ? AND created_at > ?')
+        .get(email, now - CODE_TTL_MS) as any
+    ).n
+    if (recent >= MAX_CODES_PER_WINDOW) {
+      return reply.code(429).send({ error: 'Too many codes requested. Please wait a few minutes and try again.' })
+    }
+    // mint a fresh code. Prior codes are left in place so the per-window count
+    // above can actually rate-limit (deleting them here would reset it to 0);
+    // verify() only ever honours the most recent row, and all rows are purged
+    // on success or by the hourly expiry sweep.
+    const code = String(randomInt(0, 1_000_000)).padStart(6, '0')
+    db.prepare(
+      'INSERT INTO verification_codes(email, code, expires_at, attempts, created_at) VALUES(?, ?, ?, 0, ?)',
+    ).run(email, code, now + CODE_TTL_MS, now)
+
+    const { delivered } = await sendVerificationCode(email, code)
+    // Only ever reveal the code to the client outside production (so the flow is
+    // testable before email is wired up). In production an unconfigured mailer
+    // means the code lives only in the server logs — never the HTTP response.
+    const devCode = !delivered && config.nodeEnv !== 'production' ? code : undefined
+    return { sent: true, delivered, ...(devCode ? { devCode } : {}) }
   })
 
-  app.post('/api/auth/login', async (req, reply) => {
-    const b = req.body as { email?: string; password?: string }
+  // ── step 2: verify the code → issue a session ──────────────────────────────
+  app.post('/api/auth/verify', async (req, reply) => {
+    const b = req.body as { email?: string; code?: string }
     const email = b?.email?.trim().toLowerCase()
-    const row = db
-      .prepare('SELECT id, email, role, pass_hash, salt FROM users WHERE email = ?')
-      .get(email ?? '') as any
-    if (!row || !b?.password) return reply.code(401).send({ error: 'invalid credentials' })
-    const candidate = Buffer.from(hash(b.password, row.salt), 'hex')
-    const stored = Buffer.from(row.pass_hash, 'hex')
-    if (candidate.length !== stored.length || !timingSafeEqual(candidate, stored)) {
-      return reply.code(401).send({ error: 'invalid credentials' })
+    const code = b?.code?.trim()
+    if (!email || !EMAIL_RE.test(email) || !code) {
+      return reply.code(400).send({ error: 'Email and code are required' })
     }
-    const token = issueSession(row.id)
-    return { token, user: { id: row.id, email: row.email, role: row.role } }
+    const row = db
+      .prepare(
+        'SELECT rowid, code, expires_at, attempts FROM verification_codes WHERE email = ? ORDER BY created_at DESC LIMIT 1',
+      )
+      .get(email) as { rowid: number; code: string; expires_at: number; attempts: number } | undefined
+    if (!row || row.expires_at < Date.now()) {
+      return reply.code(401).send({ error: 'Code expired or not found. Request a new one.' })
+    }
+    if (row.attempts >= MAX_VERIFY_ATTEMPTS) {
+      db.prepare('DELETE FROM verification_codes WHERE email = ?').run(email)
+      return reply.code(429).send({ error: 'Too many attempts. Request a new code.' })
+    }
+    if (row.code !== code) {
+      db.prepare('UPDATE verification_codes SET attempts = attempts + 1 WHERE rowid = ?').run(row.rowid)
+      return reply.code(401).send({ error: 'Invalid code' })
+    }
+    // success — burn the code(s) and issue a session
+    db.prepare('DELETE FROM verification_codes WHERE email = ?').run(email)
+    const user = findOrCreateUser(email)
+    const token = issueSession(user.id)
+    return { token, user }
   })
 
   app.get('/api/auth/me', async (req, reply) => {
@@ -117,8 +169,10 @@ export async function registerAuth(app: FastifyInstance) {
     return { ok: true }
   })
 
-  // periodic session cleanup
+  // periodic cleanup of expired sessions + verification codes
   setInterval(() => {
-    db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now())
+    const now = Date.now()
+    db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now)
+    db.prepare('DELETE FROM verification_codes WHERE expires_at < ?').run(now)
   }, 3600_000)
 }

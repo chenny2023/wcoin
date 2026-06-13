@@ -36,7 +36,7 @@ export default function ApiAccess() {
       <PageHead
         title="API Access"
         subtitle="Every dashboard metric is served by a live REST endpoint — pipe it anywhere"
-        right={<span className="rounded-lg bg-mint-400/12 px-3 py-1.5 text-[12px] font-semibold text-mint-400 ring-1 ring-mint-400/30">No key required (local)</span>}
+        right={<span className="rounded-lg bg-mint-400/12 px-3 py-1.5 text-[12px] font-semibold text-mint-400 ring-1 ring-mint-400/30">Free — no API key required</span>}
       />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -49,8 +49,8 @@ export default function ApiAccess() {
             <pre className="overflow-x-auto p-4 text-[13px] leading-relaxed text-mint-400"><code>{snippet}</code></pre>
           </div>
           <p className="mt-2 text-[12px] text-white/40">
-            For the live stream: <code className="text-white/70">new EventSource('{BASE}/api/stream')</code>. Add
-            an auth layer (API keys / JWT) in <code className="text-white/70">server/src/api.ts</code> before exposing publicly.
+            For the live stream: <code className="text-white/70">new EventSource('{BASE}/api/stream')</code>. Read
+            endpoints are open and free — just register with your email; there are no keys to manage.
           </p>
 
           <h3 className="mb-3 mt-5 font-display text-lg font-semibold">Endpoints</h3>

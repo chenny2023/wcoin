@@ -8,7 +8,7 @@ type Format = 'csv' | 'json'
 const TEMPLATES = [
   { key: 'transfers', name: 'On-chain Transfer Log', desc: 'Every indexed USDT/USDC deposit & withdrawal', est: 'live' },
   { key: 'whales', name: 'Whale Movement Digest', desc: 'All transfers ≥ $100K with counterparties', est: 'live' },
-  { key: 'entities', name: 'Entity Leaderboard', desc: 'Volume, trust, reserves & net-flow per entity', est: 'live' },
+  { key: 'entities', name: 'Casino Leaderboard', desc: 'Volume, trust, reserves & net-flow per casino', est: 'live' },
   { key: 'flow', name: 'Segment Distribution', desc: 'Counterparties bucketed by transfer size', est: 'live' },
 ] as const
 
@@ -43,8 +43,8 @@ export default function Reports() {
       let rows: any[] = []
       if (key === 'transfers') rows = await api.transfers({ limit: 300 })
       else if (key === 'whales') rows = await api.transfers({ min: 100_000, limit: 300 })
-      else if (key === 'entities') rows = await api.casinos()
-      else if (key === 'flow') rows = await api.flow()
+      else if (key === 'entities') rows = await api.casinos('casino')
+      else if (key === 'flow') rows = await api.flow('casino')
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
       const fname = `wcoin_${key}_${stamp}.${fmt}`
       if (fmt === 'csv') download(fname, toCsv(rows), 'text/csv')

@@ -56,7 +56,17 @@ const aggSql = db.prepare(`
 // recompute at most once per aggregation interval.
 let aggCache: { at: number; data: EntityAgg[] } | null = null
 
-export function aggregateEntities(): EntityAgg[] {
+// Optional `category` filter keeps non-iGaming entities (exchanges, whales,
+// discovered services) out of the casino-facing views. The full list is still
+// computed once and cached; filtering happens on the cached snapshot so callers
+// can ask for 'casino' (default in the product UI) or 'all' (cross-category).
+export function aggregateEntities(category?: string): EntityAgg[] {
+  const all = computeEntities()
+  if (!category || category === 'all') return all
+  return all.filter((e) => e.category === category)
+}
+
+function computeEntities(): EntityAgg[] {
   if (aggCache && Date.now() - aggCache.at < config.aggregateMs) return aggCache.data
   const now = Date.now()
   const params = { d1: now - DAY, d2: now - 2 * DAY, d7: now - 7 * DAY }
@@ -169,7 +179,13 @@ export interface BrandAgg {
 }
 
 let brandCache: { at: number; data: BrandAgg[] } | null = null
-export function aggregateBrands(): BrandAgg[] {
+export function aggregateBrands(category?: string): BrandAgg[] {
+  const all = computeBrands()
+  if (!category || category === 'all') return all
+  return all.filter((b) => b.category === category)
+}
+
+function computeBrands(): BrandAgg[] {
   if (brandCache && Date.now() - brandCache.at < config.aggregateMs) return brandCache.data
   const entities = aggregateEntities()
   const groups = new Map<string, EntityAgg[]>()

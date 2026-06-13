@@ -196,11 +196,13 @@ interface Row {
 
 export default function Casinos() {
   const [view, setView] = useState<'brand' | 'wallet'>('brand')
-  const { data: entityData, loading: el } = usePoll(api.casinos, 15_000)
+  // fetch every category so the exchange/whale tabs work, but default the view
+  // to casinos only — non-iGaming entities are never grouped in by default
+  const { data: entityData, loading: el } = usePoll(() => api.casinos('all'), 15_000)
   const { data: brandData, loading: bl } = usePoll(() => api.brands('all'), 15_000)
   const [q, setQ] = useState('')
   const [sort, setSort] = useState<SortKey>('volume7d')
-  const [cat, setCat] = useState('all')
+  const [cat, setCat] = useState('casino')
   const [open, setOpen] = useState<string | null>(null)
   const loading = view === 'brand' ? bl : el
 

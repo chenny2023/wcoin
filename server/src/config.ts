@@ -90,6 +90,15 @@ export const config = {
   // if unset, the streamer feed is simply empty and the UI says "connect a source")
   twitchClientId: env.TWITCH_CLIENT_ID ?? '',
   twitchClientSecret: env.TWITCH_CLIENT_SECRET ?? '',
+
+  // ── Email delivery for passwordless sign-in codes (Resend HTTP API) ──────────
+  // The product is 100% free: anyone signs up with just an email + a 6-digit
+  // code. Set RESEND_API_KEY to send real emails; without it the code is logged
+  // to the server console (and surfaced to the client in dev) so the flow still
+  // works end-to-end. RESEND_FROM must be a verified sender on your Resend
+  // account (the shared onboarding@resend.dev only delivers to the account owner).
+  resendApiKey: env.RESEND_API_KEY ?? '',
+  resendFrom: env.RESEND_FROM ?? 'WCOIN.CASINO <onboarding@resend.dev>',
 }
 
 export const TRANSFER_TOPIC =

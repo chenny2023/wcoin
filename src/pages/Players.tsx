@@ -50,8 +50,8 @@ export default function Players() {
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Unique Counterparties" value={fmtNum(stats?.uniquePlayers ?? 0)} icon={<Users size={18} />} accent="violet" />
-        <StatCard label="Indexed Transfers" value={fmtNum(stats?.totalTransfers ?? 0)} icon={<Activity size={18} />} accent="mint" />
+        <StatCard label="Casino Counterparties" value={fmtNum(stats?.casino?.uniquePlayers ?? stats?.uniquePlayers ?? 0)} icon={<Users size={18} />} accent="violet" />
+        <StatCard label="Casino Transfers" value={fmtNum(stats?.casino?.totalTransfers ?? stats?.totalTransfers ?? 0)} icon={<Activity size={18} />} accent="mint" />
         <StatCard label="Whale Share of Volume" value={`${whaleShare.toFixed(0)}%`} icon={<Crown size={18} />} accent="gold" />
         <StatCard label="Avg Transfer Size" value={fmtUsd(avgTx)} icon={<Layers size={18} />} accent="gold" />
       </div>

@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 
 // ── Types mirror the backend (server/src) ─────────────────────────────────────
+export interface CategoryStats {
+  totalVolume: number
+  volume7d: number
+  totalTransfers: number
+  uniquePlayers: number
+  reserves: number
+  entities: number
+  chainSplit: { chain: string; value: number }[]
+}
+
 export interface Stats {
   totalVolume: number
   volume7d: number
@@ -10,6 +20,7 @@ export interface Stats {
   entities: number
   liveStreamers: number
   chainSplit: { chain: string; value: number }[]
+  casino?: CategoryStats // iGaming-only headline figures (exchanges/whales excluded)
 }
 
 export interface Entity {
@@ -193,7 +204,7 @@ export const api = {
   stats: () => getJson<Stats>('/stats'),
   entities: (category?: string) =>
     getJson<Entity[]>('/entities' + (category && category !== 'all' ? `?category=${category}` : '')),
-  casinos: () => getJson<Entity[]>('/casinos'),
+  casinos: (category = 'casino') => getJson<Entity[]>(`/casinos?category=${category}`),
   brands: (category = 'casino') => getJson<Brand[]>(`/brands?category=${category}`),
   transfers: (q: { chain?: string; dir?: string; min?: number; limit?: number } = {}) => {
     const p = new URLSearchParams()
@@ -203,17 +214,22 @@ export const api = {
     if (q.limit) p.set('limit', String(q.limit))
     return getJson<Transfer[]>('/transfers?' + p.toString())
   },
-  series: (days = 7) => getJson<SeriesPoint[]>(`/series?days=${days}`),
+  series: (days = 7, category = 'casino') =>
+    getJson<SeriesPoint[]>(`/series?days=${days}` + (category && category !== 'all' ? `&category=${category}` : '')),
   entitySeries: (id: number, days = 30) =>
     getJson<{ chains: string[]; series: ({ t: number } & Record<string, number>)[] }>(`/entity/${id}/series?days=${days}`),
   entityFlow: (id: number, days = 30) =>
     getJson<{ entity: string | null; days: number; sources: FlowNode[]; sinks: FlowNode[] }>(`/entity/${id}/flow?days=${days}`),
-  flow: () => getJson<FlowBucket[]>('/flow'),
+  flow: (category = 'casino') =>
+    getJson<FlowBucket[]>('/flow' + (category && category !== 'all' ? `?category=${category}` : '')),
   streamers: () =>
     getJson<{ enabled: boolean; twitch: boolean; roster: number; streamers: StreamerRow[]; offline: StreamerRow[] }>(
       '/streamers',
     ),
-  sentiment: () => getJson<{ redditEnabled: boolean; newsEnabled: boolean; mentionsBySource: Record<string, number>; entities: SentimentEntity[] }>('/sentiment'),
+  sentiment: (category = 'casino') =>
+    getJson<{ redditEnabled: boolean; newsEnabled: boolean; mentionsBySource: Record<string, number>; entities: SentimentEntity[] }>(
+      `/sentiment?category=${category}`,
+    ),
   watchlist: () => getJson<WatchRow[]>('/watchlist'),
   health: () => getJson<Health>('/health'),
   addWatch: (body: { chain: string; address: string; label: string; category: string }) =>
@@ -221,10 +237,11 @@ export const api = {
   removeWatch: (id: number) => sendJson<{ ok: boolean }>(`/watchlist/${id}`, 'DELETE'),
   addRoster: (body: { platform: string; slug: string }) => sendJson<{ ok: boolean }>('/roster', 'POST', body),
   vote: (watch_id: number, vote: 1 | -1) => sendJson<{ ok: boolean }>('/vote', 'POST', { watch_id, vote }),
-  register: (email: string, password: string, role: string) =>
-    sendJson<{ token: string; user: AuthUser }>('/auth/register', 'POST', { email, password, role }),
-  login: (email: string, password: string) =>
-    sendJson<{ token: string; user: AuthUser }>('/auth/login', 'POST', { email, password }),
+  // passwordless auth: request a 6-digit code, then exchange it for a session
+  requestCode: (email: string) =>
+    sendJson<{ sent: boolean; delivered: boolean; devCode?: string }>('/auth/request-code', 'POST', { email }),
+  verifyCode: (email: string, code: string) =>
+    sendJson<{ token: string; user: AuthUser }>('/auth/verify', 'POST', { email, code }),
   me: () => getJson<{ user: AuthUser }>('/auth/me'),
   logout: () => sendJson<{ ok: boolean }>('/auth/logout', 'POST'),
   alertRules: () => getJson<AlertRule[]>('/alerts/rules'),
@@ -313,7 +330,7 @@ function ensureStream() {
   es.onmessage = (ev) => {
     try {
       const t = JSON.parse(ev.data) as Transfer
-      liveBuffer = [t, ...liveBuffer].slice(0, 200)
+      liveBuffer = [t, ...liveBuffer].slice(0, 300)
       liveListeners.forEach((l) => l())
     } catch {
       /* ignore */
@@ -330,17 +347,20 @@ function seedLive() {
   if (seeded) return
   seeded = true
   api
-    .transfers({ limit: 60 })
+    .transfers({ limit: 100 })
     .then((rows) => {
       const have = new Set(liveBuffer.map((t) => t.tx_hash + t.direction))
       const merged = [...liveBuffer, ...rows.filter((r) => !have.has(r.tx_hash + r.direction))]
-      liveBuffer = merged.sort((a, b) => b.ts - a.ts).slice(0, 200)
+      liveBuffer = merged.sort((a, b) => b.ts - a.ts).slice(0, 300)
       liveListeners.forEach((l) => l())
     })
     .catch(() => {})
 }
 
-export function useLiveFeed(limit = 40): Transfer[] {
+// The shared SSE stream carries every category; `category` filters the feed
+// client-side so casino-facing surfaces never show exchange/whale transfers,
+// while a raw multi-chain explorer can still request the full feed.
+export function useLiveFeed(limit = 40, category?: string): Transfer[] {
   const [, force] = useState(0)
   useEffect(() => {
     ensureStream()
@@ -351,7 +371,9 @@ export function useLiveFeed(limit = 40): Transfer[] {
       liveListeners.delete(l)
     }
   }, [])
-  return liveBuffer.slice(0, limit)
+  const rows =
+    category && category !== 'all' ? liveBuffer.filter((t) => t.category === category) : liveBuffer
+  return rows.slice(0, limit)
 }
 
 // Count-up animation for hero numbers

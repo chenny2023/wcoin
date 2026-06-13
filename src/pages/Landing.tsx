@@ -27,7 +27,7 @@ const FEATURES = [
 ]
 
 function Ticker() {
-  const feed = useLiveFeed(16)
+  const feed = useLiveFeed(16, 'casino')
   const items = feed.length ? [...feed, ...feed] : []
   return (
     <div className="relative overflow-hidden border-y border-white/8 bg-ink-900/60 py-2.5">
@@ -68,7 +68,7 @@ export default function Landing() {
           <nav className="hidden items-center gap-7 text-sm text-white/60 md:flex">
             <a href="#features" className="hover:text-white">Features</a>
             <a href="#intel" className="hover:text-white">Live Intel</a>
-            <a href="#pricing" className="hover:text-white">Pricing</a>
+            <a href="#free" className="hover:text-white">Free Access</a>
           </nav>
           <div className="flex items-center gap-2">
             <Link to="/login" className="rounded-lg px-3 py-2 text-sm font-medium text-white/70 hover:text-white">
@@ -222,45 +222,47 @@ export default function Landing() {
         </Card>
       </section>
 
-      {/* Pricing / CTA */}
-      <section id="pricing" className="mx-auto max-w-7xl px-5 py-16">
-        <div className="grid gap-4 lg:grid-cols-3">
-          {[
-            { name: 'Starter', price: 'Free', feats: ['Public leaderboards', 'Delayed transfer feed', 'Sentiment overview'], cta: 'Launch demo', to: '/app', hot: false },
-            { name: 'Pro', price: '$1,490', sub: '/mo', feats: ['Real-time on-chain feed', 'Whale alerts', 'Custom reports', 'Streamer monitoring'], cta: 'Start Pro', to: '/contact', hot: true },
-            { name: 'Enterprise', price: 'Custom', feats: ['Full API + webhooks', 'Wallet clustering', 'Dedicated support', 'SLA & white-label'], cta: 'Contact sales', to: '/contact', hot: false },
-          ].map((p) => (
-            <Card key={p.name} className={`p-7 ${p.hot ? 'ring-gold relative' : ''}`}>
-              {p.hot && (
-                <span className="absolute -top-3 left-7 rounded-full bg-gradient-to-r from-gold-400 to-gold-600 px-3 py-0.5 text-[11px] font-bold text-ink-950">
-                  MOST POPULAR
-                </span>
-              )}
-              <div className="font-display text-lg font-semibold">{p.name}</div>
-              <div className="mt-2 font-display text-3xl font-bold">
-                {p.price}
-                {p.sub && <span className="text-base font-normal text-white/40">{p.sub}</span>}
-              </div>
-              <ul className="mt-5 space-y-2.5 text-sm text-white/65">
-                {p.feats.map((f) => (
-                  <li key={f} className="flex items-center gap-2">
-                    <span className="text-mint-400">✓</span> {f}
-                  </li>
-                ))}
-              </ul>
-              <Link
-                to={p.to}
-                className={`mt-6 block rounded-xl py-2.5 text-center text-sm font-semibold ${
-                  p.hot
-                    ? 'bg-gradient-to-r from-gold-400 to-gold-600 text-ink-950 hover:brightness-110'
-                    : 'border border-white/12 bg-white/5 text-white/85 hover:bg-white/10'
-                }`}
-              >
-                {p.cta}
-              </Link>
-            </Card>
-          ))}
-        </div>
+      {/* Free access / CTA */}
+      <section id="free" className="mx-auto max-w-7xl px-5 py-16">
+        <Card className="ring-gold relative overflow-hidden p-8 text-center sm:p-12">
+          <div
+            className="pointer-events-none absolute -top-24 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full blur-3xl"
+            style={{ background: 'radial-gradient(circle, rgba(245,177,0,0.18), transparent 70%)' }}
+          />
+          <span className="relative inline-block rounded-full bg-gradient-to-r from-gold-400 to-gold-600 px-3 py-0.5 text-[11px] font-bold tracking-wide text-ink-950">
+            100% FREE — FOR EVERYONE
+          </span>
+          <h2 className="relative mt-4 font-display text-3xl font-bold sm:text-4xl">
+            Every feature. <span className="text-gradient-gold">Zero cost.</span>
+          </h2>
+          <p className="relative mx-auto mt-3 max-w-xl text-white/60">
+            No plans, no paywalls, no credit card — ever. Just register with your email and a
+            one-time code to unlock the entire platform.
+          </p>
+          <ul className="relative mx-auto mt-6 grid max-w-2xl grid-cols-2 gap-x-6 gap-y-2.5 text-left text-sm text-white/70 sm:grid-cols-3">
+            {[
+              'Real-time on-chain feed',
+              'Whale & netflow alerts',
+              'Wallet clustering',
+              'Trust & sentiment board',
+              'Custom reports & exports',
+              'Full read API access',
+            ].map((f) => (
+              <li key={f} className="flex items-center gap-2">
+                <span className="text-mint-400">✓</span> {f}
+              </li>
+            ))}
+          </ul>
+          <Link
+            to="/login"
+            className="relative mt-8 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-gold-400 to-gold-600 px-7 py-3 text-sm font-semibold text-ink-950 hover:brightness-110"
+          >
+            Create your free account <ArrowRight size={16} />
+          </Link>
+          <p className="relative mt-3 text-xs text-white/40">
+            Prefer to look first? <Link to="/app" className="text-white/60 hover:underline">Browse read-only</Link> — no account needed.
+          </p>
+        </Card>
       </section>
 
       {/* Footer */}

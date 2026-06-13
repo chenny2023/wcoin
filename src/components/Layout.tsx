@@ -82,16 +82,16 @@ export default function Layout({ children }: { children: ReactNode }) {
           <div className="glass rounded-2xl p-4">
             <div className="flex items-center gap-2 text-[12px] font-semibold text-gold-400">
               <span className="live-dot h-1.5 w-1.5 rounded-full bg-gold-400" />
-              ENTERPRISE
+              100% FREE
             </div>
             <p className="mt-1.5 text-[12px] leading-snug text-white/50">
-              Unlock full on-chain history, API keys & custom alerts.
+              Every feature is free. Sign up with just your email to unlock alerts, votes & the full API.
             </p>
             <Link
-              to="/contact"
+              to="/login"
               className="mt-3 block rounded-lg bg-gradient-to-r from-gold-400 to-gold-600 py-1.5 text-center text-[13px] font-semibold text-ink-950 hover:brightness-110"
             >
-              Get in touch
+              Sign up free
             </Link>
           </div>
         </div>

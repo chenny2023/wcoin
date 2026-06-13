@@ -40,8 +40,24 @@ Service → **Variables**. Do NOT commit these; set them here.
 | `DB_PATH` | `/app/server/data/wcoin.db` | already set in Dockerfile, override only if you change the mount |
 | `EVM_RPC` | your Alchemy/Infura ETH RPC URL | from your local `.env` |
 | `TRON_JSONRPC` | your GetBlock TRON JSON-RPC URL | from your local `.env` |
+| `RESEND_API_KEY` | your Resend API key | **required for public sign-up** — sends the email verification codes (see below) |
+| `RESEND_FROM` | `WCOIN.CASINO <login@yourdomain.com>` | a verified Resend sender; defaults to the shared `onboarding@resend.dev` which only delivers to the account owner |
 | `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` | optional | enables Twitch streamers |
 | `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` | optional | enables Reddit mentions |
+
+### Email verification codes (free passwordless sign-in)
+
+The product is 100% free: visitors sign up with just an email + a 6-digit code —
+no password, no payment. The code is sent via the [Resend](https://resend.com)
+HTTP API (free tier ≈ 3,000 emails/mo, no card).
+
+1. Create a Resend account, add + verify your sending domain, and create an API key.
+2. Set `RESEND_API_KEY` and `RESEND_FROM` (a sender on your verified domain).
+
+Without `RESEND_API_KEY` the server still works but **only logs the code to the
+console** (and never returns it in production) — so nobody can complete sign-up
+on the live site until the key is set. Locally (`NODE_ENV != production`) the code
+is also returned in the API response so the flow is testable without email.
 
 **Do NOT set `HTTP_PROXY`/`HTTPS_PROXY`** — there is no GFW on Railway, so the
 collectors must fetch the open web directly (the code already handles a missing

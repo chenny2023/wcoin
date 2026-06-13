@@ -94,6 +94,15 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS verification_codes (
+  email      TEXT NOT NULL,                 -- lowercased recipient
+  code       TEXT NOT NULL,                 -- 6-digit one-time code
+  expires_at INTEGER NOT NULL,              -- ms epoch
+  attempts   INTEGER NOT NULL DEFAULT 0,    -- failed verify attempts (lockout)
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_vcodes_email ON verification_codes(email, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS votes (
   user_id    INTEGER NOT NULL,
   watch_id   INTEGER NOT NULL,

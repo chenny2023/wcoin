@@ -35,13 +35,16 @@ function ChartTip({ active, payload, label }: any) {
 export default function Overview() {
   const [days, setDays] = useState(7)
   const { data: stats } = usePoll(api.stats, 12_000)
-  const { data: series } = usePoll(() => api.series(days), 30_000, [days])
+  const { data: series } = usePoll(() => api.series(days, 'casino'), 30_000, [days])
   const { data: entities } = usePoll(api.casinos, 15_000)
   const { data: streamersRes } = usePoll(api.streamers, 30_000)
-  const feed = useLiveFeed(8)
+  const feed = useLiveFeed(8, 'casino')
 
-  const animTotal = useCountUp(stats?.totalVolume ?? 0)
-  const chainSplit = (stats?.chainSplit ?? []).map((c) => ({ ...c, color: CHAIN_COLOR[c.chain] ?? '#888' }))
+  // iGaming-only headline figures (exchanges/whales excluded); fall back to the
+  // whole-market totals if an older server hasn't sent the casino breakdown yet
+  const cs = stats?.casino
+  const animTotal = useCountUp(cs?.totalVolume ?? stats?.totalVolume ?? 0)
+  const chainSplit = ((cs?.chainSplit ?? stats?.chainSplit) ?? []).map((c) => ({ ...c, color: CHAIN_COLOR[c.chain] ?? '#888' }))
   const totalChain = chainSplit.reduce((s, c) => s + c.value, 0) || 1
   const top = (entities ?? []).slice(0, 5)
   const liveStreamers = (streamersRes?.streamers ?? []).slice(0, 5)
@@ -55,15 +58,15 @@ export default function Overview() {
   return (
     <div className="fade-up">
       <PageHead
-        title="Market Overview"
-        subtitle={`Live multi-chain intelligence — real stablecoin & native settlement across ${chainSplit.length || 9} indexed chains`}
+        title="Casino Market Overview"
+        subtitle={`Live iGaming intelligence — real stablecoin & native casino settlement across ${chainSplit.length || 9} indexed chains`}
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Volume Tracked" value={fmtUsd(animTotal)} accent="gold" icon={<Activity size={18} />} />
-        <StatCard label="On-chain Reserves" value={fmtUsd(stats?.reserves ?? 0)} accent="violet" icon={<Wallet size={18} />} />
-        <StatCard label="Unique Counterparties" value={fmtNum(stats?.uniquePlayers ?? 0)} accent="mint" icon={<Users size={18} />} />
-        <StatCard label="Entities Watched" value={String(stats?.entities ?? 0)} accent="gold" icon={<Building2 size={18} />} />
+        <StatCard label="Casino Volume" value={fmtUsd(animTotal)} accent="gold" icon={<Activity size={18} />} />
+        <StatCard label="Casino Reserves" value={fmtUsd(cs?.reserves ?? stats?.reserves ?? 0)} accent="violet" icon={<Wallet size={18} />} />
+        <StatCard label="Casino Players" value={fmtNum(cs?.uniquePlayers ?? stats?.uniquePlayers ?? 0)} accent="mint" icon={<Users size={18} />} />
+        <StatCard label="Casinos Tracked" value={String(cs?.entities ?? stats?.entities ?? 0)} accent="gold" icon={<Building2 size={18} />} />
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
@@ -187,7 +190,7 @@ export default function Overview() {
         </Card>
 
         <Card className="p-5">
-          <h3 className="mb-3 font-display text-lg font-semibold">Top Entities · Volume</h3>
+          <h3 className="mb-3 font-display text-lg font-semibold">Top Casinos · Volume</h3>
           <div className="space-y-2.5">
             {!entities && <Skeleton className="h-40 w-full" />}
             {top.map((c, i) => (
