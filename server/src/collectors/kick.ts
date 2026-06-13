@@ -59,12 +59,14 @@ function detectAffiliation(...texts: (string | null | undefined)[]): string | nu
   const labels = db
     .prepare("SELECT DISTINCT label FROM watchlist WHERE category='casino' AND active=1")
     .all() as { label: string }[]
+  // word-boundary match so a brand like "stake" doesn't false-match "mistake"
+  const wb = (s: string) => new RegExp(`\\b${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(hay)
   for (const { label } of labels) {
     const key = label.toLowerCase().replace(/\.(com|io|gg|game)$/, '')
-    if (key.length >= 4 && hay.includes(key)) return label
+    if (key.length >= 4 && wb(key)) return label
   }
   for (const brand of CASINO_BRANDS) {
-    if (hay.includes(brand)) return brand.charAt(0).toUpperCase() + brand.slice(1)
+    if (wb(brand)) return brand.charAt(0).toUpperCase() + brand.slice(1)
   }
   return null
 }

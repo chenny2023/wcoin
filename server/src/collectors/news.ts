@@ -111,8 +111,11 @@ export async function runNewsOnce() {
         const pub = Date.parse(tag(item, 'pubDate'))
         if (!title || !link || Number.isNaN(pub)) continue
         // only keep headlines that actually name the brand — RSS search can
-        // return looser matches, and we never attribute those
-        if (!title.toLowerCase().includes(brand.toLowerCase().replace(/\.(com|io|gg|game)$/, ''))) continue
+        // return looser matches, and we never attribute those. Match on a WORD
+        // BOUNDARY so e.g. "Stake" doesn't false-match "mistake"/"staked".
+        const needle = brand.toLowerCase().replace(/\.(com|io|gg|game)$/, '')
+        const reNeedle = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        if (!new RegExp(`\\b${reNeedle}\\b`, 'i').test(title)) continue
         const r = insertMention.run({
           id: `gn_${hash(link)}_${label}`,
           watch_label: label,
