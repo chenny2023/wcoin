@@ -196,25 +196,47 @@ export function discoverServices(): number {
 }
 
 // ── Behavioral classification of discovered services ─────────────────────────
-// Gamblers play at several casinos, so a service whose counterparty set
-// overlaps a KNOWN casino's far above the exchange baseline (~7% vs Stake) is
-// gambling infrastructure with high confidence. We mark such services as
-// casino-pattern — category becomes 'casino', the label stays clearly
-// unattributed until a real nametag arrives (wayback/labels harvests).
-const CLASSIFY_MIN_CPS = 200 // service must have this many counterparties
-const CLASSIFY_REF_MIN_CPS = 10_000 // reference casino must be this mature
-const CLASSIFY_MIN_OVERLAP = 0.15 // ≥15% shared users ≈ 2× exchange baseline
+// A service's counterparty set reveals what it is: gamblers cluster across
+// casinos, exchange users across exchanges. We compare each unknown service's
+// user overlap against mature reference sets for BOTH categories and classify
+// it to whichever side it clearly resembles — requiring the winning category's
+// overlap to dominate the other (so a wallet that looks ~equally like both
+// stays honestly 'other'). Category becomes casino/exchange; the label stays
+// clearly unattributed ("Casino-pattern"/"Exchange-pattern") until a real
+// nametag arrives. This keeps non-iGaming infrastructure out of casino views.
+const CLASSIFY_MIN_CPS = 150 // service needs this many counterparties for a confident verdict
+const CLASSIFY_REF_MIN_CPS = 3_000 // a reference entity must be at least this mature (works on a young cloud DB)
+const CLASSIFY_MIN_OVERLAP = 0.15 // ≥15% shared users with a reference of that category
+const CLASSIFY_DOMINANCE = 1.5 // the winning category's overlap must beat the other's by this factor
 
 export function classifyServices(): number {
-  const refs = db
-    .prepare("SELECT id, label FROM watchlist WHERE active=1 AND category='casino' AND label NOT LIKE '%casino-pattern%'")
-    .all() as { id: number; label: string }[]
-  const refSets: { label: string; set: Set<string> }[] = []
-  for (const r of refs) {
-    const cps = (db.prepare('SELECT DISTINCT counterparty c FROM transfers WHERE watch_id=?').all(r.id) as any[]).map((x) => x.c)
-    if (cps.length >= CLASSIFY_REF_MIN_CPS) refSets.push({ label: r.label, set: new Set(cps) })
+  // mature reference sets for both categories, from our OWN indexed graph;
+  // exclude already-inferred "*-pattern" entities so refs are ground truth
+  const buildRefs = (category: string) => {
+    const rows = db
+      .prepare("SELECT id, label FROM watchlist WHERE active=1 AND category=? AND label NOT LIKE '%-pattern%'")
+      .all(category) as { id: number; label: string }[]
+    const sets: { label: string; set: Set<string> }[] = []
+    for (const r of rows) {
+      const cps = (db.prepare('SELECT DISTINCT counterparty c FROM transfers WHERE watch_id=?').all(r.id) as any[]).map((x) => x.c)
+      if (cps.length >= CLASSIFY_REF_MIN_CPS) sets.push({ label: r.label, set: new Set(cps) })
+    }
+    return sets
   }
-  if (refSets.length === 0) return 0
+  const casinoRefs = buildRefs('casino')
+  const exchangeRefs = buildRefs('exchange')
+  if (casinoRefs.length === 0 && exchangeRefs.length === 0) return 0
+
+  const maxOverlap = (cps: string[], refs: { label: string; set: Set<string> }[]) => {
+    let best = { label: '', ov: 0 }
+    for (const ref of refs) {
+      let shared = 0
+      for (const c of cps) if (ref.set.has(c)) shared++
+      const ov = cps.length ? shared / cps.length : 0
+      if (ov > best.ov) best = { label: ref.label, ov }
+    }
+    return best
+  }
 
   const services = db
     .prepare("SELECT id, label, chain FROM watchlist WHERE active=1 AND label LIKE 'Service %'")
@@ -223,21 +245,25 @@ export function classifyServices(): number {
   for (const s of services) {
     const cps = (db.prepare('SELECT DISTINCT counterparty c FROM transfers WHERE watch_id=?').all(s.id) as any[]).map((x) => x.c)
     if (cps.length < CLASSIFY_MIN_CPS) continue
-    for (const ref of refSets) {
-      let shared = 0
-      for (const c of cps) if (ref.set.has(c)) shared++
-      const overlap = shared / cps.length
-      if (overlap >= CLASSIFY_MIN_OVERLAP) {
-        const newLabel = s.label.replace(/^Service /, 'Casino-pattern ').slice(0, 48)
-        db.prepare('UPDATE watchlist SET label=?, category=? WHERE id=?').run(newLabel, 'casino', s.id)
-        db.prepare('UPDATE transfers SET label=?, category=? WHERE watch_id=?').run(newLabel, 'casino', s.id)
-        flagged++
-        console.log(
-          `[labels] ${s.chain} ${s.label} → casino-pattern (${(overlap * 100).toFixed(1)}% user overlap with ${ref.label}, n=${cps.length})`,
-        )
-        break
-      }
+    const cas = maxOverlap(cps, casinoRefs)
+    const exc = maxOverlap(cps, exchangeRefs)
+    let category: string | null = null
+    let kind = ''
+    let refLabel = ''
+    let winOv = 0
+    if (cas.ov >= CLASSIFY_MIN_OVERLAP && cas.ov >= exc.ov * CLASSIFY_DOMINANCE) {
+      category = 'casino'; kind = 'Casino-pattern'; refLabel = cas.label; winOv = cas.ov
+    } else if (exc.ov >= CLASSIFY_MIN_OVERLAP && exc.ov >= cas.ov * CLASSIFY_DOMINANCE) {
+      category = 'exchange'; kind = 'Exchange-pattern'; refLabel = exc.label; winOv = exc.ov
     }
+    if (!category) continue // ambiguous → stay honestly 'other'
+    const newLabel = s.label.replace(/^Service /, kind + ' ').slice(0, 48)
+    db.prepare('UPDATE watchlist SET label=?, category=? WHERE id=?').run(newLabel, category, s.id)
+    db.prepare('UPDATE transfers SET label=?, category=? WHERE watch_id=?').run(newLabel, category, s.id)
+    flagged++
+    console.log(
+      `[labels] ${s.chain} ${s.label} → ${kind} (${(winOv * 100).toFixed(1)}% user overlap with ${refLabel}, n=${cps.length})`,
+    )
   }
   return flagged
 }
@@ -292,11 +318,11 @@ export function startLabels() {
       classifyServices()
     } catch {}
   }, 24 * 3600_000)
-  // classification needs accumulated history — run once after the indexers
-  // have had a while to build the new services' profiles
+  // classification needs accumulated history — run once shortly after boot
+  // (the persisted volume already holds the services' counterparty profiles)
   setTimeout(() => {
     try {
       classifyServices()
     } catch {}
-  }, 45 * 60_000)
+  }, 5 * 60_000)
 }
