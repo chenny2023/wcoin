@@ -13,7 +13,11 @@ import { config } from './config.ts'
 export async function registerApi(app: FastifyInstance) {
   // ── health / meta ───────────────────────────────────────────────────────────
   app.get('/api/health', async () => {
-    const tx = (db.prepare('SELECT COUNT(*) n FROM transfers').get() as any).n
+    // MUST stay cheap — Railway's healthcheck hits this constantly. COUNT(*) over
+    // the (multi-million-row) transfers table is a full scan that blocks the event
+    // loop and times out the healthcheck under indexing load; MAX(id) is instant
+    // (PK btree) and gives the cumulative-indexed figure we display.
+    const tx = (db.prepare('SELECT MAX(id) n FROM transfers').get() as any).n ?? 0
     const wl = (db.prepare('SELECT COUNT(*) n FROM watchlist WHERE active=1').get() as any).n
     const oldest = (db.prepare('SELECT MIN(ts) t FROM transfers').get() as any).t ?? null
     const sv = (k: string) =>

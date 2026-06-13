@@ -60,7 +60,11 @@ async function main() {
   console.log(`\n  WCOIN.CASINO API  ➜  http://localhost:${config.port}/api/health`)
   console.log(`  Indexing chains:  ETH (${primaryRpc}) + TRON (${tronHost}, ${config.tronMode})\n`)
 
-  // Kick off the live collectors + aggregation
+  // Defer the heavy indexers ~45s after the server is listening. better-sqlite3
+  // is synchronous, so a hard backfill (10k+ inserts/tick) starves Node's single
+  // event loop — which previously timed out Railway's deploy healthcheck before
+  // it could pass. Letting /api/health go green first, then indexing, avoids that.
+  setTimeout(() => {
   startEvm() // ETH transfer indexer (public RPC)
   startBackfill() // ETH deep historical backfill (walks back N days)
   if (config.tronMode === 'jsonrpc') {
@@ -87,6 +91,7 @@ async function main() {
   startAggregation()
   startAlerts() // user-defined alert rules: whale stream + net-flow / reserve checks
   startRetention() // periodic prune of transfers past the retention window
+  }, 45_000)
 }
 
 main().catch((e) => {
