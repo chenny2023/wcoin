@@ -44,7 +44,8 @@ const EVM_LABEL_CHAINS = [
 const TRON_HOLDERS_URL =
   'https://apilist.tronscanapi.com/api/token_trc20/holders?contract_address=TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
 
-const REFRESH_DAYS = 7
+const REFRESH_DAYS = 1 // re-harvest public casino labels daily (was weekly) so
+// newly-tagged casino hot wallets are attributed within a day, not up to a week
 const TRON_PAGES = 20 // top 20 × 50 = 1000 holders scanned
 const PAGE_SIZE = 50
 
@@ -159,9 +160,9 @@ async function harvestTronTags(): Promise<number> {
 // honest "Service <addr>" label (category 'other') so the indexer builds their
 // full flow profile — operators rename them via the Watchlist when identified.
 const DISCOVER_WINDOW_DAYS = 7
-const DISCOVER_MIN_TX = 300 // observed transfers in window
-const DISCOVER_MIN_PEERS = 3 // distinct watched entities touched
-const DISCOVER_MAX_PER_CHAIN = 10
+const DISCOVER_MIN_TX = 150 // observed transfers in window (was 300 — surface smaller/newer casinos sooner)
+const DISCOVER_MIN_PEERS = 3 // distinct watched entities touched — the precision guard against random addresses
+const DISCOVER_MAX_PER_CHAIN = 12
 
 export function discoverServices(): number {
   const since = Date.now() - DISCOVER_WINDOW_DAYS * 86_400_000
