@@ -40,7 +40,10 @@ function bodies(code: string): { subject: string; html: string; text: string } {
   return { subject: `Your WCOIN.CASINO code: ${code}`, html, text }
 }
 
-// Lazily-built, reused SMTP transport.
+// Lazily-built, reused SMTP transport. Short timeouts so a blocked/unreachable
+// SMTP egress (e.g. Railway blocks outbound 25/465/587) fails in seconds and
+// can fall through to the next transport — instead of hanging the request for
+// nodemailer's 2-minute default.
 let smtpTransport: Transporter | null = null
 function getSmtpTransport(): Transporter {
   if (!smtpTransport) {
@@ -49,6 +52,9 @@ function getSmtpTransport(): Transporter {
       port: config.smtpPort,
       secure: config.smtpPort === 465, // 465 = implicit TLS; 587 = STARTTLS
       auth: { user: config.smtpUser, pass: config.smtpPass },
+      connectionTimeout: 8_000,
+      greetingTimeout: 8_000,
+      socketTimeout: 12_000,
     })
   }
   return smtpTransport
@@ -91,8 +97,9 @@ async function sendViaResend(email: string, b: ReturnType<typeof bodies>): Promi
 
 export async function sendVerificationCode(email: string, code: string): Promise<{ delivered: boolean }> {
   const b = bodies(code)
-  if (smtpEnabled()) return { delivered: await sendViaSmtp(email, b) }
-  if (resendEnabled()) return { delivered: await sendViaResend(email, b) }
-  console.log(`[email] no transport configured — verification code for ${email}: ${code}`)
+  // try transports in order; fall through if one fails (e.g. SMTP egress blocked)
+  if (smtpEnabled() && (await sendViaSmtp(email, b))) return { delivered: true }
+  if (resendEnabled() && (await sendViaResend(email, b))) return { delivered: true }
+  console.log(`[email] not delivered — verification code for ${email}: ${code}`)
   return { delivered: false }
 }
