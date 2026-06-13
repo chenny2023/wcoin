@@ -76,13 +76,16 @@ export async function runTelegramOnce() {
   const skipKey = `tg:done:${key}`
   if (Number(getState(skipKey) ?? 0) > Date.now() - SKIP_DAYS * 86_400_000) return
 
+  let transient = false // a transient fetch failure must NOT cache a 7-day "no channel" miss
   for (const slug of slugCandidates(brand)) {
     let html: string
     try {
       const res = await webFetch(`https://t.me/s/${slug}`, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15_000) })
-      if (!res.ok) continue
+      if (res.status === 429 || res.status >= 500) { transient = true; continue }
+      if (!res.ok) continue // 404/private → genuine miss, try next slug
       html = await res.text()
     } catch {
+      transient = true
       continue
     }
     const msgs = messages(html)
@@ -118,7 +121,8 @@ export async function runTelegramOnce() {
     if (added || subs) console.log(`[telegram] ${brand} (@${slug}): ${subs.toLocaleString()} subscribers, +${added} mentions`)
     return
   }
-  setState.run(skipKey, String(Date.now())) // no channel found — remember the miss
+  // only remember a genuine "no channel" miss; a transient fetch failure retries next cycle
+  if (!transient) setState.run(skipKey, String(Date.now()))
 }
 
 // brand_key → telegram subscriber count, for the Sentiment UI

@@ -1,4 +1,4 @@
-import { db } from '../db.ts'
+import { db, stateGet, stateSet } from '../db.ts'
 import { webFetch } from '../net.ts'
 import { brandKey, brandName, matchCasinoMeta } from '../casinometa.ts'
 
@@ -66,12 +66,17 @@ function slugCandidates(name: string): string[] {
 }
 
 async function fetchSafetyIndex(slug: string): Promise<{ score: number; reviewed: string } | null> {
-  try {
+  // network/timeout errors propagate so the caller can RETRY (transient), instead
+  // of being cached as a permanent "no review" — a single blip otherwise poisoned
+  // a casino's Safety Index for days. Only a loaded 200 page with no rating, or a
+  // 404, is a genuine miss worth caching (return null).
+  {
     const res = await webFetch(`https://casino.guru/${slug}-casino-review`, {
       headers: { 'User-Agent': UA },
       signal: AbortSignal.timeout(18_000),
     })
-    if (res.status !== 200) return null
+    if (res.status === 404) return null
+    if (res.status !== 200) throw new Error(`casino.guru HTTP ${res.status}`)
     const t = await res.text()
     for (const m of t.matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/g)) {
       try {
@@ -91,8 +96,6 @@ async function fetchSafetyIndex(slug: string): Promise<{ score: number; reviewed
       const reviewed = t.match(/<title>([^<]*)<\/title>/i)?.[1] ?? ''
       return { score: Number(fb[1]), reviewed }
     }
-    return null
-  } catch {
     return null
   }
 }
@@ -133,7 +136,9 @@ export async function runReviewsOnce() {
   // 1) casino.guru Safety Index (skip if recently fetched)
   if (!fresh('casino.guru')) {
     let guru = 0
+    let fetchOk = true // false on a transient fetch error → don't cache a miss, retry next cycle
     const bk = brandKey(name)
+    try {
     for (const slug of slugCandidates(name)) {
       const r = await fetchSafetyIndex(slug)
       if (r != null && r.score > 0) {
@@ -153,7 +158,12 @@ export async function runReviewsOnce() {
       }
       await new Promise((r) => setTimeout(r, 600))
     }
-    if (!guru) upsert.run({ brand_key: key, source: 'casino.guru', score: 0, score_max: 10, url: null, updated_at: Date.now() })
+    } catch (e) {
+      fetchOk = false // transient network/HTTP error — leave it unmarked so it retries
+      console.warn(`[reviews] ${name}: casino.guru fetch error (${(e as Error).message}), will retry`)
+    }
+    // only cache a genuine "no rating found" miss; a transient error retries next cycle
+    if (fetchOk && !guru) upsert.run({ brand_key: key, source: 'casino.guru', score: 0, score_max: 10, url: null, updated_at: Date.now() })
   }
 
   // 2) Trustpilot rating via Wayback (independent freshness — needs the domain)
@@ -191,6 +201,18 @@ export function reviewScores(): Map<string, ReviewScore> {
 
 export function startReviews() {
   console.log('[reviews] casino.guru Safety Index collector active')
+  // one-time: drop previously-cached "no review" misses — many were transient
+  // fetch failures wrongly cached as 0 (and then skipped for days). Clearing them
+  // lets the now retry-safe fetcher re-populate real Safety Indexes.
+  try {
+    if (!stateGet('reviews:clearmisses:v1')) {
+      const n = db.prepare('DELETE FROM reviews WHERE score = 0').run().changes
+      stateSet('reviews:clearmisses:v1', 1)
+      if (n) console.log(`[reviews] cleared ${n} stale 0-score entries to re-fetch`)
+    }
+  } catch {
+    /* non-fatal */
+  }
   const loop = async () => {
     await runReviewsOnce().catch((e) => console.warn('[reviews]', (e as Error).message))
     setTimeout(loop, 12_000) // one casino per 12s — gentle
