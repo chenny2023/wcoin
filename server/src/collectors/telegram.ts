@@ -24,11 +24,12 @@ const setState = db.prepare("INSERT INTO sync_state(key,value) VALUES(?,?) ON CO
 const getState = (k: string) => (db.prepare('SELECT value FROM sync_state WHERE key=?').get(k) as any)?.value
 
 function parseSubs(html: string): number {
-  const m = html.match(/([\d,.]+)([KM]?)\s*(?:subscribers|members)/i)
+  // structure: <span class="counter_value">381K</span> <span class="counter_type">subscribers</span>
+  const m = html.match(/counter_value"[^>]*>\s*([\d.,]+)\s*([KM]?)\s*<\/span>\s*<span[^>]*counter_type"[^>]*>\s*subscribers/i)
   if (!m) return 0
   let n = parseFloat(m[1].replace(/,/g, ''))
-  if (m[2] === 'K') n *= 1e3
-  else if (m[2] === 'M') n *= 1e6
+  if (/k/i.test(m[2])) n *= 1e3
+  else if (/m/i.test(m[2])) n *= 1e6
   return Math.round(n)
 }
 function messages(html: string): string[] {
