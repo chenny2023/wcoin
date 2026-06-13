@@ -1,0 +1,11 @@
+# keep the build context tiny and never bake secrets / the 5.4GB DB into the image
+node_modules
+dist
+.git
+.env
+.env.*
+server/data
+*.log
+.vite
+*.local
+.claude
