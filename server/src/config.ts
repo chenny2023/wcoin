@@ -79,6 +79,12 @@ export const config = {
   // ranges until this many days of history are indexed. Runs in background,
   // progress persists across restarts.
   deepBackfillDays: Number(env.DEEP_BACKFILL_DAYS ?? 14),
+  // Transfer retention (0 = keep everything). When > 0, transfers older than
+  // this many days are pruned in batches so the SQLite file stops growing —
+  // essential on a size-capped volume. Must be ≥ deepBackfillDays or the prune
+  // will fight the backfill. Reusing freed pages caps the file in place (no
+  // VACUUM needed). Tunable live via the RETAIN_DAYS env var.
+  retainDays: Number(env.RETAIN_DAYS ?? 0),
   deepBackfillStartRange: Number(env.DEEP_BACKFILL_RANGE ?? 1500), // blocks per getLogs attempt
   tronBackfillHours: Number(env.TRON_BACKFILL_HOURS ?? 72),
   tronPollMs: Number(env.TRON_POLL_MS ?? 6_000), // one address per tick (round-robin)

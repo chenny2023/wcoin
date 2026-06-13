@@ -30,6 +30,7 @@ import { startUtxo } from './collectors/utxo.ts'
 import { startXrp } from './collectors/xrp.ts'
 import { startAggregation } from './aggregate.ts'
 import { startAlerts } from './alerts.ts'
+import { pruneOldTransfers, startRetention } from './retention.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const distDir = join(__dirname, '../../dist')
@@ -59,6 +60,12 @@ async function main() {
   console.log(`\n  WCOIN.CASINO API  ➜  http://localhost:${config.port}/api/health`)
   console.log(`  Indexing chains:  ETH (${primaryRpc}) + TRON (${tronHost}, ${config.tronMode})\n`)
 
+  // Reclaim disk BEFORE the collectors start writing: on a size-capped volume a
+  // full disk throws SQLite I/O errors, so prune past the retention window first
+  // (no-op when RETAIN_DAYS is unset). Awaited so freed pages exist up front;
+  // it yields internally, so /api/health stays responsive during the sweep.
+  await pruneOldTransfers().catch((e) => console.warn('[retention] initial prune failed:', (e as Error).message))
+
   // Kick off the live collectors + aggregation
   startEvm() // ETH transfer indexer (public RPC)
   startBackfill() // ETH deep historical backfill (walks back N days)
@@ -85,6 +92,7 @@ async function main() {
   startRisk() // compliance: OFAC-sanctioned counterparty exposure flags
   startAggregation()
   startAlerts() // user-defined alert rules: whale stream + net-flow / reserve checks
+  startRetention() // periodic prune of transfers past the retention window
 }
 
 main().catch((e) => {

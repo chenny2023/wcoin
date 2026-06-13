@@ -8,6 +8,11 @@ mkdirSync(dirname(config.dbPath), { recursive: true })
 export const db = new Database(config.dbPath)
 db.pragma('journal_mode = WAL')
 db.pragma('synchronous = NORMAL')
+// Cap the WAL so checkpoints truncate it back to ≤64MB instead of letting it
+// balloon and devour free disk (a bloated WAL was compounding disk-I/O errors
+// on the size-limited volume). Checkpoint aggressively too.
+db.pragma('journal_size_limit = 67108864')
+db.pragma('wal_autocheckpoint = 1000')
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS watchlist (
