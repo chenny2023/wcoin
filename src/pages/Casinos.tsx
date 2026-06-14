@@ -265,6 +265,7 @@ interface Row {
   trust: number
   reserves: number
   reserveCoverage: number | null
+  coverageChange: number | null
   players: number
   byChain: { chain: string; value: number }[]
   histId: number
@@ -308,6 +309,7 @@ export default function Casinos() {
             trust: b.trust,
             reserves: b.reserves,
             reserveCoverage: b.reserveCoverage,
+            coverageChange: b.coverageChange,
             players: b.players,
             byChain: b.byChain,
             histId: b.members[0]?.id ?? 0,
@@ -333,6 +335,7 @@ export default function Casinos() {
             trust: e.trust,
             reserves: e.reserves,
             reserveCoverage: e.reserveCoverage,
+            coverageChange: null,
             players: e.players,
             byChain: e.byChain,
             histId: e.id,
@@ -475,11 +478,15 @@ export default function Casinos() {
                             </span>
                             {c.reserveCoverage != null && (
                               <span
-                                className="mt-0.5 text-[10px] tabular-nums"
-                                title="Reserve coverage — reserves ÷ weekly withdrawals (weeks of withdrawals the reserves cover at the current outflow rate)"
-                                style={{ color: c.reserveCoverage >= 1 ? '#2ee6a6' : c.reserveCoverage >= 0.4 ? '#f5b100' : '#ff5c7a' }}
+                                className="mt-0.5 inline-flex items-center gap-1 text-[10px] tabular-nums text-white/40"
+                                title="Hot-wallet reserve coverage — tracked reserves ÷ weekly withdrawals. Casinos sweep to cold storage, so the absolute level is low for all; the trend (vs ~7d ago) is the real signal."
                               >
-                                {c.reserveCoverage >= 52 ? '52w+ cover' : `${c.reserveCoverage.toFixed(c.reserveCoverage < 10 ? 1 : 0)}w cover`}
+                                {c.reserveCoverage >= 52 ? '52w+' : `${c.reserveCoverage.toFixed(c.reserveCoverage < 10 ? 1 : 0)}w`} hot-cover
+                                {c.coverageChange != null && Math.abs(c.coverageChange) >= 0.05 && (
+                                  <span style={{ color: c.coverageChange >= 0 ? '#2ee6a6' : '#ff5c7a' }}>
+                                    {c.coverageChange >= 0 ? '▲' : '▼'}{Math.abs(c.coverageChange * 100).toFixed(0)}%
+                                  </span>
+                                )}
                               </span>
                             )}
                           </div>

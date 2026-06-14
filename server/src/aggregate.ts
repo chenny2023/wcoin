@@ -7,6 +7,7 @@ import { evmChainsBalanceUsd } from './collectors/evmchains.ts'
 import { matchCasinoMeta, brandKey, brandName, CasinoMeta } from './casinometa.ts'
 import { reviewScores } from './collectors/reviews.ts'
 import { tokenData, TokenInfo } from './collectors/casinotokens.ts'
+import { priorCoverage } from './reservehistory.ts'
 import { riskFlags } from './collectors/risk.ts'
 
 const DAY = 86_400_000
@@ -184,6 +185,7 @@ export interface BrandAgg {
   players: number
   reserves: number
   reserveCoverage: number | null
+  coverageChange: number | null // coverage vs ~7d ago (relative) — colours the trend
   trust: number
   byChain: { chain: string; value: number }[]
   meta: CasinoMeta | null
@@ -224,8 +226,15 @@ function computeBrands(): BrandAgg[] {
     const vol7 = sum((e) => e.volume7d)
     const vol24 = sum((e) => e.volume24h)
     const volPrev = sum((e) => (e.change24h !== 0 ? e.volume24h / (1 + e.change24h / 100) : e.volume24h))
+    const bName = brandName(head.label)
+    const brReserves = sum((e) => e.reserves)
+    const brOutflow = sum((e) => e.outflow7d)
+    const brCoverage = brOutflow > 0 ? brReserves / brOutflow : null
+    // period-over-period coverage change (vs ~7d ago) — null until history exists
+    const prior = head.category === 'casino' ? priorCoverage(bName) : null
+    const coverageChange = prior != null && prior > 0 && brCoverage != null ? (brCoverage - prior) / prior : null
     out.push({
-      brand: brandName(head.label),
+      brand: bName,
       category: head.category,
       wallets: members.length,
       chains: [...new Set(members.flatMap((e) => e.byChain.map((c) => c.chain)))].sort(),
@@ -237,8 +246,9 @@ function computeBrands(): BrandAgg[] {
       change24h: volPrev > 0 ? ((vol24 - volPrev) / volPrev) * 100 : vol24 > 0 ? 100 : 0,
       txCount7d: sum((e) => e.txCount7d),
       players: sum((e) => e.players), // upper bound (cross-wallet overlap not deduped)
-      reserves: sum((e) => e.reserves),
-      reserveCoverage: sum((e) => e.outflow7d) > 0 ? sum((e) => e.reserves) / sum((e) => e.outflow7d) : null,
+      reserves: brReserves,
+      reserveCoverage: brCoverage,
+      coverageChange,
       trust: vol7 > 0 ? Math.round(sum((e) => e.trust * e.volume7d) / vol7) : head.trust, // volume-weighted
       byChain: [...chainVol.entries()].map(([chain, value]) => ({ chain, value })).sort((a, b) => b.value - a.value),
       meta: members.map((e) => e.meta).find(Boolean) ?? null,

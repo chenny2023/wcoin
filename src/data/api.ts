@@ -90,6 +90,7 @@ export interface Brand {
   players: number
   reserves: number
   reserveCoverage: number | null
+  coverageChange: number | null
   trust: number
   byChain: { chain: string; value: number }[]
   meta: CasinoMeta | null
