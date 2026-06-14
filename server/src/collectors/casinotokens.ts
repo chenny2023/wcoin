@@ -68,6 +68,11 @@ async function refresh() {
 
 export function startCasinoTokens() {
   console.log('[tokens] casino-token market-data feed active (CoinGecko, keyless)')
-  refresh()
-  setInterval(refresh, 10 * 60_000) // refresh every 10 min — gentle on the free API
+  // self-healing cadence: the first fetch can time out under the boot-time backfill
+  // load, so retry soon until we have data, then settle to a gentle 10-min refresh.
+  const tick = async () => {
+    await refresh()
+    setTimeout(tick, tokens.size > 0 ? 10 * 60_000 : 90_000)
+  }
+  tick()
 }
