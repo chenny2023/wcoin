@@ -2,15 +2,34 @@ import { fetch as undiciFetch, ProxyAgent } from 'undici'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Proxy-aware fetch for collectors that talk to the open web (review sites,
-// social, label dumps). Node's global fetch ignores proxy env vars, and many of
-// these sources (casino.guru/Cloudflare, archive.org) block datacenter IPs like
-// Railway's. Set PROXY_POOL to a comma-separated list of proxy URLs
-// (http://user:pass@host:port) and each request is sent through a RANDOM one —
-// rotation spreads load so no single IP gets rate-limited/blocked. Falls back to
-// a single HTTP(S)_PROXY, or direct. Chain RPCs keep using the global fetch
-// (latency-sensitive, reachable directly).
+// social, label dumps). Many of these (casino.guru/Cloudflare, archive.org)
+// block datacenter IPs like Railway's, so we route each request through a RANDOM
+// upstream proxy (rotation spreads load so no single IP gets rate-limited).
+//
+// Proxy sources, in order:
+//   1. WEBSHARE_API_KEY  — pull the live list from the Webshare API (auto-updates,
+//      handles rotation; only a short key to configure — no giant list to paste)
+//   2. PROXY_POOL        — comma-separated proxy URLs (http://user:pass@host:port)
+//   3. HTTP(S)_PROXY     — a single proxy
+//   4. direct
+// Chain RPCs keep using the global fetch (latency-sensitive, reachable directly).
 // ─────────────────────────────────────────────────────────────────────────────
 
+let agents: ProxyAgent[] = []
+
+function buildAgents(urls: string[]): ProxyAgent[] {
+  const out: ProxyAgent[] = []
+  for (const u of urls) {
+    try {
+      out.push(new ProxyAgent(u))
+    } catch (e) {
+      console.warn(`[net] skipping invalid proxy url: ${(e as Error).message}`)
+    }
+  }
+  return out
+}
+
+// ── 2-3: static pool from env (synchronous, available immediately) ────────────
 const poolRaw =
   process.env.PROXY_POOL ||
   process.env.HTTPS_PROXY ||
@@ -18,28 +37,50 @@ const poolRaw =
   process.env.HTTP_PROXY ||
   process.env.http_proxy ||
   ''
-const proxyUrls = poolRaw
+const staticUrls = poolRaw
   .split(',')
   .map((s) => s.trim())
   .filter((s) => /^https?:\/\/.+/.test(s)) // ignore junk; a malformed value must NOT crash boot
-const agents: ProxyAgent[] = []
-for (const u of proxyUrls) {
+agents = buildAgents(staticUrls)
+if (agents.length) console.log(`[net] ${agents.length} static prox${agents.length > 1 ? 'ies' : 'y'} configured`)
+
+// ── 1: Webshare API (async, refreshed; overrides the static pool when present) ─
+async function loadWebshare(): Promise<void> {
+  const key = process.env.WEBSHARE_API_KEY
+  if (!key) return
   try {
-    agents.push(new ProxyAgent(u))
+    const res = await undiciFetch(
+      'https://proxy.webshare.io/api/v2/proxy/list/?mode=direct&page=1&page_size=100',
+      { headers: { Authorization: `Token ${key}` }, signal: AbortSignal.timeout(20_000) },
+    )
+    if (!res.ok) {
+      console.warn(`[net] Webshare API HTTP ${res.status} — keeping current proxies`)
+      return
+    }
+    const j = (await res.json()) as {
+      results?: { username: string; password: string; proxy_address: string; port: number; valid?: boolean }[]
+    }
+    const urls = (j.results ?? [])
+      .filter((p) => p.valid !== false && p.proxy_address && p.port)
+      .map((p) => `http://${p.username}:${p.password}@${p.proxy_address}:${p.port}`)
+    const built = buildAgents(urls)
+    if (built.length) {
+      agents = built // live list wins
+      console.log(`[net] web collectors routing via ${built.length} Webshare proxies`)
+    } else {
+      console.warn('[net] Webshare returned no usable proxies')
+    }
   } catch (e) {
-    console.warn(`[net] skipping invalid proxy url: ${(e as Error).message}`)
+    console.warn('[net] Webshare load failed:', (e as Error).message)
   }
 }
-if (agents.length) {
-  // never log the URLs — they carry credentials
-  console.log(`[net] web collectors routing via ${agents.length} rotating prox${agents.length > 1 ? 'ies' : 'y'}`)
-} else if (poolRaw.trim()) {
-  console.warn('[net] PROXY_POOL set but no valid proxy URLs parsed — using direct fetch')
+if (process.env.WEBSHARE_API_KEY) {
+  loadWebshare()
+  setInterval(() => void loadWebshare(), 6 * 3600_000) // refresh 4×/day
 }
 
 function pickAgent(): ProxyAgent | undefined {
-  if (agents.length === 0) return undefined
-  return agents[Math.floor(Math.random() * agents.length)]
+  return agents.length ? agents[Math.floor(Math.random() * agents.length)] : undefined
 }
 
 type FetchInit = NonNullable<Parameters<typeof undiciFetch>[1]>
