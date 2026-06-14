@@ -74,7 +74,7 @@ async function fetchSafetyIndex(slug: string): Promise<{ score: number; reviewed
   {
     const res = await webFetch(`https://casino.guru/${slug}-casino-review`, {
       headers: { 'User-Agent': UA },
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(40_000), // proxy hop + ~600KB page — be patient
     })
     if (res.status === 404) return null
     if (res.status !== 200) throw new Error(`casino.guru HTTP ${res.status}`)

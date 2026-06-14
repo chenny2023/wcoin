@@ -83,8 +83,22 @@ function pickAgent(): ProxyAgent | undefined {
   return agents.length ? agents[Math.floor(Math.random() * agents.length)] : undefined
 }
 
+// Only route the sites that actually IP-block datacenter ranges through the
+// proxy pool — proxying every open-web call (Kick, Google News, label dumps…)
+// just saturates the proxies and times out the calls that truly need them.
+// Override the list with PROXY_HOSTS (comma-separated host substrings).
+const proxyHosts = (process.env.PROXY_HOSTS || 'casino.guru,archive.org,trustpilot.com')
+  .split(',')
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean)
+function needsProxy(url: string): boolean {
+  if (agents.length === 0) return false
+  const u = url.toLowerCase()
+  return proxyHosts.some((h) => u.includes(h))
+}
+
 type FetchInit = NonNullable<Parameters<typeof undiciFetch>[1]>
 
 export function webFetch(url: string, init: FetchInit = {}) {
-  return undiciFetch(url, { ...init, dispatcher: pickAgent() })
+  return undiciFetch(url, { ...init, dispatcher: needsProxy(url) ? pickAgent() : undefined })
 }
