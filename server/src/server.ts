@@ -30,6 +30,8 @@ import { startBluesky } from './collectors/bluesky.ts'
 import { startGdelt } from './collectors/gdelt.ts'
 import { startBitcointalk } from './collectors/bitcointalk.ts'
 import { startCasinoTokens } from './collectors/casinotokens.ts'
+import { startAppStore } from './collectors/appstore.ts'
+import { startLemmy } from './collectors/lemmy.ts'
 import { startSolana } from './collectors/solana.ts'
 import { startUtxo } from './collectors/utxo.ts'
 import { startXrp } from './collectors/xrp.ts'
@@ -95,6 +97,8 @@ async function main() {
   startBluesky() // social mentions (Bluesky public post search, keyless)
   startGdelt() // brand mentions (GDELT global news index, keyless)
   startBitcointalk() // social mentions (Bitcointalk gambling forum, keyless)
+  startAppStore() // user reviews (Apple App Store, keyless — apps that exist)
+  startLemmy() // user social (Lemmy federated, keyless — unblocked Reddit alt)
   startTelegram() // brand community signal (public Telegram channels, keyless)
   startReviews() // third-party trust: casino.guru Safety Index per casino
   startCasinoTokens() // casino-token market data (CoinGecko, keyless)
