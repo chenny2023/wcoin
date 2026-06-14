@@ -27,6 +27,7 @@ export interface EntityAgg {
   txCount7d: number
   players: number // distinct counterparties (7d)
   reserves: number // real on-chain stablecoin balance
+  reserveCoverage: number | null // reserves / weekly outflow ≈ weeks of withdrawal coverage (solvency)
   trust: number // blended: on-chain heuristic + community votes (when present)
   onchainTrust: number
   votesUp: number
@@ -129,6 +130,7 @@ function computeEntities(): EntityAgg[] {
       txCount7d: a.tx7 ?? 0,
       players: a.players7 ?? 0,
       reserves: bal,
+      reserveCoverage: (a.out7 ?? 0) > 0 ? bal / (a.out7 as number) : null, // weeks of withdrawal coverage
       ...blendTrust(
         trustScore({
           reserves: bal,
@@ -181,6 +183,7 @@ export interface BrandAgg {
   txCount7d: number
   players: number
   reserves: number
+  reserveCoverage: number | null
   trust: number
   byChain: { chain: string; value: number }[]
   meta: CasinoMeta | null
@@ -235,6 +238,7 @@ function computeBrands(): BrandAgg[] {
       txCount7d: sum((e) => e.txCount7d),
       players: sum((e) => e.players), // upper bound (cross-wallet overlap not deduped)
       reserves: sum((e) => e.reserves),
+      reserveCoverage: sum((e) => e.outflow7d) > 0 ? sum((e) => e.reserves) / sum((e) => e.outflow7d) : null,
       trust: vol7 > 0 ? Math.round(sum((e) => e.trust * e.volume7d) / vol7) : head.trust, // volume-weighted
       byChain: [...chainVol.entries()].map(([chain, value]) => ({ chain, value })).sort((a, b) => b.value - a.value),
       meta: members.map((e) => e.meta).find(Boolean) ?? null,

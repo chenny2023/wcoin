@@ -36,6 +36,7 @@ import { startXrp } from './collectors/xrp.ts'
 import { startAggregation } from './aggregate.ts'
 import { startAlerts } from './alerts.ts'
 import { startRetention } from './retention.ts'
+import { startReserveHistory } from './reservehistory.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const distDir = join(__dirname, '../../dist')
@@ -101,6 +102,7 @@ async function main() {
   startAggregation()
   startAlerts() // user-defined alert rules: whale stream + net-flow / reserve checks
   startRetention() // periodic prune of transfers past the retention window
+  startReserveHistory() // daily solvency snapshots → reserve-adequacy trend
   }, 45_000)
 }
 

@@ -264,6 +264,7 @@ interface Row {
   net7d: number
   trust: number
   reserves: number
+  reserveCoverage: number | null
   players: number
   byChain: { chain: string; value: number }[]
   histId: number
@@ -306,6 +307,7 @@ export default function Casinos() {
             net7d: b.net7d,
             trust: b.trust,
             reserves: b.reserves,
+            reserveCoverage: b.reserveCoverage,
             players: b.players,
             byChain: b.byChain,
             histId: b.members[0]?.id ?? 0,
@@ -330,6 +332,7 @@ export default function Casinos() {
             net7d: e.net7d,
             trust: e.trust,
             reserves: e.reserves,
+            reserveCoverage: e.reserveCoverage,
             players: e.players,
             byChain: e.byChain,
             histId: e.id,
@@ -466,9 +469,20 @@ export default function Casinos() {
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <span className="inline-flex items-center gap-1.5 tabular-nums text-white/80">
-                            <Wallet size={13} className="text-gold-400" />{fmtUsd(c.reserves)}
-                          </span>
+                          <div className="flex flex-col">
+                            <span className="inline-flex items-center gap-1.5 tabular-nums text-white/80">
+                              <Wallet size={13} className="text-gold-400" />{fmtUsd(c.reserves)}
+                            </span>
+                            {c.reserveCoverage != null && (
+                              <span
+                                className="mt-0.5 text-[10px] tabular-nums"
+                                title="Reserve coverage — reserves ÷ weekly withdrawals (weeks of withdrawals the reserves cover at the current outflow rate)"
+                                style={{ color: c.reserveCoverage >= 1 ? '#2ee6a6' : c.reserveCoverage >= 0.4 ? '#f5b100' : '#ff5c7a' }}
+                              >
+                                {c.reserveCoverage >= 52 ? '52w+ cover' : `${c.reserveCoverage.toFixed(c.reserveCoverage < 10 ? 1 : 0)}w cover`}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-3 tabular-nums text-white/70">{fmtNum(c.players)}</td>
                         <td className="px-4 py-3">

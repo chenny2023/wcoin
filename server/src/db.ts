@@ -150,6 +150,18 @@ CREATE TABLE IF NOT EXISTS reviews (
   PRIMARY KEY(brand_key, source)
 );
 
+-- daily solvency snapshots per casino brand, for the reserve-adequacy trend.
+-- coverage = reserves / weekly-outflow (≈ weeks of withdrawals the reserves cover)
+CREATE TABLE IF NOT EXISTS reserve_history (
+  brand_key  TEXT NOT NULL,
+  day        INTEGER NOT NULL,            -- floor(ts/86400000)
+  reserves   REAL NOT NULL,
+  outflow7d  REAL NOT NULL,
+  coverage   REAL NOT NULL,               -- reserves / outflow7d (weeks)
+  ts         INTEGER NOT NULL,
+  PRIMARY KEY(brand_key, day)
+);
+
 CREATE TABLE IF NOT EXISTS alert_rules (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id     INTEGER NOT NULL,

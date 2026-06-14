@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { db, stmt } from './db.ts'
 import { bus, TransferEvent } from './bus.ts'
 import { aggregateEntities, aggregateBrands } from './aggregate.ts'
+import { reserveSeries } from './reservehistory.ts'
 import { twitchEnabled } from './collectors/twitch.ts'
 import { redditEnabled } from './collectors/reddit.ts'
 import { newsEnabled } from './collectors/news.ts'
@@ -124,6 +125,13 @@ export async function registerApi(app: FastifyInstance) {
   app.get('/api/brands', async (req) => {
     const { category } = req.query as { category?: string }
     return aggregateBrands(category ?? 'casino')
+  })
+
+  // reserve-adequacy (solvency) trend for one casino brand — daily snapshots
+  app.get('/api/reserves', async (req) => {
+    const { brand, days } = req.query as { brand?: string; days?: string }
+    if (!brand) return { series: [] }
+    return { series: reserveSeries(brand, Math.min(180, Math.max(7, Number(days ?? 60)))) }
   })
 
   // ── transfer feed (REAL) with filters ────────────────────────────────────────

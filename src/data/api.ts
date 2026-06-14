@@ -38,6 +38,7 @@ export interface Entity {
   txCount7d: number
   players: number
   reserves: number
+  reserveCoverage: number | null
   trust: number
   onchainTrust: number
   votesUp: number
@@ -88,6 +89,7 @@ export interface Brand {
   txCount7d: number
   players: number
   reserves: number
+  reserveCoverage: number | null
   trust: number
   byChain: { chain: string; value: number }[]
   meta: CasinoMeta | null
