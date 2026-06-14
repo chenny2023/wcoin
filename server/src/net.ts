@@ -18,11 +18,23 @@ const poolRaw =
   process.env.HTTP_PROXY ||
   process.env.http_proxy ||
   ''
-const proxyUrls = poolRaw.split(',').map((s) => s.trim()).filter(Boolean)
-const agents: ProxyAgent[] = proxyUrls.map((u) => new ProxyAgent(u))
+const proxyUrls = poolRaw
+  .split(',')
+  .map((s) => s.trim())
+  .filter((s) => /^https?:\/\/.+/.test(s)) // ignore junk; a malformed value must NOT crash boot
+const agents: ProxyAgent[] = []
+for (const u of proxyUrls) {
+  try {
+    agents.push(new ProxyAgent(u))
+  } catch (e) {
+    console.warn(`[net] skipping invalid proxy url: ${(e as Error).message}`)
+  }
+}
 if (agents.length) {
   // never log the URLs — they carry credentials
   console.log(`[net] web collectors routing via ${agents.length} rotating prox${agents.length > 1 ? 'ies' : 'y'}`)
+} else if (poolRaw.trim()) {
+  console.warn('[net] PROXY_POOL set but no valid proxy URLs parsed — using direct fetch')
 }
 
 function pickAgent(): ProxyAgent | undefined {
