@@ -42,6 +42,7 @@ export interface EntityAgg {
   complaints: number | null // casino.guru current complaint count
   unresolved: number | null // casino.guru unresolved complaints (red flag)
   userReviews: number | null // casino.guru community-review count
+  reputation: number | null // composite 0–100 of all external review signals
   token: TokenInfo | null // the casino's own token market data (CoinGecko), if any
   risk: { hits: number; usd: number; addresses: string[] } | null // OFAC-sanctioned exposure
 }
@@ -155,6 +156,16 @@ function computeEntities(): EntityAgg[] {
       complaints: w.category === 'casino' ? reviews.get(brandKey(w.label))?.complaints ?? null : null,
       unresolved: w.category === 'casino' ? reviews.get(brandKey(w.label))?.unresolved ?? null : null,
       userReviews: w.category === 'casino' ? reviews.get(brandKey(w.label))?.userReviews ?? null : null,
+      reputation:
+        w.category === 'casino'
+          ? reputationScore({
+              safetyIndex: reviews.get(brandKey(w.label))?.safety ?? null,
+              trustpilot: reviews.get(brandKey(w.label))?.trustpilot ?? null,
+              editorial: reviews.get(brandKey(w.label))?.editorial ?? null,
+              complaints: reviews.get(brandKey(w.label))?.complaints ?? null,
+              unresolved: reviews.get(brandKey(w.label))?.unresolved ?? null,
+            })
+          : null,
       token: w.category === 'casino' ? tokens.get(brandKey(w.label)) ?? null : null,
       risk: risks.get(w.id) ?? null,
     })
@@ -195,6 +206,7 @@ export interface BrandAgg {
   complaints: number | null
   unresolved: number | null
   userReviews: number | null
+  reputation: number | null
   token: TokenInfo | null
   risk: { hits: number; usd: number } | null
   members: { id: number; label: string; chain: string; address: string; volume7d: number }[]
@@ -267,6 +279,7 @@ function computeBrands(): BrandAgg[] {
       complaints: members.map((e) => e.complaints).find((s) => s != null) ?? null,
       unresolved: members.map((e) => e.unresolved).find((s) => s != null) ?? null,
       userReviews: members.map((e) => e.userReviews).find((s) => s != null) ?? null,
+      reputation: members.map((e) => e.reputation).find((s) => s != null) ?? null,
       token: members.map((e) => e.token).find((t) => t != null) ?? null,
       risk: members.some((e) => e.risk)
         ? { hits: sum((e) => e.risk?.hits ?? 0), usd: sum((e) => e.risk?.usd ?? 0) }
@@ -284,6 +297,31 @@ function computeBrands(): BrandAgg[] {
 // Blend the on-chain heuristic with real community votes (circus-style
 // "audits + user votes"). Votes contribute up to 30%, weighted by sample size
 // so a single vote can't swing an entity's score.
+// Composite REPUTATION score (0–100) synthesising the external trust signals we
+// collect into one headline number — distinct from the on-chain `trust` (which
+// stays a pure on-chain/solvency signal). Weighted blend of the independent
+// ratings, with a complaint penalty (unresolved disputes weigh most). Returns
+// null when we have no reputation signal at all for the casino.
+export interface RepInputs {
+  safetyIndex: number | null // 0–10
+  trustpilot: number | null // /5
+  editorial: number | null // /5
+  complaints: number | null
+  unresolved: number | null
+}
+function reputationScore(r: RepInputs): number | null {
+  const sigs: { v: number; w: number }[] = []
+  if (r.safetyIndex != null) sigs.push({ v: r.safetyIndex * 10, w: 1.2 }) // expert review, weighted highest
+  if (r.trustpilot != null) sigs.push({ v: r.trustpilot * 20, w: 1.0 }) // consumer reviews
+  if (r.editorial != null) sigs.push({ v: r.editorial * 20, w: 0.7 }) // editorial review
+  if (sigs.length === 0) return null
+  let s = sigs.reduce((a, x) => a + x.v * x.w, 0) / sigs.reduce((a, x) => a + x.w, 0)
+  // complaint penalty: unresolved disputes are the sharpest red flag
+  if (r.unresolved && r.unresolved > 0) s -= Math.min(25, r.unresolved * 4)
+  else if (r.complaints && r.complaints > 5) s -= Math.min(8, r.complaints - 5)
+  return Math.round(Math.max(0, Math.min(100, s)))
+}
+
 function blendTrust(onchain: number, up: number, down: number): { trust: number; onchainTrust: number } {
   const total = up + down
   if (total === 0) return { trust: onchain, onchainTrust: onchain }

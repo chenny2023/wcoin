@@ -52,6 +52,7 @@ export interface Entity {
   complaints: number | null
   unresolved: number | null
   userReviews: number | null
+  reputation: number | null
   token: TokenInfo | null
   risk: { hits: number; usd: number; addresses: string[] } | null
 }
@@ -100,6 +101,7 @@ export interface Brand {
   complaints: number | null
   unresolved: number | null
   userReviews: number | null
+  reputation: number | null
   token: TokenInfo | null
   risk: { hits: number; usd: number } | null
   members: { id: number; label: string; chain: string; address: string; volume7d: number }[]

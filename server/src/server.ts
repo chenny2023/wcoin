@@ -74,13 +74,6 @@ async function main() {
   // it could pass. Letting /api/health go green first, then indexing, avoids that.
   setTimeout(() => {
   startEvm() // ETH transfer indexer (public RPC)
-  startBackfill() // ETH deep historical backfill (walks back N days)
-  if (config.tronMode === 'jsonrpc') {
-    startTronRpc() // TRON via EVM-compat eth_getLogs (wide-scan + backfill)
-  } else {
-    startTron() // TRON via TronGrid REST polling (fallback, TRON_MODE=v1)
-  }
-  startEvmChains() // extra EVM chains (BSC, Base, Arbitrum, Optimism) — one indexer each
   startPrices() // daily historical price series (SOL) for non-1:1 valuation
   startNative() // native-coin (ETH) deposits — full-block scan, block-time priced
   startSolana() // Solana indexer (SPL USDC/USDT + native SOL, historically priced)
@@ -107,6 +100,20 @@ async function main() {
   startAlerts() // user-defined alert rules: whale stream + net-flow / reserve checks
   startRetention() // periodic prune of transfers past the retention window
   startReserveHistory() // daily solvency snapshots → reserve-adequacy trend
+
+  // Second wave (+90s): the HEAVY deep-backfill indexers. Their synchronous bulk
+  // inserts are what saturate the single Node loop on boot and make the API
+  // unresponsive — so we let the forward indexers + API warm up first, then start
+  // the catch-up. They also self-throttle once caught up.
+  setTimeout(() => {
+    startBackfill() // ETH deep historical backfill (walks back N days)
+    if (config.tronMode === 'jsonrpc') {
+      startTronRpc() // TRON via EVM-compat eth_getLogs (wide-scan + backfill) — heaviest
+    } else {
+      startTron() // TRON via TronGrid REST polling (fallback, TRON_MODE=v1)
+    }
+    startEvmChains() // extra EVM chains (BSC, Base, Arbitrum, Optimism) — backfill each
+  }, 90_000)
   }, 45_000)
 }
 

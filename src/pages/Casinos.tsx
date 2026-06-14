@@ -275,6 +275,7 @@ interface Row {
   complaints: number | null
   unresolved: number | null
   userReviews: number | null
+  reputation: number | null
   token: Entity['token']
   risk: { hits: number; usd: number } | null
   address?: string
@@ -319,6 +320,7 @@ export default function Casinos() {
             complaints: b.complaints,
             unresolved: b.unresolved,
             userReviews: b.userReviews,
+            reputation: b.reputation,
             token: b.token,
             risk: b.risk,
             wallets: b.wallets,
@@ -345,6 +347,7 @@ export default function Casinos() {
             complaints: e.complaints,
             unresolved: e.unresolved,
             userReviews: e.userReviews,
+            reputation: e.reputation,
             token: e.token,
             risk: e.risk,
             address: e.address,
@@ -463,6 +466,18 @@ export default function Casinos() {
                         <td className="px-4 py-3">
                           <div className="flex flex-col items-start gap-1">
                             <TrustBadge score={c.trust} />
+                            {c.reputation != null && (
+                              <span
+                                title="Composite reputation (0–100) — blends casino.guru Safety Index, Trustpilot, casino.org and the complaint record. Distinct from the on-chain trust bar above."
+                                className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums"
+                                style={{
+                                  color: c.reputation >= 70 ? '#2ee6a6' : c.reputation >= 45 ? '#f5b100' : '#ff5c7a',
+                                  background: 'rgba(255,255,255,0.06)',
+                                }}
+                              >
+                                REP {c.reputation}
+                              </span>
+                            )}
                             <div className="flex items-center gap-1.5">
                               {c.safetyIndex != null && <GuruChip score={c.safetyIndex} />}
                               {c.trustpilot != null && <TrustpilotChip score={c.trustpilot} />}
