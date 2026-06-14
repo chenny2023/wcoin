@@ -178,8 +178,7 @@ export default function Login() {
           )}
 
           <p className="mt-5 text-center text-[13px] text-white/45">
-            Free forever ·{' '}
-            <Link to="/app" className="text-white/55 hover:underline">browse read-only</Link>
+            Free forever — no password, no payment.
           </p>
         </div>
       </div>

@@ -260,7 +260,7 @@ export default function Landing() {
             Create your free account <ArrowRight size={16} />
           </Link>
           <p className="relative mt-3 text-xs text-white/40">
-            Prefer to look first? <Link to="/app" className="text-white/60 hover:underline">Browse read-only</Link> — no account needed.
+            Free forever — no password, no payment. Sign in with just your email.
           </p>
         </Card>
       </section>
@@ -272,7 +272,7 @@ export default function Landing() {
           <p className="text-sm text-white/40">© 2026 WCOIN.CASINO — The Intelligence Layer for iGaming</p>
           <div className="flex gap-5 text-sm text-white/50">
             <Link to="/login" className="hover:text-white">Sign up free</Link>
-            <Link to="/app" className="hover:text-white">Browse data</Link>
+            <Link to="/login" className="hover:text-white">Sign in</Link>
           </div>
         </div>
       </footer>

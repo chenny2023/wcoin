@@ -1,4 +1,6 @@
-import { Routes, Route } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Routes, Route, Navigate } from 'react-router-dom'
+import { api, getToken, setToken } from './data/api'
 import Layout from './components/Layout'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
@@ -12,6 +14,32 @@ import Watchlist from './pages/Watchlist'
 import Alerts from './pages/Alerts'
 import Reports from './pages/Reports'
 import ApiAccess from './pages/ApiAccess'
+
+// Gate the whole dashboard behind a valid login: no token → straight to /login;
+// a token is verified against /auth/me so an expired/invalid one also redirects.
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const [ok, setOk] = useState<boolean | null>(getToken() ? null : false)
+  useEffect(() => {
+    if (!getToken()) {
+      setOk(false)
+      return
+    }
+    let alive = true
+    api
+      .me()
+      .then(() => alive && setOk(true))
+      .catch(() => {
+        setToken(null) // stale/invalid token — drop it
+        if (alive) setOk(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+  if (ok === null) return <div className="grid min-h-screen place-items-center text-sm text-white/40">Loading…</div>
+  if (!ok) return <Navigate to="/login" replace />
+  return <>{children}</>
+}
 
 function Dashboard() {
   return (
@@ -37,7 +65,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
-      <Route path="/app/*" element={<Dashboard />} />
+      <Route path="/app/*" element={<RequireAuth><Dashboard /></RequireAuth>} />
       <Route path="*" element={<Landing />} />
     </Routes>
   )
