@@ -90,6 +90,8 @@ const ASSETS: { asset: string; binance: string; gecko: string }[] = [
   { asset: 'BTC', binance: 'BTCUSDT', gecko: 'bitcoin' },
   { asset: 'LTC', binance: 'LTCUSDT', gecko: 'litecoin' },
   { asset: 'XRP', binance: 'XRPUSDT', gecko: 'ripple' },
+  { asset: 'ETH', binance: 'ETHUSDT', gecko: 'ethereum' }, // native ETH deposits
+  { asset: 'BNB', binance: 'BNBUSDT', gecko: 'binancecoin' }, // native BNB deposits
 ]
 
 export function startPrices() {

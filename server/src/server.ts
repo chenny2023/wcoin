@@ -25,6 +25,7 @@ import { startLabels } from './collectors/labels.ts'
 import { startWayback } from './collectors/wayback.ts'
 import { startCircus } from './collectors/circus.ts'
 import { startPrices } from './collectors/prices.ts'
+import { startNative } from './collectors/native.ts'
 import { startSolana } from './collectors/solana.ts'
 import { startUtxo } from './collectors/utxo.ts'
 import { startXrp } from './collectors/xrp.ts'
@@ -74,6 +75,7 @@ async function main() {
   }
   startEvmChains() // extra EVM chains (BSC, Base, Arbitrum, Optimism) — one indexer each
   startPrices() // daily historical price series (SOL) for non-1:1 valuation
+  startNative() // native-coin (ETH) deposits — full-block scan, block-time priced
   startSolana() // Solana indexer (SPL USDC/USDT + native SOL, historically priced)
   startUtxo() // Bitcoin + Litecoin indexers (Esplora, historically priced)
   startXrp() // XRP Ledger indexer (account_tx, historically priced)
