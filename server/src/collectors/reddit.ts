@@ -17,7 +17,9 @@ import { webFetch } from '../net.ts'
 const env = process.env
 export const redditEnabled = () => !!(env.REDDIT_CLIENT_ID && env.REDDIT_CLIENT_SECRET)
 
-const UA = 'wcoin-analytics/1.0 (iGaming market research)'
+// Reddit is strict about User-Agent: it wants a unique, descriptive,
+// platform:appname:version form, and 403s generic ones.
+const UA = 'web:wcoin-casino:1.0 (on-chain casino analytics; +https://wcoin.casino)'
 let token = ''
 let tokenExp = 0
 
@@ -30,11 +32,15 @@ async function appToken(): Promise<string> {
       Authorization: `Basic ${basic}`,
       'Content-Type': 'application/x-www-form-urlencoded',
       'User-Agent': UA,
+      Accept: 'application/json',
     },
     body: 'grant_type=client_credentials',
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.timeout(20_000),
   })
-  if (!res.ok) throw new Error(`reddit token HTTP ${res.status}`)
+  if (!res.ok) {
+    const body = (await res.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 160)
+    throw new Error(`token HTTP ${res.status} — ${body}`)
+  }
   const json = await res.json()
   token = json.access_token
   tokenExp = Date.now() + (json.expires_in ?? 3600) * 1000 - 60_000
