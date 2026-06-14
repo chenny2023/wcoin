@@ -138,6 +138,16 @@ function numberBefore(html: string, phrase: string): number | null {
   const n = Number(nums[nums.length - 1].replace(/,/g, ''))
   return Number.isFinite(n) ? n : null
 }
+// some stats render the number AFTER the label (a table cell), so check both sides
+function numberAfter(html: string, phrase: string): number | null {
+  const i = html.indexOf(phrase)
+  if (i < 0) return null
+  const nums = html.slice(i + phrase.length, i + phrase.length + 120).replace(/<[^>]+>/g, ' ').match(/[\d][\d,]*/g)
+  if (!nums) return null
+  const n = Number(nums[0].replace(/,/g, ''))
+  return Number.isFinite(n) ? n : null
+}
+const numberNear = (html: string, phrase: string): number | null => numberBefore(html, phrase) ?? numberAfter(html, phrase)
 
 export interface GuruTrust {
   score: number
@@ -172,7 +182,7 @@ async function fetchSafetyIndex(slug: string): Promise<GuruTrust | null> {
       return {
         ...si,
         complaints: numberBefore(t, 'complaints about this casino'),
-        unresolved: numberBefore(t, 'unresolved'),
+        unresolved: numberNear(t, 'unresolved'),
         userReviews: numberBefore(t, 'user reviews'),
       }
     } catch (e) {
@@ -389,9 +399,9 @@ export function startReviews() {
     // user-review extraction wouldn't run for up to REFRESH_DAYS. Mark them stale
     // (updated_at=0) so the next sweep re-fetches the page and populates the
     // complaint signals. The Safety Index value persists across the re-fetch.
-    if (!stateGet('reviews:complaints:v1')) {
+    if (!stateGet('reviews:complaints:v2')) {
       const n = db.prepare("UPDATE reviews SET updated_at = 0 WHERE source = 'casino.guru'").run().changes
-      stateSet('reviews:complaints:v1', 1)
+      stateSet('reviews:complaints:v2', 1)
       if (n) console.log(`[reviews] marked ${n} casino.guru rows stale to backfill complaint data`)
     }
   } catch {
