@@ -46,7 +46,11 @@ async function appToken(): Promise<string> {
       })
       if (res.status === 401) break // bad creds — retrying won't help
       if (res.ok) break
-      lastErr = new Error(`token HTTP ${res.status}`)
+      // capture the body + a couple of headers so we can tell WHO returns the
+      // error (Reddit's JSON forbidden vs a proxy provider's block page) and why
+      const body = (await res.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 180)
+      const srv = res.headers.get('server') ?? ''
+      lastErr = new Error(`token HTTP ${res.status} [server:${srv}] ${body}`)
       res = null
     } catch (e) {
       lastErr = e as Error
