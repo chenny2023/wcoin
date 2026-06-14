@@ -200,9 +200,14 @@ export interface BrandAgg {
   members: { id: number; label: string; chain: string; address: string; volume7d: number }[]
 }
 
+// a brand is a dead auto-harvested label (e.g. the 2018 etherscan "gambling"
+// dApps: Fomo3D, PowH3D, iDice…) when it has no roster profile AND no indexed
+// activity AND no reserves — pure noise that shouldn't clutter the leaderboard.
+const isDeadLabel = (b: BrandAgg) => b.category === 'casino' && !b.meta && b.volume7d <= 0 && b.reserves <= 0
+
 let brandCache: { at: number; data: BrandAgg[] } | null = null
 export function aggregateBrands(category?: string): BrandAgg[] {
-  const all = computeBrands()
+  const all = computeBrands().filter((b) => !isDeadLabel(b))
   if (!category || category === 'all') return all
   return all.filter((b) => b.category === category)
 }
