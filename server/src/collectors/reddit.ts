@@ -1,104 +1,33 @@
 import { db } from '../db.ts'
 import { webFetch } from '../net.ts'
+import { score as lexScore } from '../sentiment.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// REAL social-mention collection via Reddit's official OAuth API.
+// Reddit social mentions via the PUBLIC search endpoint (no OAuth).
 //
-// Reddit no longer serves JSON to anonymous clients, so this module is
-// OPTIONAL: it activates only when REDDIT_CLIENT_ID + REDDIT_CLIENT_SECRET are
-// set (free "script" app at reddit.com/prefs/apps). Without credentials the
-// mentions table simply stays empty and the UI says so — nothing is fabricated.
-//
-// For each casino in the watchlist we search recent posts mentioning its name,
-// store them with a small-lexicon sentiment score (-1..1), and aggregate
-// pos/neg/neutral splits for the Sentiment page.
+// Reddit's OAuth token endpoint (api/v1/access_token) 403s datacenter AND proxy
+// IPs hard — even clean residential ones — so the credentialed flow is a dead end
+// from a server. The public search.json endpoint, fetched with a real browser
+// User-Agent through the residential proxy (net.ts routes reddit.com via
+// REDDIT_PROXY), is the path the common scrapers use and is far more permissive.
+// No credentials needed. Results feed the same `mentions` table the Sentiment
+// page reads (source='reddit'); nothing is fabricated.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const env = process.env
-export const redditEnabled = () => !!(env.REDDIT_CLIENT_ID && env.REDDIT_CLIENT_SECRET)
+export const redditEnabled = () => true
 
-// Reddit is strict about User-Agent: it wants a unique, descriptive,
-// platform:appname:version form, and 403s generic ones.
-const UA = 'web:wcoin-casino:1.0 (on-chain casino analytics; +https://wcoin.casino)'
-let token = ''
-let tokenExp = 0
-
-async function appToken(): Promise<string> {
-  if (token && Date.now() < tokenExp) return token
-  const basic = Buffer.from(`${env.REDDIT_CLIENT_ID}:${env.REDDIT_CLIENT_SECRET}`).toString('base64')
-  // Reddit blocks datacenter IPs (Railway 403s; the proxy pool gets tarpitted on
-  // some IPs). webFetch picks a fresh random proxy each call, so retry a few
-  // times — if only SOME upstream IPs are blocked, a retry rolls onto a good one.
-  let res: Awaited<ReturnType<typeof webFetch>> | null = null
-  let lastErr: Error | null = null
-  for (let attempt = 0; attempt < 4; attempt++) {
-    try {
-      res = await webFetch('https://www.reddit.com/api/v1/access_token', {
-        method: 'POST',
-        headers: {
-          Authorization: `Basic ${basic}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': UA,
-          Accept: 'application/json',
-        },
-        body: 'grant_type=client_credentials',
-        signal: AbortSignal.timeout(25_000),
-      })
-      if (res.status === 401) break // bad creds — retrying won't help
-      if (res.ok) break
-      // capture the body + a couple of headers so we can tell WHO returns the
-      // error (Reddit's JSON forbidden vs a proxy provider's block page) and why
-      const body = (await res.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 180)
-      const srv = res.headers.get('server') ?? ''
-      lastErr = new Error(`token HTTP ${res.status} [server:${srv}] ${body}`)
-      res = null
-    } catch (e) {
-      lastErr = e as Error
-      res = null
-    }
-    await new Promise((r) => setTimeout(r, 600)) // brief pause, then a fresh proxy
-  }
-  if (!res) throw lastErr ?? new Error('reddit token: all proxy attempts failed')
-  if (!res.ok) {
-    const body = (await res.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 160)
-    throw new Error(`token HTTP ${res.status} — ${body}`)
-  }
-  const json = await res.json()
-  token = json.access_token
-  tokenExp = Date.now() + (json.expires_in ?? 3600) * 1000 - 60_000
-  return token
-}
-
-// Small sentiment lexicon tuned for gambling-community language.
-const POS = new Set(['win', 'won', 'winning', 'paid', 'payout', 'fast', 'legit', 'great', 'good', 'best', 'love', 'profit', 'bonus', 'instant', 'trust', 'trusted', 'recommend', 'awesome', 'fair'])
-const NEG = new Set(['scam', 'scammed', 'rigged', 'lost', 'lose', 'losing', 'stole', 'stolen', 'fraud', 'banned', 'locked', 'withhold', 'refuse', 'refused', 'delay', 'delayed', 'avoid', 'worst', 'bad', 'never', 'support', 'ignored', 'phishing'])
-
-function lexScore(text: string): number {
-  const words = text.toLowerCase().split(/[^a-z.]+/)
-  let pos = 0
-  let neg = 0
-  for (const w of words) {
-    if (POS.has(w)) pos++
-    if (NEG.has(w)) neg++
-  }
-  const total = pos + neg
-  return total === 0 ? 0 : (pos - neg) / total
-}
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 
 const insertMention = db.prepare(`
   INSERT OR IGNORE INTO mentions(id, watch_label, source, title, url, score, sentiment, ts)
   VALUES(@id, @watch_label, 'reddit', @title, @url, @score, @sentiment, @ts)
 `)
 
-let rr = 0
-// Circuit breaker: Reddit hard-blocks our IPs (Railway + datacenter/residential
-// proxies all 403). When the token fetch keeps failing, stop hammering every 20s
-// — back off — but auto-recover the instant a request succeeds (e.g. a clean
-// proxy is configured later). Exposed so startReddit() can pace the loop.
+// circuit breaker: back off when Reddit persistently blocks us, recover on success
 export let redditConsecutiveFails = 0
+let rr = 0
 
 export async function runRedditOnce() {
-  if (!redditEnabled()) return
   const casinos = db
     .prepare("SELECT DISTINCT label FROM watchlist WHERE category='casino' AND active=1")
     .all() as { label: string }[]
@@ -106,75 +35,70 @@ export async function runRedditOnce() {
   const target = casinos[rr % casinos.length].label
   rr++
 
-  try {
-    const t = await appToken()
-    const q = encodeURIComponent(`"${target.replace(/\.(com|io|gg)$/i, '')}"`)
-    const res = await webFetch(
-      `https://oauth.reddit.com/search?q=${q}&sort=new&t=week&limit=25&type=link`,
-      { headers: { Authorization: `Bearer ${t}`, 'User-Agent': UA }, signal: AbortSignal.timeout(15_000) },
-    )
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const json = await res.json()
-    let added = 0
-    const tx = db.transaction((children: any[]) => {
-      for (const c of children) {
-        const d = c.data
-        if (!d?.id) continue
-        const text = `${d.title ?? ''} ${d.selftext ?? ''}`.slice(0, 4000)
-        const r = insertMention.run({
-          id: `rd_${d.id}_${target}`,
-          watch_label: target,
-          title: (d.title ?? '').slice(0, 300),
-          url: 'https://reddit.com' + (d.permalink ?? ''),
-          score: d.score ?? 0,
-          sentiment: lexScore(text),
-          ts: Math.round((d.created_utc ?? 0) * 1000),
-        })
-        added += r.changes
+  const q = encodeURIComponent(`"${target.replace(/\.(com|io|gg)$/i, '')}"`)
+  // public, keyless search — retry a few times (each webFetch picks a fresh proxy)
+  const urls = [
+    `https://www.reddit.com/search.json?q=${q}&sort=new&t=month&limit=25&type=link`,
+    `https://old.reddit.com/search.json?q=${q}&sort=new&t=month&limit=25&type=link`, // old reddit is often less guarded
+  ]
+  let json: any = null
+  let lastErr: Error | null = null
+  for (let attempt = 0; attempt < 3 && !json; attempt++) {
+    const url = urls[attempt % urls.length]
+    try {
+      const res = await webFetch(url, {
+        headers: { 'User-Agent': UA, Accept: 'application/json', 'Accept-Language': 'en-US,en;q=0.9' },
+        signal: AbortSignal.timeout(20_000),
+      })
+      if (res.ok) {
+        json = await res.json()
+        break
       }
-    })
-    tx(json.data?.children ?? [])
-    if (redditConsecutiveFails > 0) console.log('[reddit] recovered — resuming normal cadence')
-    redditConsecutiveFails = 0
-    if (added) console.log(`[reddit] ${target}: +${added} mentions`)
-  } catch (e) {
-    redditConsecutiveFails++
-    // only log the first few of a failure streak, then go quiet until recovery
-    if (redditConsecutiveFails <= 3) console.warn(`[reddit] ${target} failed:`, (e as Error).message)
-    else if (redditConsecutiveFails === 4) console.warn('[reddit] persistent failures (likely Reddit IP-block) — backing off to 30m until a request succeeds')
+      lastErr = new Error(`HTTP ${res.status}`)
+    } catch (e) {
+      lastErr = e as Error
+    }
+    await new Promise((r) => setTimeout(r, 600))
   }
+
+  if (!json) {
+    redditConsecutiveFails++
+    if (redditConsecutiveFails <= 3) console.warn(`[reddit] ${target} failed:`, lastErr?.message)
+    else if (redditConsecutiveFails === 4) console.warn('[reddit] persistent failures — backing off to 30m until a request succeeds')
+    return
+  }
+  if (redditConsecutiveFails > 0) console.log('[reddit] recovered — resuming normal cadence')
+  redditConsecutiveFails = 0
+
+  let added = 0
+  const tx = db.transaction((children: any[]) => {
+    for (const c of children) {
+      const d = c?.data
+      if (!d?.id) continue
+      const text = `${d.title ?? ''} ${d.selftext ?? ''}`.slice(0, 4000)
+      const r = insertMention.run({
+        id: `rd_${d.id}_${target}`,
+        watch_label: target,
+        title: (d.title ?? '').slice(0, 300),
+        url: 'https://reddit.com' + (d.permalink ?? ''),
+        score: d.score ?? 0,
+        sentiment: lexScore(text),
+        ts: Math.round((d.created_utc ?? 0) * 1000),
+      })
+      added += r.changes
+    }
+  })
+  tx(json?.data?.children ?? [])
+  if (added) console.log(`[reddit] ${target}: +${added} mentions`)
 }
 
 export function startReddit() {
-  if (!redditEnabled()) {
-    console.log('[reddit] disabled (no REDDIT_CLIENT_ID/SECRET) — mention feed will be empty')
-    return
-  }
-  // one-time boot diagnostic: fetch the token endpoint once and print the full
-  // outcome (status + Server/cf-ray headers + body) on a single line that lands
-  // in the startup logs — so we can tell WHO returns the 403 (Reddit's own
-  // forbidden JSON vs a Cloudflare bot-block vs a proxy provider's block page).
-  void (async () => {
-    try {
-      const basic = Buffer.from(`${env.REDDIT_CLIENT_ID}:${env.REDDIT_CLIENT_SECRET}`).toString('base64')
-      const r = await webFetch('https://www.reddit.com/api/v1/access_token', {
-        method: 'POST',
-        headers: { Authorization: `Basic ${basic}`, 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': UA, Accept: 'application/json' },
-        body: 'grant_type=client_credentials',
-        signal: AbortSignal.timeout(25_000),
-      })
-      const body = (await r.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 200)
-      console.log(`[reddit:diag] HTTP ${r.status} | server=${r.headers.get('server')} | cf-ray=${r.headers.get('cf-ray')} | www-auth=${r.headers.get('www-authenticate')} | body=${body}`)
-    } catch (e) {
-      console.log(`[reddit:diag] request threw: ${(e as Error).message}`)
-    }
-  })()
+  console.log('[reddit] public search feed active (keyless, via residential proxy)')
   const loop = async () => {
     await runRedditOnce()
-    // healthy: one casino per 20s (well inside free-tier limits). Blocked: after a
-    // failure streak, poll every 30m so a single success can flip us back to fast.
+    // healthy: one casino per 20s. Blocked: back off to 30m; a single success flips back.
     const delay = redditConsecutiveFails >= 4 ? 30 * 60_000 : 20_000
     setTimeout(loop, delay)
   }
-  loop()
+  setTimeout(loop, 40_000)
 }
