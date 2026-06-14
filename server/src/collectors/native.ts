@@ -1,7 +1,7 @@
 import { config } from '../config.ts'
 import { db, stmt, stateGet, stateSet, WatchRow } from '../db.ts'
 import { emitTransfer } from '../bus.ts'
-import { rpc } from './evm.ts'
+import { webFetch } from '../net.ts'
 import { priceForDay } from './prices.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13,32 +13,55 @@ import { priceForDay } from './prices.ts'
 // keylessly. So we scan full blocks (eth_getBlockByNumber with txs) and keep the
 // ones whose from/to touches a watched casino wallet, priced at block-time USD.
 //
-// Full-block parsing is heavy, so we BOUND blocks/tick and yield between blocks
-// to keep it off the critical path, and we DON'T deep-backfill (re-scanning every
-// historical block fully would be far too expensive keyless) — we follow the tip
-// from boot forward. At ~1 new ETH block per poll, steady-state cost is tiny;
-// only the short boot catch-up window fetches several blocks per tick.
+// Casino 0x hot wallets are stored once and reused across every EVM chain, so we
+// scan the SAME watched-address set on ETH (native ETH) and BSC (native BNB).
+// Full-block parsing is heavy: we BOUND blocks/tick, yield between blocks, and if
+// we fall too far behind the tip we rejoin it (native deposits are sparse — being
+// current matters more than scanning every historical block). No deep backfill.
+// BSC public nodes are datacenter-blocked, so its RPC routes through the proxy.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const HEX = (n: number) => '0x' + n.toString(16)
 const WEI = 10 ** 18
+const MAX_LAG = 600 // if we fall >600 blocks behind the tip, skip the gap and rejoin
 
-async function scanNativeOnce(
-  chainKey: string,
-  asset: string,
-  rpcs: string[],
-  maxBlocksPerTick: number,
-  bootWindow: number,
-) {
-  const rows = stmt.watchByChain.all(chainKey) as WatchRow[]
+let rpcIdx = 0
+async function rpcCall(method: string, params: unknown[], rpcs: string[], useProxy: boolean, tries = rpcs.length * 2): Promise<any> {
+  let lastErr: unknown
+  for (let i = 0; i < tries; i++) {
+    const url = rpcs[rpcIdx++ % rpcs.length]
+    try {
+      const init = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+        signal: AbortSignal.timeout(15_000),
+      }
+      const res = useProxy ? await webFetch(url, init) : await fetch(url, init)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const json = (await res.json()) as any
+      if (json.error) throw new Error(json.error.message || 'rpc error')
+      return json.result
+    } catch (e) {
+      lastErr = e
+    }
+  }
+  throw lastErr
+}
+
+// every active 0x watchlist address — casinos reuse hot wallets across EVM chains
+const evmWatched = (): WatchRow[] => (stmt.activeWatch.all() as WatchRow[]).filter((r) => /^0x[0-9a-fA-F]{40}$/.test(r.address))
+
+async function scanNativeOnce(chainKey: string, asset: string, rpcs: string[], useProxy: boolean, maxBlocksPerTick: number, bootWindow: number) {
+  const rows = evmWatched()
   if (rows.length === 0) return
   const byAddr = new Map(rows.map((r) => [r.address.toLowerCase(), r]))
   const watched = new Set(rows.map((r) => r.address.toLowerCase()))
 
-  const head = Number(BigInt(await rpc('eth_blockNumber', [], rpcs)))
+  const head = Number(BigInt(await rpcCall('eth_blockNumber', [], rpcs, useProxy)))
   const stateKey = `native:${chainKey}:lastBlock`
   let last = Number(stateGet(stateKey) ?? 0)
-  if (last === 0) last = head - bootWindow // no deep backfill — start near the tip
+  if (last === 0 || head - last > MAX_LAG) last = head - bootWindow // start at / rejoin the tip
   if (last >= head) return
 
   let scanned = 0
@@ -47,7 +70,7 @@ async function scanNativeOnce(
     if (scanned >= maxBlocksPerTick) break
     let block: any
     try {
-      block = await rpc('eth_getBlockByNumber', [HEX(b), true], rpcs)
+      block = await rpcCall('eth_getBlockByNumber', [HEX(b), true], rpcs, useProxy)
     } catch (e) {
       console.warn(`[native ${chainKey}] block ${b} failed, retry next tick:`, (e as Error).message)
       break // don't advance — retry this block next cycle
@@ -104,10 +127,10 @@ async function scanNativeOnce(
   if (hits) console.log(`[native ${chainKey}] +${hits} ${asset} transfers (scanned ${scanned} blocks → ${last})`)
 }
 
-function startNativeChain(chainKey: string, asset: string, rpcs: string[], maxBlocksPerTick: number) {
+function startNativeChain(chainKey: string, asset: string, rpcs: string[], useProxy: boolean, maxBlocksPerTick: number) {
   const loop = async () => {
     try {
-      await scanNativeOnce(chainKey, asset, rpcs, maxBlocksPerTick, 40)
+      await scanNativeOnce(chainKey, asset, rpcs, useProxy, maxBlocksPerTick, 40)
     } catch (e) {
       console.warn(`[native ${chainKey}] cycle error:`, (e as Error).message)
     } finally {
@@ -119,6 +142,7 @@ function startNativeChain(chainKey: string, asset: string, rpcs: string[], maxBl
 
 export function startNative() {
   if ((process.env.NATIVE_ENABLED ?? '1') === '0') return
-  console.log('[native] ETH native-coin deposit scanner active')
-  startNativeChain('ETH', 'ETH', config.evmRpcs, 6)
+  console.log('[native] ETH + BNB native-coin deposit scanners active')
+  startNativeChain('ETH', 'ETH', config.evmRpcs, false, 6)
+  if (config.bscEnabled) startNativeChain('BSC', 'BNB', config.bscRpcs, true, 6) // BSC via proxy
 }
