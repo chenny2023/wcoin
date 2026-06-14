@@ -26,6 +26,8 @@ import { startWayback } from './collectors/wayback.ts'
 import { startCircus } from './collectors/circus.ts'
 import { startPrices } from './collectors/prices.ts'
 import { startNative } from './collectors/native.ts'
+import { startBluesky } from './collectors/bluesky.ts'
+import { startGdelt } from './collectors/gdelt.ts'
 import { startSolana } from './collectors/solana.ts'
 import { startUtxo } from './collectors/utxo.ts'
 import { startXrp } from './collectors/xrp.ts'
@@ -87,6 +89,8 @@ async function main() {
   startReddit() // social mentions (Reddit OAuth, optional creds)
   startNews() // brand mentions (Google News RSS, keyless)
   startPress() // brand mentions (iGaming trade-press RSS, keyless)
+  startBluesky() // social mentions (Bluesky public post search, keyless)
+  startGdelt() // brand mentions (GDELT global news index, keyless)
   startTelegram() // brand community signal (public Telegram channels, keyless)
   startReviews() // third-party trust: casino.guru Safety Index per casino
   startRisk() // compliance: OFAC-sanctioned counterparty exposure flags

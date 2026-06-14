@@ -16,6 +16,13 @@ const FEEDS = [
   { name: 'iGaming Business', url: 'https://igamingbusiness.com/feed/' },
   { name: 'CasinoBeats', url: 'https://casinobeats.com/feed/' },
   { name: 'Gambling Insider', url: 'https://www.gamblinginsider.com/rss/news' },
+  // broader iGaming + crypto-gambling trade press for more brand coverage
+  { name: 'Casino.org News', url: 'https://www.casino.org/news/feed/' },
+  { name: 'CalvinAyre', url: 'https://calvinayre.com/feed/' },
+  { name: 'European Gaming', url: 'https://europeangaming.eu/portal/feed/' },
+  { name: 'SiGMA', url: 'https://sigma.world/feed/' },
+  { name: 'Gambling News', url: 'https://www.gamblingnews.com/feed/' },
+  { name: 'Yogonet', url: 'https://www.yogonet.com/international/rss' },
 ]
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 
