@@ -155,6 +155,49 @@ async function fetchSafetyIndex(slug: string): Promise<{ score: number; reviewed
   throw lastErr ?? new Error('casino.guru fetch failed')
 }
 
+// casino.org editorial rating (/5) — a recognised editorial review score, an
+// independent third signal alongside the casino.guru expert index and the
+// Trustpilot consumer rating. Lives behind the same Cloudflare wall, reached via
+// the proxy pool. Parsed from the page's JSON-LD Review block (which carries
+// worstRating/bestRating/ratingValue, so we can normalise the scale). Retry on
+// transient errors with a fresh proxy; 404 = no such review (genuine miss).
+async function fetchCasinoOrg(slug: string): Promise<{ score: number; reviewed: string } | null> {
+  let lastErr: Error | null = null
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await webFetch(`https://www.casino.org/reviews/${slug}/`, {
+        headers: { 'User-Agent': UA, 'Accept-Encoding': 'gzip, deflate' },
+        signal: AbortSignal.timeout(30_000),
+      })
+      if (res.status === 404) return null
+      if (res.status !== 200) throw new Error(`casino.org HTTP ${res.status}`)
+      const t = await res.text()
+      for (const m of t.matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/g)) {
+        try {
+          const j = JSON.parse(m[1])
+          const nodes = Array.isArray(j) ? j : (j['@graph'] ?? [j])
+          for (const n of Array.isArray(nodes) ? nodes : [nodes]) {
+            if (n?.['@type'] === 'Review' && n.reviewRating?.ratingValue != null) {
+              const rv = Number(n.reviewRating.ratingValue)
+              const best = Number(n.reviewRating.bestRating ?? 5) || 5
+              const score = best === 5 ? rv : (rv / best) * 5 // normalise to /5
+              const reviewed = String(n.itemReviewed?.name ?? n.name ?? '')
+              if (score > 0 && score <= 5) return { score: Number(score.toFixed(2)), reviewed }
+            }
+          }
+        } catch {
+          /* skip */
+        }
+      }
+      return null
+    } catch (e) {
+      lastErr = e as Error
+      await new Promise((r) => setTimeout(r, 500))
+    }
+  }
+  throw lastErr ?? new Error('casino.org fetch failed')
+}
+
 let queue: { key: string; name: string }[] = []
 let cursor = 0
 function refillQueue() {
@@ -236,6 +279,36 @@ export async function runReviewsOnce() {
       }
     }
   }
+
+  // 3) casino.org editorial rating (/5) — third independent reputation signal
+  if (!fresh('casino.org')) {
+    let ed = 0
+    let okC = true
+    const bk = brandKey(name)
+    try {
+      for (const slug of slugCandidates(name)) {
+        const r = await fetchCasinoOrg(slug)
+        if (r != null && r.score > 0) {
+          const reviewedKey = r.reviewed.toLowerCase().replace(/[^a-z0-9]/g, '')
+          if (r.reviewed && bk && !reviewedKey.includes(bk) && !bk.includes(reviewedKey)) {
+            await new Promise((res) => setTimeout(res, 500))
+            continue // page reviews a different brand — skip this slug
+          }
+          ed = r.score
+          upsert.run({ brand_key: key, source: 'casino.org', score: r.score, score_max: 5, url: `https://www.casino.org/reviews/${slug}/`, updated_at: Date.now() })
+          console.log(`[reviews] ${name}: casino.org editorial ${r.score}/5`)
+          break
+        }
+        await new Promise((res) => setTimeout(res, 500))
+      }
+    } catch (e) {
+      okC = false
+      const cause = (e as { cause?: { message?: string } }).cause?.message
+      const why = cause ? `${(e as Error).message}: ${cause}` : (e as Error).message
+      console.warn(`[reviews] ${name}: casino.org fetch error (${why}), will retry`)
+    }
+    if (okC && !ed) upsert.run({ brand_key: key, source: 'casino.org', score: 0, score_max: 5, url: null, updated_at: Date.now() })
+  }
 }
 
 // brand_key → all third-party review scores (casino.guru Safety Index 0–10 +
@@ -243,14 +316,16 @@ export async function runReviewsOnce() {
 export interface ReviewScore {
   safety: number | null // casino.guru 0–10
   trustpilot: number | null // ★/5
+  editorial: number | null // casino.org /5
 }
 export function reviewScores(): Map<string, ReviewScore> {
   const out = new Map<string, ReviewScore>()
   const rows = db.prepare("SELECT brand_key, source, score FROM reviews WHERE score>0").all() as { brand_key: string; source: string; score: number }[]
   for (const r of rows) {
-    const e = out.get(r.brand_key) ?? { safety: null, trustpilot: null }
+    const e = out.get(r.brand_key) ?? { safety: null, trustpilot: null, editorial: null }
     if (r.source === 'casino.guru') e.safety = r.score
     else if (r.source === 'trustpilot') e.trustpilot = r.score
+    else if (r.source === 'casino.org') e.editorial = r.score
     out.set(r.brand_key, e)
   }
   return out

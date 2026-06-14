@@ -35,6 +35,7 @@ export interface EntityAgg {
   meta: CasinoMeta | null // public reference profile (license, house edge, …)
   safetyIndex: number | null // casino.guru third-party Safety Index (0–10)
   trustpilot: number | null // Trustpilot rating (★/5)
+  editorial: number | null // casino.org editorial rating (/5)
   risk: { hits: number; usd: number; addresses: string[] } | null // OFAC-sanctioned exposure
 }
 
@@ -141,6 +142,7 @@ function computeEntities(): EntityAgg[] {
       meta: w.category === 'casino' ? matchCasinoMeta(w.label) : null,
       safetyIndex: w.category === 'casino' ? reviews.get(brandKey(w.label))?.safety ?? null : null,
       trustpilot: w.category === 'casino' ? reviews.get(brandKey(w.label))?.trustpilot ?? null : null,
+      editorial: w.category === 'casino' ? reviews.get(brandKey(w.label))?.editorial ?? null : null,
       risk: risks.get(w.id) ?? null,
     })
   }
@@ -174,6 +176,7 @@ export interface BrandAgg {
   meta: CasinoMeta | null
   safetyIndex: number | null
   trustpilot: number | null
+  editorial: number | null
   risk: { hits: number; usd: number } | null
   members: { id: number; label: string; chain: string; address: string; volume7d: number }[]
 }
@@ -223,6 +226,7 @@ function computeBrands(): BrandAgg[] {
       meta: members.map((e) => e.meta).find(Boolean) ?? null,
       safetyIndex: members.map((e) => e.safetyIndex).find((s) => s != null) ?? null,
       trustpilot: members.map((e) => e.trustpilot).find((s) => s != null) ?? null,
+      editorial: members.map((e) => e.editorial).find((s) => s != null) ?? null,
       risk: members.some((e) => e.risk)
         ? { hits: sum((e) => e.risk?.hits ?? 0), usd: sum((e) => e.risk?.usd ?? 0) }
         : null,

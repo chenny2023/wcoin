@@ -47,6 +47,7 @@ export interface Entity {
   meta: CasinoMeta | null
   safetyIndex: number | null
   trustpilot: number | null
+  editorial: number | null
   risk: { hits: number; usd: number; addresses: string[] } | null
 }
 
@@ -81,6 +82,7 @@ export interface Brand {
   meta: CasinoMeta | null
   safetyIndex: number | null
   trustpilot: number | null
+  editorial: number | null
   risk: { hits: number; usd: number } | null
   members: { id: number; label: string; chain: string; address: string; volume7d: number }[]
 }

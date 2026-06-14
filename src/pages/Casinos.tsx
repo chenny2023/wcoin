@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Search, SlidersHorizontal, Wallet, ExternalLink, ChevronDown, ShieldCheck, ShieldAlert, Calendar, Percent, Coins, Star } from 'lucide-react'
+import { Search, SlidersHorizontal, Wallet, ExternalLink, ChevronDown, ShieldCheck, ShieldAlert, Calendar, Percent, Coins, Star, Award } from 'lucide-react'
 import { Card, PageHead, Bubble, TrustBadge, Delta, CategoryBadge, ChainPill, Skeleton } from '../components/ui'
 import { api, usePoll, Entity } from '../data/api'
 import { fmtUsd, fmtNum, shortHash, CHAIN_COLOR } from '../data/format'
@@ -21,7 +21,7 @@ function GuruChip({ score }: { score: number }) {
   )
 }
 
-// Trustpilot consumer rating (★/5) sourced via the Wayback archive.
+// Trustpilot consumer rating (★/5) — live page, Wayback fallback.
 function TrustpilotChip({ score }: { score: number }) {
   const color = score >= 4 ? '#2ee6a6' : score >= 3 ? '#f5b100' : '#ff5c7a'
   return (
@@ -31,6 +31,20 @@ function TrustpilotChip({ score }: { score: number }) {
       style={{ color }}
     >
       <Star size={10} /> {score}
+    </span>
+  )
+}
+
+// casino.org editorial rating (/5) — a recognised editorial review score.
+function EditorialChip({ score }: { score: number }) {
+  const color = score >= 4 ? '#2ee6a6' : score >= 3 ? '#f5b100' : '#ff5c7a'
+  return (
+    <span
+      title={`casino.org editorial rating ${score}/5`}
+      className="inline-flex items-center gap-1 rounded-md bg-white/6 px-1.5 py-0.5 text-[10px] font-bold tabular-nums"
+      style={{ color }}
+    >
+      <Award size={10} /> {score}
     </span>
   )
 }
@@ -218,6 +232,7 @@ interface Row {
   histId: number
   safetyIndex: number | null
   trustpilot: number | null
+  editorial: number | null
   risk: { hits: number; usd: number } | null
   address?: string
   chain?: string
@@ -255,6 +270,7 @@ export default function Casinos() {
             histId: b.members[0]?.id ?? 0,
             safetyIndex: b.safetyIndex,
             trustpilot: b.trustpilot,
+            editorial: b.editorial,
             risk: b.risk,
             wallets: b.wallets,
             members: b.members,
@@ -274,6 +290,7 @@ export default function Casinos() {
             histId: e.id,
             safetyIndex: e.safetyIndex,
             trustpilot: e.trustpilot,
+            editorial: e.editorial,
             risk: e.risk,
             address: e.address,
             chain: e.chain,
@@ -393,6 +410,7 @@ export default function Casinos() {
                             <div className="flex items-center gap-1.5">
                               {c.safetyIndex != null && <GuruChip score={c.safetyIndex} />}
                               {c.trustpilot != null && <TrustpilotChip score={c.trustpilot} />}
+                              {c.editorial != null && <EditorialChip score={c.editorial} />}
                             </div>
                           </div>
                         </td>
@@ -424,6 +442,7 @@ export default function Casinos() {
                               {c.meta?.currencies?.length ? <MetaCell icon={<Coins size={12} />} label="Currencies" value={c.meta.currencies.slice(0, 8).join(', ')} /> : null}
                               {c.safetyIndex != null && <MetaCell icon={<ShieldCheck size={12} />} label="casino.guru" value={`${c.safetyIndex} / 10`} />}
                               {c.trustpilot != null && <MetaCell icon={<Star size={12} />} label="Trustpilot" value={`${c.trustpilot} / 5`} />}
+                              {c.editorial != null && <MetaCell icon={<Award size={12} />} label="casino.org" value={`${c.editorial} / 5`} />}
                             </div>
                             {c.byChain.length > 0 && (
                               <div className="mt-4">
