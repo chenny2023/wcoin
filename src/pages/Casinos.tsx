@@ -420,6 +420,13 @@ export default function Casinos() {
                 </tr>
               </thead>
               <tbody>
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={10} className="px-4 py-12 text-center text-sm text-white/40">
+                      No {cat === 'all' ? 'entities' : cat + 's'} match{q ? ` “${q}”` : ''} — try a different filter or search.
+                    </td>
+                  </tr>
+                )}
                 {rows.map((c, i) => {
                   const expandable = !!c.meta || c.byChain.length > 0 || (c.members?.length ?? 0) > 0
                   const isOpen = open === c.rid
@@ -478,7 +485,7 @@ export default function Casinos() {
                                 REP {c.reputation}
                               </span>
                             )}
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex max-w-[180px] flex-wrap items-center gap-1">
                               {c.safetyIndex != null && <GuruChip score={c.safetyIndex} />}
                               {c.trustpilot != null && <TrustpilotChip score={c.trustpilot} />}
                               {c.editorial != null && <EditorialChip score={c.editorial} />}
