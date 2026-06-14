@@ -54,6 +54,9 @@ function parseSeen(d: string): number {
 
 let list: { label: string; brand: string }[] = []
 let cursor = 0
+// GDELT throttles aggressively (429); when we trip it, back the loop right off
+// and ease back in. A success clears it.
+export let gdeltThrottled = false
 
 export async function runGdeltOnce() {
   if (cursor >= list.length) {
@@ -92,9 +95,17 @@ export async function runGdeltOnce() {
       }
     })
     tx()
+    gdeltThrottled = false
     if (added) console.log(`[gdelt] ${brand}: +${added} mentions`)
   } catch (e) {
-    console.warn(`[gdelt] ${brand} failed:`, (e as Error).message)
+    const msg = (e as Error).message
+    if (/\b429\b/.test(msg)) {
+      if (!gdeltThrottled) console.warn('[gdelt] rate-limited (429) — easing the polling interval')
+      gdeltThrottled = true // back off the interval; this brand comes around again next sweep
+    } else {
+      gdeltThrottled = false
+      console.warn(`[gdelt] ${brand} failed:`, msg)
+    }
   }
 }
 
@@ -102,7 +113,8 @@ export function startGdelt() {
   console.log('[gdelt] global news index (keyless) active')
   const loop = async () => {
     await runGdeltOnce()
-    setTimeout(loop, 20_000) // one brand per 20s — GDELT asks ~5s min between calls
+    // GDELT free tier throttles hard; idle at 60s, and on a 429 back off to 3m
+    setTimeout(loop, gdeltThrottled ? 180_000 : 60_000)
   }
   setTimeout(loop, 35_000)
 }
