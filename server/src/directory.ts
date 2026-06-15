@@ -129,12 +129,22 @@ export async function verifyOne() {
   if (site_ok) console.log(`[directory] ${row.domain}: site✓ ${x_ok ? 'X✓' : 'X✗'} ${email_ok ? 'email✓' : 'email✗'}${email ? ' ' + email : ''}`)
 }
 
+const statsQ = db.prepare(
+  `SELECT COUNT(*) total, COALESCE(SUM(site_ok),0) site, COALESCE(SUM(x_ok),0) x, COALESCE(SUM(email_ok),0) email,
+          COALESCE(SUM(CASE WHEN last_checked>0 THEN 1 ELSE 0 END),0) checked FROM casino_directory`,
+)
+
 export function startDirectory() {
   if ((process.env.DIRECTORY_ENABLED ?? '1') === '0') return
   console.log('[directory] casino-directory crawler active')
   seedFromRoster()
+  let iter = 0
   const loop = async () => {
     await verifyOne().catch((e) => console.warn('[directory]', (e as Error).message))
+    if (++iter % 10 === 0) {
+      const s = statsQ.get() as any
+      console.log(`[directory] progress: ${s.checked}/${s.total} checked · ${s.site} live · ${s.x} X · ${s.email} email`)
+    }
     setTimeout(loop, 8_000) // one site per 8s through the proxy pool — gentle, sweeps fill over time
   }
   setTimeout(loop, 60_000)
