@@ -220,6 +220,11 @@ export interface DirRow {
   tp_reviews: number | null
   last_checked: number
 }
+export interface ArkhamReserves {
+  count: number
+  totalUsd: number
+  casinos: { name: string; domain: string | null; entityId: string; reservesUsd: number }[]
+}
 export interface DirStats {
   total: number
   site: number
@@ -312,6 +317,7 @@ export const api = {
     if (q) p.set('q', q)
     return getJson<{ stats: DirStats; rows: DirRow[] }>('/directory?' + p.toString())
   },
+  arkhamReserves: () => getJson<ArkhamReserves>('/arkham/reserves'),
   alertRules: () => getJson<AlertRule[]>('/alerts/rules'),
   createAlertRule: (body: { kind: string; scope: string; scopeLabel?: string; threshold: number; windowH?: number; webhook?: string }) =>
     sendJson<{ ok: boolean }>('/alerts/rules', 'POST', body),

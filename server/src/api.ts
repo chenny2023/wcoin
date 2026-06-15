@@ -205,6 +205,22 @@ export async function registerApi(app: FastifyInstance) {
     }
   })
 
+  // public all-chain proof-of-reserves, sourced from Arkham entity portfolios.
+  // On-chain balances are public data — and a strong "we cover every chain" signal.
+  app.get('/api/arkham/reserves', async () => {
+    const rows = db
+      .prepare(
+        "SELECT name, domain, entity_id, reserves_usd FROM arkham_casino WHERE entity_id != '' AND reserves_usd IS NOT NULL ORDER BY reserves_usd DESC LIMIT 500",
+      )
+      .all() as { name: string; domain: string | null; entity_id: string; reserves_usd: number }[]
+    const total = rows.reduce((s, r) => s + (r.reserves_usd || 0), 0)
+    return {
+      count: rows.length,
+      totalUsd: total,
+      casinos: rows.map((r) => ({ name: r.name, domain: r.domain, entityId: r.entity_id, reservesUsd: r.reserves_usd })),
+    }
+  })
+
   // ── casino directory (login-gated — outreach/contact data) ───────────────────
   const dirWhere = (filter?: string) =>
     filter === 'withEmail' ? 'email_ok=1' : filter === 'withX' ? 'x_ok=1' : filter === 'included' ? 'site_ok=1 AND x_ok=1 AND email_ok=1' : filter === 'live' ? 'site_ok=1' : '1=1'

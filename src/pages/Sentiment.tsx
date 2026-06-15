@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ThumbsUp, ThumbsDown, ShieldCheck, MessageSquare } from 'lucide-react'
+import { ThumbsUp, ThumbsDown, ShieldCheck, MessageSquare, Landmark, ExternalLink } from 'lucide-react'
 import { Card, PageHead, Bubble, TrustBadge, Delta, ChainPill, CategoryBadge, Skeleton } from '../components/ui'
 import { api, usePoll, getToken } from '../data/api'
 import { fmtUsd, fmtNum } from '../data/format'
 
 export default function Sentiment() {
   const { data, loading } = usePoll(api.sentiment, 15_000)
+  const { data: ark } = usePoll(api.arkhamReserves, 60_000)
   const [pending, setPending] = useState<number | null>(null)
   const [localVotes, setLocalVotes] = useState<Record<number, number>>({})
   const loggedIn = !!getToken()
@@ -183,6 +184,55 @@ export default function Sentiment() {
           </div>
         )}
       </Card>
+
+      {/* All-chain proof-of-reserves via Arkham — broad roster coverage across every chain */}
+      {ark && ark.casinos.length > 0 && (
+        <Card className="mt-4 p-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Landmark size={18} className="text-mint-400" />
+              <h3 className="font-display text-lg font-bold">All-Chain Reserves</h3>
+              <span className="rounded-md bg-white/8 px-1.5 py-0.5 text-[11px] font-medium text-white/50">via Arkham</span>
+            </div>
+            <div className="text-[13px] text-white/55">
+              <span className="font-display text-xl font-bold text-gradient-gold">{fmtUsd(ark.totalUsd)}</span>
+              <span className="ml-1.5">across {ark.count} casinos · every chain</span>
+            </div>
+          </div>
+          <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
+            {ark.casinos.slice(0, 24).map((c, i) => {
+              const pct = ark.casinos[0].reservesUsd > 0 ? (c.reservesUsd / ark.casinos[0].reservesUsd) * 100 : 0
+              return (
+                <div key={c.entityId} className="flex items-center gap-3 py-1">
+                  <span className="w-5 text-right text-[12px] tabular-nums text-white/30">{i + 1}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <a
+                        href={c.domain ? `https://${c.domain}` : undefined}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1 truncate text-[13px] font-medium hover:text-gold-400"
+                      >
+                        {c.name}
+                        {c.domain && <ExternalLink size={10} className="shrink-0 text-white/30" />}
+                      </a>
+                      <span className="shrink-0 text-[13px] font-semibold tabular-nums text-mint-400">{fmtUsd(c.reservesUsd)}</span>
+                    </div>
+                    <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/6">
+                      <div className="h-full rounded-full bg-gradient-to-r from-mint-400/70 to-mint-400" style={{ width: `${Math.max(pct, 1.5)}%` }} />
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <p className="mt-3 text-[12px] text-white/35">
+            Live on-chain balances aggregated across every chain (Bitcoin, Tron, all EVM networks…) from Arkham entity
+            attribution — mainstream assets only. A transparent, cross-chain proof-of-reserves the casinos can't cherry-pick.
+          </p>
+        </Card>
+      )}
+
       <p className="mt-3 text-[12px] text-white/35">
         Blended trust = on-chain heuristic (reserve coverage, flow balance, track record, depth)
         weighted with real community votes (up to 30%, scaled by sample size).
