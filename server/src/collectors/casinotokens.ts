@@ -13,11 +13,18 @@ import { brandKey } from '../casinometa.ts'
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 
 // brand → CoinGecko coin id (verified). Wrong/delisted ids are silently dropped.
-const TOKENS: { brand: string; cgId: string }[] = [
-  { brand: 'Rollbit', cgId: 'rollbit-coin' },
-  { brand: 'Shuffle', cgId: 'shuffle-2' },
+// `buyback` flags tokens with a known buyback-and-burn / revenue-share programme —
+// a real "the house shares its edge" signal that's unique to crypto casinos.
+const TOKENS: { brand: string; cgId: string; buyback?: boolean }[] = [
+  { brand: 'Rollbit', cgId: 'rollbit-coin', buyback: true }, // RLB buyback+burn from GGR
+  { brand: 'Shuffle', cgId: 'shuffle-2', buyback: true },
   { brand: 'Yeet', cgId: 'yeet' },
-  { brand: 'BetFury', cgId: 'bfg-token' },
+  { brand: 'BetFury', cgId: 'bfg-token', buyback: true },
+  { brand: 'Wink', cgId: 'wink' },
+  { brand: 'FUNToken', cgId: 'funfair' },
+  { brand: 'Wagerr', cgId: 'wagerr' },
+  { brand: 'WINR', cgId: 'winr-protocol' },
+  { brand: 'Decentral Games', cgId: 'decentral-games' },
 ]
 
 export interface TokenInfo {
@@ -25,6 +32,11 @@ export interface TokenInfo {
   price: number
   marketCap: number
   change24h: number | null
+  change7d: number | null
+  fdv: number | null
+  volume24h: number | null
+  athChangePct: number | null // % below all-time high (negative)
+  buyback: boolean // known buyback-and-burn / revenue-share token
 }
 
 let tokens = new Map<string, TokenInfo>() // brandKey → token market data
@@ -36,7 +48,7 @@ async function refresh() {
   const ids = TOKENS.map((t) => t.cgId).join(',')
   try {
     const res = await webFetch(
-      `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&price_change_percentage=24h`,
+      `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&price_change_percentage=24h,7d`,
       { headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: AbortSignal.timeout(20_000) },
     )
     if (!res.ok) {
@@ -55,6 +67,11 @@ async function refresh() {
         price: Number(c.current_price),
         marketCap: Number(c.market_cap ?? 0),
         change24h: c.price_change_percentage_24h != null ? Number(c.price_change_percentage_24h) : null,
+        change7d: c.price_change_percentage_7d_in_currency != null ? Number(c.price_change_percentage_7d_in_currency) : null,
+        fdv: c.fully_diluted_valuation != null ? Number(c.fully_diluted_valuation) : null,
+        volume24h: c.total_volume != null ? Number(c.total_volume) : null,
+        athChangePct: c.ath_change_percentage != null ? Number(c.ath_change_percentage) : null,
+        buyback: !!t.buyback,
       })
     }
     if (next.size) {

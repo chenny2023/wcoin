@@ -62,6 +62,11 @@ export interface TokenInfo {
   price: number
   marketCap: number
   change24h: number | null
+  change7d: number | null
+  fdv: number | null
+  volume24h: number | null
+  athChangePct: number | null
+  buyback: boolean
 }
 
 export interface CasinoMeta {

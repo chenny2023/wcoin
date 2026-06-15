@@ -56,14 +56,23 @@ function TokenBadge({ token }: { token: NonNullable<Row['token']> }) {
   const color = ch >= 0 ? '#2ee6a6' : '#ff5c7a'
   const mc = token.marketCap
   const mcap = mc >= 1e9 ? `$${(mc / 1e9).toFixed(1)}B` : mc >= 1e6 ? `$${(mc / 1e6).toFixed(0)}M` : `$${(mc / 1e3).toFixed(0)}K`
+  const vol = token.volume24h
+  const ch7 = token.change7d
+  const title =
+    `$${token.symbol} — ${mcap} mcap · ${ch >= 0 ? '+' : ''}${ch.toFixed(1)}% 24h` +
+    (ch7 != null ? ` · ${ch7 >= 0 ? '+' : ''}${ch7.toFixed(1)}% 7d` : '') +
+    (vol != null ? ` · ${vol >= 1e6 ? `$${(vol / 1e6).toFixed(1)}M` : `$${(vol / 1e3).toFixed(0)}K`} vol` : '') +
+    (token.buyback ? ' · buyback-and-burn' : '') +
+    ' (CoinGecko)'
   return (
     <span
-      title={`$${token.symbol} — ${mcap} market cap · ${ch >= 0 ? '+' : ''}${ch.toFixed(1)}% 24h (CoinGecko)`}
+      title={title}
       className="inline-flex items-center gap-1 rounded-md bg-white/6 px-1.5 py-0.5 text-[10px] font-bold"
     >
       <Coins size={10} className="text-gold-400" />
       <span className="text-white/70">${token.symbol}</span>
       <span style={{ color }} className="tabular-nums">{ch >= 0 ? '+' : ''}{ch.toFixed(1)}%</span>
+      {token.buyback && <span title="Buyback-and-burn / revenue-share token" className="rounded bg-gold-500/15 px-1 text-[9px] text-gold-400">🔥</span>}
     </span>
   )
 }
