@@ -127,6 +127,24 @@ export async function registerApi(app: FastifyInstance) {
     return aggregateBrands(category ?? 'casino')
   })
 
+  // public, non-sensitive aggregate counts — landing-page social proof + a health
+  // probe for the directory pipelines (contact data stays behind the gated routes)
+  app.get('/api/directory/overview', async () => {
+    const d = db
+      .prepare(
+        `SELECT COUNT(*) total, COALESCE(SUM(site_ok),0) site, COALESCE(SUM(tp_rating IS NOT NULL),0) rated,
+                COALESCE(SUM(CASE WHEN last_checked>0 THEN 1 ELSE 0 END),0) checked FROM casino_directory`,
+      )
+      .get() as any
+    let queue = { fetched: 0, pending: 0 }
+    try {
+      queue = db.prepare("SELECT COALESCE(SUM(done=1),0) fetched, COALESCE(SUM(done=0),0) pending FROM crawl_queue").get() as any
+    } catch {
+      /* table may not exist on a very old db */
+    }
+    return { ...d, guruFetched: queue.fetched, guruPending: queue.pending }
+  })
+
   // ── casino directory (login-gated — outreach/contact data) ───────────────────
   const dirWhere = (filter?: string) =>
     filter === 'withEmail' ? 'email_ok=1' : filter === 'withX' ? 'x_ok=1' : filter === 'included' ? 'site_ok=1 AND x_ok=1 AND email_ok=1' : filter === 'live' ? 'site_ok=1' : '1=1'
