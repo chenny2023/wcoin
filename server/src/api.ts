@@ -142,14 +142,15 @@ export async function registerApi(app: FastifyInstance) {
     } catch {
       /* table may not exist on a very old db */
     }
-    let tpLast: unknown = null
-    try {
-      const v = stateGet('trustpilot:last')
-      if (v) tpLast = JSON.parse(v)
-    } catch {
-      /* ignore */
+    const parse = (k: string) => {
+      try {
+        const v = stateGet(k)
+        return v ? JSON.parse(v) : null
+      } catch {
+        return null
+      }
     }
-    return { ...d, guruFetched: queue.fetched, guruPending: queue.pending, tpLast }
+    return { ...d, guruFetched: queue.fetched, guruPending: queue.pending, guruLast: parse('guru:last'), tpLast: parse('trustpilot:last') }
   })
 
   // ── casino directory (login-gated — outreach/contact data) ───────────────────

@@ -1,4 +1,4 @@
-import { fetch as undiciFetch, ProxyAgent } from 'undici'
+import { fetch as undiciFetch, request as undiciRequest, ProxyAgent } from 'undici'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Proxy-aware fetch for collectors that talk to the open web (review sites,
@@ -154,4 +154,22 @@ export function webFetch(url: string, init: FetchInit = {}) {
 // RESIDENTIAL pool (datacenter IPs get blocked), datacenter only as a fallback.
 export function webFetchProxied(url: string, init: FetchInit = {}) {
   return undiciFetch(url, { ...init, dispatcher: pick(residentialAgents) ?? pick(agents) })
+}
+
+// Read the Location of a single redirect hop WITHOUT following it. fetch's
+// redirect:'manual' yields an opaqueredirect (status 0, no headers) so the
+// Location is unreadable — undici's low-level request with maxRedirections:0
+// returns the 3xx headers directly. Used to recover the real casino domain from
+// casino.guru's /exit?casinoId=N redirect. Routes through the same proxy policy.
+export async function resolveRedirect(url: string, timeoutMs = 20_000): Promise<string | null> {
+  const { headers, body } = await undiciRequest(url, {
+    dispatcher: dispatcherFor(url),
+    method: 'GET',
+    maxRedirections: 0,
+    headersTimeout: timeoutMs,
+    bodyTimeout: timeoutMs,
+  })
+  await body.dump() // drain so the socket is released back to the pool
+  const loc = headers['location']
+  return typeof loc === 'string' ? loc : Array.isArray(loc) ? loc[0] : null
 }

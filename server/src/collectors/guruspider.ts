@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { db } from '../db.ts'
-import { webFetch } from '../net.ts'
+import { db, stateSet } from '../db.ts'
+import { webFetch, resolveRedirect } from '../net.ts'
 import { seedDirectory } from '../directory.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,12 +73,7 @@ function extractCasinoId(html: string): string | null {
 }
 async function resolveWebsite(casinoId: string): Promise<string | null> {
   try {
-    const res = await webFetch(`https://casino.guru/exit?casinoId=${casinoId}&listName=casino-detail&pageType=16&listPosition=1`, {
-      headers: { 'User-Agent': UA },
-      redirect: 'manual',
-      signal: AbortSignal.timeout(20_000),
-    })
-    const loc = res.headers.get('location')
+    const loc = await resolveRedirect(`https://casino.guru/exit?casinoId=${casinoId}&listName=casino-detail&pageType=16&listPosition=1`)
     if (!loc) return null
     const host = hostOf(loc.startsWith('http') ? loc : 'https://' + loc.replace(/^\/+/, ''))
     if (!host || NON_SITE.test(host) || !host.includes('.')) return null
@@ -125,16 +120,14 @@ async function crawlOne(): Promise<void> {
 
   const name = extractName(html)
   const casinoId = extractCasinoId(html)
-  let recorded = false
+  let website: string | null = null
   if (name && casinoId) {
-    const website = await resolveWebsite(casinoId)
-    if (website) {
-      seedDirectory([{ name, website, source: 'casino.guru' }])
-      recorded = true
-    }
+    website = await resolveWebsite(casinoId)
+    if (website) seedDirectory([{ name, website, source: 'casino.guru' }])
   }
   markDone.run(name || html.length > 1000 ? 1 : 2, slug)
-  console.log(`[guru-spider] ${slug}: ${recorded ? `✓ ${name}` : name ? 'no-redirect' : 'no-data'} · +${fresh} slugs queued`)
+  stateSet('guru:last', JSON.stringify({ slug, name: name ?? null, id: casinoId ?? null, website }))
+  console.log(`[guru-spider] ${slug}: ${website ? `✓ ${name} → ${website}` : name ? 'no-redirect' : 'no-data'} · +${fresh} slugs queued`)
 }
 
 function seedQueue() {
