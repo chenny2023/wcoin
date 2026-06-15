@@ -260,6 +260,18 @@ export interface PredictionsResp {
   totalVolume: number
   markets: PredictionMarket[]
 }
+export interface Sponsorship {
+  casino: string
+  streamers: number
+  reach: number
+  liveNow: number
+  liveViewers: number
+  streamersList: { handle: string; platform: string; followers: number; live: number; viewers: number }[]
+}
+export interface SponsorshipsResp {
+  count: number
+  sponsorships: Sponsorship[]
+}
 export interface ArkhamReserves {
   count: number
   totalUsd: number
@@ -358,6 +370,7 @@ export const api = {
     return getJson<{ stats: DirStats; rows: DirRow[] }>('/directory?' + p.toString())
   },
   arkhamReserves: () => getJson<ArkhamReserves>('/arkham/reserves'),
+  sponsorships: () => getJson<SponsorshipsResp>('/sponsorships'),
   protocols: (category?: string) => getJson<ProtocolsResp>('/protocols' + (category ? `?category=${encodeURIComponent(category)}` : '')),
   predictions: () => getJson<PredictionsResp>('/predictions'),
   alertRules: () => getJson<AlertRule[]>('/alerts/rules'),

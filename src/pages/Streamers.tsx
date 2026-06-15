@@ -8,10 +8,12 @@ import { fmtNum } from '../data/format'
 const PLATFORM_COLOR: Record<string, string> = {
   Twitch: '#9146FF',
   Kick: '#53FC18',
+  YouTube: '#FF0000',
 }
 const CHANNEL_URL: Record<string, (h: string) => string> = {
   Twitch: (h) => `https://twitch.tv/${h}`,
   Kick: (h) => `https://kick.com/${h}`,
+  YouTube: (h) => `https://youtube.com/@${h}`,
 }
 
 function StreamerCard({ s }: { s: StreamerRow }) {
@@ -57,6 +59,7 @@ function StreamerCard({ s }: { s: StreamerRow }) {
 
 export default function Streamers() {
   const { data, loading } = usePoll(api.streamers, 20_000)
+  const { data: spon } = usePoll(api.sponsorships, 60_000)
   const [q, setQ] = useState('')
   const [slug, setSlug] = useState('')
   const [busy, setBusy] = useState(false)
@@ -91,7 +94,7 @@ export default function Streamers() {
     <div className="fade-up">
       <PageHead
         title="Streamer Monitoring"
-        subtitle="Real live status, viewers & casino affiliations — Kick (keyless) + Twitch (optional)"
+        subtitle="Real live status, viewers & casino affiliations — Kick + Twitch + YouTube, all keyless"
         right={
           <div className="flex items-center gap-2 rounded-xl border border-white/8 bg-white/4 px-3 py-2 text-sm">
             <Search size={15} className="text-white/40" />
@@ -114,6 +117,34 @@ export default function Streamers() {
           <div className="mt-1 flex items-center gap-2 font-display text-2xl font-bold"><Radio size={18} className="text-violet-400" />{data?.roster ?? 0}</div>
         </Card>
       </div>
+
+      {/* sponsorship graph — which casino each streamer reps, by combined reach */}
+      {spon && spon.sponsorships.length > 0 && (
+        <Card className="mt-4 p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <Users size={18} className="text-gold-400" />
+            <h3 className="font-display text-lg font-bold">Sponsorship Graph</h3>
+            <span className="rounded-md bg-white/8 px-1.5 py-0.5 text-[11px] text-white/50">casino → streamer reach</span>
+          </div>
+          <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+            {spon.sponsorships.slice(0, 12).map((s) => (
+              <div key={s.casino} className="flex items-center justify-between gap-3 border-b border-white/5 py-1.5">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate text-[13px] font-semibold text-gold-400">{s.casino}</span>
+                    {s.liveNow > 0 && <span className="rounded bg-rose-500/20 px-1 text-[9px] font-bold text-rose-400">● {s.liveNow} LIVE</span>}
+                  </div>
+                  <div className="truncate text-[11px] text-white/40">{s.streamersList.map((m) => m.handle).slice(0, 4).join(', ')}{s.streamers > 4 ? ` +${s.streamers - 4}` : ''}</div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="text-[13px] font-bold tabular-nums">{fmtNum(s.reach)}</div>
+                  <div className="text-[10px] text-white/35">{s.streamers} streamers</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* roster add */}
       <Card className="mt-4 p-4">

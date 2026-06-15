@@ -452,6 +452,26 @@ export async function registerApi(app: FastifyInstance) {
     return res.map((b) => ({ ...b, share: (b.volume / totalVol) * 100 }))
   })
 
+  // public — streamer↔casino sponsorship graph: which casino each streamer reps,
+  // aggregated into reach per brand. A unique marketing-intelligence angle.
+  app.get('/api/sponsorships', async () => {
+    const rows = db
+      .prepare(
+        `SELECT affiliation AS casino, COUNT(*) AS streamers,
+                COALESCE(SUM(followers),0) AS reach, COALESCE(SUM(live),0) AS liveNow,
+                COALESCE(SUM(CASE WHEN live=1 THEN viewers ELSE 0 END),0) AS liveViewers
+         FROM streamers WHERE affiliation IS NOT NULL AND affiliation != ''
+         GROUP BY affiliation ORDER BY reach DESC LIMIT 60`,
+      )
+      .all() as any[]
+    const members = db
+      .prepare("SELECT affiliation AS casino, handle, platform, followers, live, viewers FROM streamers WHERE affiliation IS NOT NULL AND affiliation != '' ORDER BY followers DESC")
+      .all() as any[]
+    const byCasino: Record<string, any[]> = {}
+    for (const m of members) (byCasino[m.casino] ??= []).push(m)
+    return { count: rows.length, sponsorships: rows.map((r) => ({ ...r, streamersList: (byCasino[r.casino] ?? []).slice(0, 12) })) }
+  })
+
   // ── streamers (REAL: Kick keyless + Twitch when configured) ──────────────────
   app.get('/api/streamers', async () => {
     const live = db.prepare('SELECT * FROM streamers WHERE live=1 ORDER BY viewers DESC LIMIT 48').all()
