@@ -88,16 +88,20 @@ async function sweepOne(): Promise<void> {
   try {
     const res = await webFetch(url, { headers: { 'User-Agent': UA, 'Accept-Encoding': 'gzip, deflate' }, signal: AbortSignal.timeout(30_000) })
     if (res.status !== 200) {
+      stateSet('trustpilot:cat:last', JSON.stringify({ page, status: res.status }))
       console.warn(`[trustpilot-cat] page ${page}: HTTP ${res.status} (retry later)`)
       return // leave the cursor; a later tick retries on a fresh residential session
     }
     html = await res.text()
   } catch (e) {
+    stateSet('trustpilot:cat:last', JSON.stringify({ page, err: (e as Error).message.slice(0, 50) }))
     console.warn(`[trustpilot-cat] page ${page}: ${(e as Error).message.slice(0, 40)} (retry later)`)
     return
   }
 
   const biz = parsePage(html)
+  // record what the server actually saw, so we can diagnose without log-buffer luck
+  stateSet('trustpilot:cat:last', JSON.stringify({ page, len: html.length, nd: /__NEXT_DATA__/.test(html), idn: /identifyingName/.test(html), biz: biz.length }))
   if (biz.length === 0 || page >= MAX_PAGE) {
     // end of category (or cap) — re-sweep from the top later so ratings stay fresh
     console.log(`[trustpilot-cat] sweep complete at page ${page} — restarting from page 1`)

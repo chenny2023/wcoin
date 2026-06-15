@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify'
-import { db, stmt } from './db.ts'
+import { db, stmt, stateGet } from './db.ts'
 import { bus, TransferEvent } from './bus.ts'
 import { aggregateEntities, aggregateBrands } from './aggregate.ts'
 import { reserveSeries } from './reservehistory.ts'
@@ -142,7 +142,14 @@ export async function registerApi(app: FastifyInstance) {
     } catch {
       /* table may not exist on a very old db */
     }
-    return { ...d, guruFetched: queue.fetched, guruPending: queue.pending }
+    let tpLast: unknown = null
+    try {
+      const v = stateGet('trustpilot:cat:last')
+      if (v) tpLast = JSON.parse(v)
+    } catch {
+      /* ignore */
+    }
+    return { ...d, guruFetched: queue.fetched, guruPending: queue.pending, tpLast }
   })
 
   // ── casino directory (login-gated — outreach/contact data) ───────────────────

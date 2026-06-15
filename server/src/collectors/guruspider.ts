@@ -31,11 +31,18 @@ function slugCandidates(name: string): string[] {
 }
 
 // Domains that are never a casino's own site (socials, casino.guru itself, CDNs).
-const NON_SITE = /(casino\.guru|googletagmanager|google|gstatic|facebook|twitter|x\.com|instagram|youtube|linkedin|telegram|t\.me|cloudflare|gravatar|w3\.org|schema\.org|jsdelivr|cookiebot|trustpilot|sentry)/i
+const NON_SITE = /(casino\.?guru|googletagmanager|google|gstatic|facebook|twitter|x\.com|instagram|youtube|linkedin|telegram|t\.me|cloudflare|gravatar|w3\.org|schema\.org|jsdelivr|cookiebot|trustpilot|sentry|gamecheck|gambleaware|gamcare|gamblingtherapy|gamban|betblocker|typekit)/i
 
-// Pull the casino's real website out of the review page's JSON-LD. The Review's
-// itemReviewed (the casino as an Organization) carries the official url / sameAs.
-function extractFromJsonLd(html: string): { name: string; website: string | null } | null {
+function hostOf(u: string): string | null {
+  try {
+    return new URL(u).hostname.replace(/^www\./, '').toLowerCase() || null
+  } catch {
+    return null
+  }
+}
+
+// The casino's name comes from the review page's JSON-LD (itemReviewed.name).
+function extractName(html: string): string | null {
   for (const m of html.matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/g)) {
     let j: any
     try {
@@ -46,33 +53,36 @@ function extractFromJsonLd(html: string): { name: string; website: string | null
     const nodes = Array.isArray(j) ? j : j['@graph'] && Array.isArray(j['@graph']) ? j['@graph'] : [j]
     for (const node of nodes) {
       const reviewed = node?.itemReviewed ?? (node?.['@type'] === 'Organization' ? node : null)
-      if (!reviewed) continue
-      const name = String(reviewed.name ?? node.name ?? '').trim()
-      if (!name) continue
-      const cands: string[] = []
-      if (typeof reviewed.url === 'string') cands.push(reviewed.url)
-      if (typeof reviewed.sameAs === 'string') cands.push(reviewed.sameAs)
-      if (Array.isArray(reviewed.sameAs)) cands.push(...reviewed.sameAs)
-      const website = cands.find((u) => typeof u === 'string' && /^https?:\/\//.test(u) && !NON_SITE.test(u)) ?? null
-      return { name, website }
+      const name = String(reviewed?.name ?? '').trim()
+      if (name) return name.replace(/\s+Casino\s*$/i, '').trim() || name
     }
   }
   return null
 }
 
-// Fallback: casino.guru shows the casino's domain as visible text near the top
-// ("Casino website" / "Visit STAKE.COM"). Grab the first plausible external host.
-function extractDomainFallback(html: string, name: string): string | null {
-  const head = html.slice(0, 60_000).replace(/<[^>]+>/g, ' ')
-  const tokens = name.toLowerCase().replace(/[^a-z0-9]+/g, '')
-  for (const m of head.matchAll(/\b([a-z0-9-]{2,30}\.(?:com|net|io|bet|casino|games?|app|co|vip|win|club|cc|ag|eu|me|life))\b/gi)) {
-    const host = m[1].toLowerCase()
-    if (NON_SITE.test(host)) continue
-    const core = host.split('.')[0].replace(/[^a-z0-9]+/g, '')
-    // accept when the domain core overlaps the casino name (avoids picking a stray domain)
-    if (tokens.length >= 3 && (core.includes(tokens.slice(0, 4)) || tokens.includes(core.slice(0, 4)))) return 'https://' + host
+// casino.guru hides the real casino URL behind a /exit?casinoId=NNN redirect, so
+// the review-page HTML never contains the domain. We extract the casinoId and
+// follow that redirect ONE hop (redirect:'manual') to read the Location header —
+// which is the casino's real site (e.g. https://stake.com/?c=guru → stake.com).
+function extractCasinoId(html: string): string | null {
+  const m = html.match(/\/exit\?casinoId=(\d+)/)
+  return m ? m[1] : null
+}
+async function resolveWebsite(casinoId: string): Promise<string | null> {
+  try {
+    const res = await webFetch(`https://casino.guru/exit?casinoId=${casinoId}&listName=casino-detail&pageType=16&listPosition=1`, {
+      headers: { 'User-Agent': UA },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(20_000),
+    })
+    const loc = res.headers.get('location')
+    if (!loc) return null
+    const host = hostOf(loc.startsWith('http') ? loc : 'https://' + loc.replace(/^\/+/, ''))
+    if (!host || NON_SITE.test(host) || !host.includes('.')) return null
+    return 'https://' + host
+  } catch {
+    return null
   }
-  return null
 }
 
 const RELATED = /\/([a-z0-9][a-z0-9-]{1,40})-casino-review\b/g
@@ -110,17 +120,18 @@ async function crawlOne(): Promise<void> {
     fresh += enqueue.run(s, now).changes
   }
 
-  const info = extractFromJsonLd(html)
+  const name = extractName(html)
+  const casinoId = extractCasinoId(html)
   let recorded = false
-  if (info) {
-    const website = info.website ?? extractDomainFallback(html, info.name)
+  if (name && casinoId) {
+    const website = await resolveWebsite(casinoId)
     if (website) {
-      seedDirectory([{ name: info.name, website, source: 'casino.guru' }])
+      seedDirectory([{ name, website, source: 'casino.guru' }])
       recorded = true
     }
   }
-  markDone.run(info || html.length > 1000 ? 1 : 2, slug)
-  console.log(`[guru-spider] ${slug}: ${recorded ? `✓ ${info!.name}` : 'no-site'} · +${fresh} slugs queued`)
+  markDone.run(name || html.length > 1000 ? 1 : 2, slug)
+  console.log(`[guru-spider] ${slug}: ${recorded ? `✓ ${name}` : name ? 'no-redirect' : 'no-data'} · +${fresh} slugs queued`)
 }
 
 function seedQueue() {
