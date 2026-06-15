@@ -156,6 +156,24 @@ export function webFetchProxied(url: string, init: FetchInit = {}) {
   return undiciFetch(url, { ...init, dispatcher: pick(residentialAgents) ?? pick(agents) })
 }
 
+// Paid "web unlocker" channel for sites that block even residential IPs at the
+// fingerprint level (Trustpilot — 403/tarpit regardless of IP). ScraperAPI-style
+// URL API: we hand it the target and it returns the unlocked HTML, doing the
+// anti-bot/Cloudflare bypass + its own residential rotation + optional JS render.
+// Set SCRAPER_API_KEY to enable; SCRAPER_RENDER=1 to force JS rendering. Returns
+// null when unconfigured so callers fall back to the normal residential path.
+// Works with any ScraperAPI-compatible endpoint via SCRAPER_API_ENDPOINT
+// (default https://api.scraperapi.com/), e.g. ScrapingBee with the same shape.
+export function webFetchUnlocked(targetUrl: string, init: FetchInit = {}): Promise<Response> | null {
+  const key = process.env.SCRAPER_API_KEY
+  if (!key) return null
+  const endpoint = process.env.SCRAPER_API_ENDPOINT || 'https://api.scraperapi.com/'
+  const render = process.env.SCRAPER_RENDER === '1' ? '&render=true' : ''
+  const api = `${endpoint}?api_key=${key}&url=${encodeURIComponent(targetUrl)}${render}`
+  // direct from Railway → the unlocker API (it does the proxying); no local dispatcher
+  return undiciFetch(api, init)
+}
+
 // Read the Location of a single redirect hop WITHOUT following it. fetch's
 // redirect:'manual' yields an opaqueredirect (status 0, no headers) so the
 // Location is unreadable — undici's low-level request with maxRedirections:0
