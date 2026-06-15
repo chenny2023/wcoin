@@ -198,6 +198,25 @@ CREATE TABLE IF NOT EXISTS arkham_casino (
 );
 CREATE INDEX IF NOT EXISTS idx_arkham_updated ON arkham_casino(updated_at);
 
+-- On-chain iGaming protocols (prediction markets, yield lotteries, on-chain books)
+-- from DefiLlama. Expands the layer beyond comprehensive casinos to the whole
+-- on-chain betting landscape — all transparent, verifiable TVL/flows.
+CREATE TABLE IF NOT EXISTS onchain_protocol (
+  slug       TEXT PRIMARY KEY,          -- DefiLlama slug
+  name       TEXT NOT NULL,
+  category   TEXT,                       -- Prediction Market | Yield Lottery | …
+  chains     TEXT,                       -- comma-separated
+  tvl        REAL,
+  change_1d  REAL,
+  change_7d  REAL,
+  mcap       REAL,
+  url        TEXT,
+  twitter    TEXT,
+  logo       TEXT,
+  updated_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_protocol_tvl ON onchain_protocol(tvl);
+
 -- daily solvency snapshots per casino brand, for the reserve-adequacy trend.
 -- coverage = reserves / weekly-outflow (≈ weeks of withdrawals the reserves cover)
 CREATE TABLE IF NOT EXISTS reserve_history (

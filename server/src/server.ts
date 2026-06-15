@@ -43,6 +43,7 @@ import { startDirectory } from './directory.ts'
 import { startGuruSpider } from './collectors/guruspider.ts'
 import { startTrustpilotCategory } from './collectors/trustpilotcat.ts'
 import { startArkham } from './collectors/arkham.ts'
+import { startDefiLlama } from './collectors/defillama.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const distDir = join(__dirname, '../../dist')
@@ -108,6 +109,7 @@ async function main() {
   startGuruSpider() // casino.guru spider — fans the directory out to thousands of casinos
   startTrustpilotCategory() // Trustpilot casino-category sweep — merges consumer ratings onto the directory
   startArkham() // Arkham on-chain attribution — all-chain reserves/volume per casino entity
+  startDefiLlama() // DefiLlama — on-chain prediction markets / lotteries / betting protocols
 
   // Second wave (+90s): the HEAVY deep-backfill indexers. Their synchronous bulk
   // inserts are what saturate the single Node loop on boot and make the API

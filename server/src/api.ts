@@ -205,6 +205,23 @@ export async function registerApi(app: FastifyInstance) {
     }
   })
 
+  // public — on-chain iGaming protocol landscape (prediction markets, lotteries…)
+  app.get('/api/protocols', async (req) => {
+    const { category } = req.query as { category?: string }
+    let sql = 'SELECT slug, name, category, chains, tvl, change_1d, change_7d, mcap, url, twitter, logo FROM onchain_protocol WHERE tvl IS NOT NULL'
+    const args: any[] = []
+    if (category) {
+      sql += ' AND category = ?'
+      args.push(category)
+    }
+    sql += ' ORDER BY tvl DESC LIMIT 200'
+    const rows = db.prepare(sql).all(...args) as any[]
+    const totalTvl = rows.reduce((s, r) => s + (r.tvl || 0), 0)
+    const byCategory: Record<string, number> = {}
+    for (const r of rows) byCategory[r.category] = (byCategory[r.category] || 0) + 1
+    return { count: rows.length, totalTvl, byCategory, protocols: rows }
+  })
+
   // public all-chain proof-of-reserves, sourced from Arkham entity portfolios.
   // On-chain balances are public data — and a strong "we cover every chain" signal.
   app.get('/api/arkham/reserves', async () => {
