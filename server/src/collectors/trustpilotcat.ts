@@ -1,4 +1,4 @@
-import { db, stateSet } from '../db.ts'
+import { db, stateSet, stateGet } from '../db.ts'
 import { webFetch } from '../net.ts'
 import { unlockedFetch, tierName } from './unlocker.ts'
 
@@ -93,6 +93,13 @@ async function enrichOne(): Promise<void> {
 export function startTrustpilotCategory() {
   if ((process.env.TRUSTPILOT_CAT ?? '1') === '0') return
   console.log('[trustpilot] per-domain review enricher active')
+  // one-time: before the unlocker plan worked the enricher marked every casino
+  // tp_checked with a null rating — reset so they all get fetched for real now.
+  if (!stateGet('trustpilot:reset:unlocker')) {
+    const n = db.prepare('UPDATE casino_directory SET tp_checked=0').run().changes
+    stateSet('trustpilot:reset:unlocker', 1)
+    if (n) console.log(`[trustpilot] reset ${n} rows to re-fetch via the unlocker`)
+  }
   const loop = async () => {
     await enrichOne().catch((e) => console.warn('[trustpilot]', (e as Error).message))
     setTimeout(loop, 25_000) // one casino per 25s through the residential proxy
