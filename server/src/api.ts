@@ -6,6 +6,7 @@ import { reserveSeries } from './reservehistory.ts'
 import { twitchEnabled } from './collectors/twitch.ts'
 import { redditEnabled } from './collectors/reddit.ts'
 import { probeTier } from './collectors/unlocker.ts'
+import { arkhamFetch } from './net.ts'
 import { newsEnabled } from './collectors/news.ts'
 import { telegramSubs } from './collectors/telegram.ts'
 import { brandKey } from './casinometa.ts'
@@ -176,6 +177,21 @@ export async function registerApi(app: FastifyInstance) {
     const rd = []
     for (const t of ['premium', 'premium_us', 'ultra_us']) rd.push(await probeTier('https://old.reddit.com/search.json?q=stake&limit=5', t, init))
     return { trustpilot: tp, reddit: rd }
+  })
+
+  // flexible Arkham API explorer: ?path=/intelligence/address/0x... — returns the
+  // raw status + body snippet so we can learn the API shape before building on it.
+  app.get('/api/directory/arkhamtest', async (req) => {
+    const { path } = req.query as { path?: string }
+    const p = arkhamFetch(path || '/intelligence/address/0x28c6c06298d514db089934071355e5743bf21d60', { signal: AbortSignal.timeout(30_000) })
+    if (!p) return { error: 'no arkham key configured' }
+    try {
+      const r = await p
+      const body = await r.text()
+      return { status: r.status, len: body.length, body: body.slice(0, 1200) }
+    } catch (e) {
+      return { error: (e as Error).message.slice(0, 80) }
+    }
   })
 
   // ── casino directory (login-gated — outreach/contact data) ───────────────────

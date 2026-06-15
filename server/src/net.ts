@@ -173,6 +173,19 @@ export function webFetchUnlocked(targetUrl: string, init: FetchInit = {}, extra 
   return undiciFetch(api, init)
 }
 
+// Arkham Intelligence API — on-chain entity attribution (maps addresses ↔ named
+// entities like "Stake.com"). Key in env `arkham`. Auth header is configurable
+// (ARKHAM_AUTH_HEADER, default "API-Key") since their docs/SDKs vary. Returns null
+// when unconfigured. Direct fetch (Arkham's API is reachable from Railway).
+export function arkhamFetch(path: string, init: FetchInit = {}): Promise<Response> | null {
+  const key = process.env.arkham || process.env.ARKHAM_API_KEY
+  if (!key) return null
+  const base = process.env.ARKHAM_API_BASE || 'https://api.arkhamintelligence.com'
+  const header = process.env.ARKHAM_AUTH_HEADER || 'API-Key'
+  const url = base + (path.startsWith('/') ? path : '/' + path)
+  return undiciFetch(url, { ...init, headers: { [header]: key, Accept: 'application/json', ...((init as any).headers || {}) } })
+}
+
 // Read the Location of a single redirect hop WITHOUT following it. fetch's
 // redirect:'manual' yields an opaqueredirect (status 0, no headers) so the
 // Location is unreadable — undici's low-level request with maxRedirections:0
