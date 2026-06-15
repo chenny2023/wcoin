@@ -49,6 +49,7 @@ export interface Entity {
   safetyIndex: number | null
   trustpilot: number | null
   editorial: number | null
+  askgamblers: number | null
   complaints: number | null
   unresolved: number | null
   userReviews: number | null
@@ -103,6 +104,7 @@ export interface Brand {
   safetyIndex: number | null
   trustpilot: number | null
   editorial: number | null
+  askgamblers: number | null
   complaints: number | null
   unresolved: number | null
   userReviews: number | null

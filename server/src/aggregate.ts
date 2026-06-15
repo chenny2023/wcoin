@@ -39,6 +39,7 @@ export interface EntityAgg {
   safetyIndex: number | null // casino.guru third-party Safety Index (0–10)
   trustpilot: number | null // Trustpilot rating (★/5)
   editorial: number | null // casino.org editorial rating (/5)
+  askgamblers: number | null // AskGamblers expert rating (/10)
   complaints: number | null // casino.guru current complaint count
   unresolved: number | null // casino.guru unresolved complaints (red flag)
   userReviews: number | null // casino.guru community-review count
@@ -153,6 +154,7 @@ function computeEntities(): EntityAgg[] {
       safetyIndex: w.category === 'casino' ? reviews.get(brandKey(w.label))?.safety ?? null : null,
       trustpilot: w.category === 'casino' ? reviews.get(brandKey(w.label))?.trustpilot ?? null : null,
       editorial: w.category === 'casino' ? reviews.get(brandKey(w.label))?.editorial ?? null : null,
+      askgamblers: w.category === 'casino' ? reviews.get(brandKey(w.label))?.askgamblers ?? null : null,
       complaints: w.category === 'casino' ? reviews.get(brandKey(w.label))?.complaints ?? null : null,
       unresolved: w.category === 'casino' ? reviews.get(brandKey(w.label))?.unresolved ?? null : null,
       userReviews: w.category === 'casino' ? reviews.get(brandKey(w.label))?.userReviews ?? null : null,
@@ -162,6 +164,7 @@ function computeEntities(): EntityAgg[] {
               safetyIndex: reviews.get(brandKey(w.label))?.safety ?? null,
               trustpilot: reviews.get(brandKey(w.label))?.trustpilot ?? null,
               editorial: reviews.get(brandKey(w.label))?.editorial ?? null,
+              askgamblers: reviews.get(brandKey(w.label))?.askgamblers ?? null,
               complaints: reviews.get(brandKey(w.label))?.complaints ?? null,
               unresolved: reviews.get(brandKey(w.label))?.unresolved ?? null,
             })
@@ -203,6 +206,7 @@ export interface BrandAgg {
   safetyIndex: number | null
   trustpilot: number | null
   editorial: number | null
+  askgamblers: number | null
   complaints: number | null
   unresolved: number | null
   userReviews: number | null
@@ -276,6 +280,7 @@ function computeBrands(): BrandAgg[] {
       safetyIndex: members.map((e) => e.safetyIndex).find((s) => s != null) ?? null,
       trustpilot: members.map((e) => e.trustpilot).find((s) => s != null) ?? null,
       editorial: members.map((e) => e.editorial).find((s) => s != null) ?? null,
+      askgamblers: members.map((e) => e.askgamblers).find((s) => s != null) ?? null,
       complaints: members.map((e) => e.complaints).find((s) => s != null) ?? null,
       unresolved: members.map((e) => e.unresolved).find((s) => s != null) ?? null,
       userReviews: members.map((e) => e.userReviews).find((s) => s != null) ?? null,
@@ -306,6 +311,7 @@ export interface RepInputs {
   safetyIndex: number | null // 0–10
   trustpilot: number | null // /5
   editorial: number | null // /5
+  askgamblers: number | null // /10
   complaints: number | null
   unresolved: number | null
 }
@@ -314,6 +320,7 @@ function reputationScore(r: RepInputs): number | null {
   if (r.safetyIndex != null) sigs.push({ v: r.safetyIndex * 10, w: 1.2 }) // expert review, weighted highest
   if (r.trustpilot != null) sigs.push({ v: r.trustpilot * 20, w: 1.0 }) // consumer reviews
   if (r.editorial != null) sigs.push({ v: r.editorial * 20, w: 0.7 }) // editorial review
+  if (r.askgamblers != null) sigs.push({ v: r.askgamblers * 10, w: 1.0 }) // AskGamblers expert rating /10
   if (sigs.length === 0) return null
   let s = sigs.reduce((a, x) => a + x.v * x.w, 0) / sigs.reduce((a, x) => a + x.w, 0)
   // complaint penalty: unresolved disputes are the sharpest red flag

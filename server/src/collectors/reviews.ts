@@ -1,5 +1,6 @@
 import { db, stateGet, stateSet } from '../db.ts'
 import { webFetch } from '../net.ts'
+import { unlockedFetch } from './unlocker.ts'
 import { brandKey, brandName, matchCasinoMeta } from '../casinometa.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -240,6 +241,38 @@ async function fetchCasinoOrg(slug: string): Promise<{ score: number; reviewed: 
   throw lastErr ?? new Error('casino.org fetch failed')
 }
 
+// AskGamblers expert rating (/10) — a recognised industry review score, reached
+// through the paid unlocker (AskGamblers Cloudflare-blocks keyless/datacenter).
+// Parsed from the page's JSON-LD aggregateRating / Review ratingValue.
+async function fetchAskGamblers(slug: string): Promise<{ score: number; reviewed: string } | null> {
+  const url = `https://www.askgamblers.com/casino-reviews/${slug}-casino-review`
+  const init = { headers: { 'User-Agent': UA, 'Accept-Encoding': 'gzip, deflate' }, signal: AbortSignal.timeout(120_000) }
+  const p = unlockedFetch('askgamblers', url, init)
+  const res = p ? await p : await webFetch(url, init)
+  if (res.status === 404) return null
+  if (res.status !== 200) throw new Error(`askgamblers HTTP ${res.status}`)
+  const t = await res.text()
+  for (const m of t.matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/g)) {
+    try {
+      const j = JSON.parse(m[1])
+      const nodes = Array.isArray(j) ? j : (j['@graph'] ?? [j])
+      for (const n of Array.isArray(nodes) ? nodes : [nodes]) {
+        const ar = n?.aggregateRating ?? (n?.['@type'] === 'AggregateRating' ? n : null) ?? n?.reviewRating
+        if (ar?.ratingValue != null) {
+          const rv = Number(ar.ratingValue)
+          const best = Number(ar.bestRating ?? 10) || 10
+          const score = best === 10 ? rv : (rv / best) * 10 // normalise to /10
+          const reviewed = String(n.itemReviewed?.name ?? n.name ?? '')
+          if (score > 0 && score <= 10) return { score: Number(score.toFixed(2)), reviewed }
+        }
+      }
+    } catch {
+      /* skip */
+    }
+  }
+  return null
+}
+
 let queue: { key: string; name: string }[] = []
 let cursor = 0
 function refillQueue() {
@@ -357,6 +390,34 @@ export async function runReviewsOnce() {
     }
     if (okC && !ed) upsert.run({ brand_key: key, source: 'casino.org', score: 0, score_max: 5, url: null, updated_at: Date.now() })
   }
+
+  // 4) AskGamblers expert rating (/10) — recognised industry score, via unlocker
+  if (!fresh('askgamblers')) {
+    let ag = 0
+    let okA = true
+    const bk = brandKey(name)
+    try {
+      for (const slug of slugCandidates(name)) {
+        const r = await fetchAskGamblers(slug)
+        if (r != null && r.score > 0) {
+          const reviewedKey = r.reviewed.toLowerCase().replace(/[^a-z0-9]/g, '')
+          if (r.reviewed && bk && !reviewedKey.includes(bk) && !bk.includes(reviewedKey)) {
+            await new Promise((res) => setTimeout(res, 400))
+            continue // page reviews a different brand — skip
+          }
+          ag = r.score
+          upsert.run({ brand_key: key, source: 'askgamblers', score: r.score, score_max: 10, url: `https://www.askgamblers.com/casino-reviews/${slug}-casino-review`, updated_at: Date.now() })
+          console.log(`[reviews] ${name}: AskGamblers ${r.score}/10`)
+          break
+        }
+        await new Promise((res) => setTimeout(res, 400))
+      }
+    } catch (e) {
+      okA = false
+      console.warn(`[reviews] ${name}: AskGamblers fetch error (${(e as Error).message}), will retry`)
+    }
+    if (okA && !ag) upsert.run({ brand_key: key, source: 'askgamblers', score: 0, score_max: 10, url: null, updated_at: Date.now() })
+  }
 }
 
 // brand_key → all third-party review scores (casino.guru Safety Index 0–10 +
@@ -365,6 +426,7 @@ export interface ReviewScore {
   safety: number | null // casino.guru 0–10
   trustpilot: number | null // ★/5
   editorial: number | null // casino.org /5
+  askgamblers: number | null // AskGamblers /10
   complaints: number | null // casino.guru current complaint count
   unresolved: number | null // casino.guru unresolved complaints (actionable red flag)
   userReviews: number | null // casino.guru community-review count
@@ -374,12 +436,13 @@ export function reviewScores(): Map<string, ReviewScore> {
   // read ALL rows: rating sources are only meaningful when >0 (0 = cached miss),
   // but the count sources (complaints/unresolved/reviews) are meaningful AT 0 too
   const rows = db.prepare('SELECT brand_key, source, score FROM reviews').all() as { brand_key: string; source: string; score: number }[]
-  const blank = (): ReviewScore => ({ safety: null, trustpilot: null, editorial: null, complaints: null, unresolved: null, userReviews: null })
+  const blank = (): ReviewScore => ({ safety: null, trustpilot: null, editorial: null, askgamblers: null, complaints: null, unresolved: null, userReviews: null })
   for (const r of rows) {
     const e = out.get(r.brand_key) ?? blank()
     if (r.source === 'casino.guru' && r.score > 0) e.safety = r.score
     else if (r.source === 'trustpilot' && r.score > 0) e.trustpilot = r.score
     else if (r.source === 'casino.org' && r.score > 0) e.editorial = r.score
+    else if (r.source === 'askgamblers' && r.score > 0) e.askgamblers = r.score
     else if (r.source === 'cg.complaints') e.complaints = r.score
     else if (r.source === 'cg.unresolved') e.unresolved = r.score
     else if (r.source === 'cg.userreviews') e.userReviews = r.score

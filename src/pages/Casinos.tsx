@@ -49,6 +49,20 @@ function EditorialChip({ score }: { score: number }) {
   )
 }
 
+// AskGamblers expert rating (/10) — recognised industry review score.
+function AskGamblersChip({ score }: { score: number }) {
+  const color = score >= 7 ? '#2ee6a6' : score >= 5 ? '#f5b100' : '#ff5c7a'
+  return (
+    <span
+      title={`AskGamblers expert rating ${score}/10`}
+      className="inline-flex items-center gap-1 rounded-md bg-white/6 px-1.5 py-0.5 text-[10px] font-bold tabular-nums"
+      style={{ color }}
+    >
+      <Award size={10} /> AG {score}
+    </span>
+  )
+}
+
 // the casino's own token — symbol + 24h move (CoinGecko). A financial-confidence
 // signal for the operators that issue a token.
 function TokenBadge({ token }: { token: NonNullable<Row['token']> }) {
@@ -281,6 +295,7 @@ interface Row {
   safetyIndex: number | null
   trustpilot: number | null
   editorial: number | null
+  askgamblers: number | null
   complaints: number | null
   unresolved: number | null
   userReviews: number | null
@@ -326,6 +341,7 @@ export default function Casinos() {
             safetyIndex: b.safetyIndex,
             trustpilot: b.trustpilot,
             editorial: b.editorial,
+            askgamblers: b.askgamblers,
             complaints: b.complaints,
             unresolved: b.unresolved,
             userReviews: b.userReviews,
@@ -353,6 +369,7 @@ export default function Casinos() {
             safetyIndex: e.safetyIndex,
             trustpilot: e.trustpilot,
             editorial: e.editorial,
+            askgamblers: e.askgamblers,
             complaints: e.complaints,
             unresolved: e.unresolved,
             userReviews: e.userReviews,
@@ -498,6 +515,7 @@ export default function Casinos() {
                               {c.safetyIndex != null && <GuruChip score={c.safetyIndex} />}
                               {c.trustpilot != null && <TrustpilotChip score={c.trustpilot} />}
                               {c.editorial != null && <EditorialChip score={c.editorial} />}
+                              {c.askgamblers != null && <AskGamblersChip score={c.askgamblers} />}
                               {c.complaints != null && <ComplaintsChip count={c.complaints} unresolved={c.unresolved} />}
                             </div>
                           </div>
@@ -546,6 +564,7 @@ export default function Casinos() {
                               {c.safetyIndex != null && <MetaCell icon={<ShieldCheck size={12} />} label="casino.guru" value={`${c.safetyIndex} / 10`} />}
                               {c.trustpilot != null && <MetaCell icon={<Star size={12} />} label="Trustpilot" value={`${c.trustpilot} / 5`} />}
                               {c.editorial != null && <MetaCell icon={<Award size={12} />} label="casino.org" value={`${c.editorial} / 5`} />}
+                              {c.askgamblers != null && <MetaCell icon={<Award size={12} />} label="AskGamblers" value={`${c.askgamblers} / 10`} />}
                               {c.complaints != null && <MetaCell icon={<AlertTriangle size={12} />} label="Complaints" value={`${c.complaints}${c.unresolved ? ` · ${c.unresolved} unresolved` : ''}`} />}
                               {c.userReviews != null && <MetaCell icon={<MessageSquare size={12} />} label="User reviews" value={`${c.userReviews}`} />}
                               {c.token && <MetaCell icon={<Coins size={12} />} label={`$${c.token.symbol} token`} value={`$${c.token.price < 0.01 ? c.token.price.toPrecision(2) : c.token.price.toFixed(c.token.price < 1 ? 4 : 2)} · ${c.token.change24h != null ? `${c.token.change24h >= 0 ? '+' : ''}${c.token.change24h.toFixed(1)}% 24h` : ''}`} />}
