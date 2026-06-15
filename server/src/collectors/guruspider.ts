@@ -67,13 +67,15 @@ function extractName(html: string): string | null {
 // the review-page HTML never contains the domain. We extract the casinoId and
 // follow that redirect ONE hop (redirect:'manual') to read the Location header —
 // which is the casino's real site (e.g. https://stake.com/?c=guru → stake.com).
-function extractCasinoId(html: string): string | null {
-  const m = html.match(/\/exit\?casinoId=(\d+)/)
-  return m ? m[1] : null
+// Grab the FULL /exit?... href (all params) — casino.guru drops the request and
+// won't issue the 302 if the querystring is partial, so we can't rebuild it.
+function extractExitPath(html: string): string | null {
+  const m = html.match(/href="(\/exit\?casinoId=\d+[^"]*)"/)
+  return m ? m[1].replace(/&amp;/g, '&') : null
 }
-async function resolveWebsite(casinoId: string): Promise<string | null> {
+async function resolveWebsite(exitPath: string): Promise<string | null> {
   try {
-    const loc = await resolveRedirect(`https://casino.guru/exit?casinoId=${casinoId}&listName=casino-detail&pageType=16&listPosition=1`)
+    const loc = await resolveRedirect('https://casino.guru' + exitPath)
     if (!loc) return null
     const host = hostOf(loc.startsWith('http') ? loc : 'https://' + loc.replace(/^\/+/, ''))
     if (!host || NON_SITE.test(host) || !host.includes('.')) return null
@@ -119,14 +121,14 @@ async function crawlOne(): Promise<void> {
   }
 
   const name = extractName(html)
-  const casinoId = extractCasinoId(html)
+  const exitPath = extractExitPath(html)
   let website: string | null = null
-  if (name && casinoId) {
-    website = await resolveWebsite(casinoId)
+  if (name && exitPath) {
+    website = await resolveWebsite(exitPath)
     if (website) seedDirectory([{ name, website, source: 'casino.guru' }])
   }
   markDone.run(name || html.length > 1000 ? 1 : 2, slug)
-  stateSet('guru:last', JSON.stringify({ slug, name: name ?? null, id: casinoId ?? null, website }))
+  stateSet('guru:last', JSON.stringify({ slug, name: name ?? null, exit: exitPath ? true : false, website }))
   console.log(`[guru-spider] ${slug}: ${website ? `✓ ${name} → ${website}` : name ? 'no-redirect' : 'no-data'} · +${fresh} slugs queued`)
 }
 
