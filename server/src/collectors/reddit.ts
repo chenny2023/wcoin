@@ -115,11 +115,14 @@ export async function runRedditOnce() {
 }
 
 export function startReddit() {
-  console.log('[reddit] public search feed active (keyless, via residential proxy)')
+  console.log('[reddit] RSS search feed active (via unlocker)')
   const loop = async () => {
     await runRedditOnce()
-    // healthy: one casino per 20s. Blocked: back off to 30m; a single success flips back.
-    const delay = redditConsecutiveFails >= 4 ? 30 * 60_000 : 20_000
+    // Each RSS fetch costs unlocker credits, and social mentions trickle in slowly,
+    // so refresh gently: one casino per 3min (≈ every casino ~1.5h). Blocked → 30m.
+    // Override the healthy cadence with REDDIT_INTERVAL_MS.
+    const healthy = Number(process.env.REDDIT_INTERVAL_MS) || 180_000
+    const delay = redditConsecutiveFails >= 4 ? 30 * 60_000 : healthy
     setTimeout(loop, delay)
   }
   setTimeout(loop, 40_000)
