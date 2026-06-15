@@ -164,12 +164,11 @@ export function webFetchProxied(url: string, init: FetchInit = {}) {
 // null when unconfigured so callers fall back to the normal residential path.
 // Works with any ScraperAPI-compatible endpoint via SCRAPER_API_ENDPOINT
 // (default https://api.scraperapi.com/), e.g. ScrapingBee with the same shape.
-export function webFetchUnlocked(targetUrl: string, init: FetchInit = {}): Promise<Response> | null {
+export function webFetchUnlocked(targetUrl: string, init: FetchInit = {}, extra = ''): Promise<Response> | null {
   const key = process.env.SCRAPER_API_KEY
   if (!key) return null
   const endpoint = process.env.SCRAPER_API_ENDPOINT || 'https://api.scraperapi.com/'
-  const render = process.env.SCRAPER_RENDER === '1' ? '&render=true' : ''
-  const api = `${endpoint}?api_key=${key}&url=${encodeURIComponent(targetUrl)}${render}`
+  const api = `${endpoint}?api_key=${key}&url=${encodeURIComponent(targetUrl)}${extra}`
   // direct from Railway → the unlocker API (it does the proxying); no local dispatcher
   return undiciFetch(api, init)
 }

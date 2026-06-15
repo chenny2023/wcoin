@@ -1,5 +1,6 @@
 import { db, stateSet } from '../db.ts'
-import { webFetch, webFetchUnlocked } from '../net.ts'
+import { webFetch } from '../net.ts'
+import { unlockedFetch } from './unlocker.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Trustpilot directory enricher. The casino *category* listing is bot-blocked
@@ -64,7 +65,7 @@ async function enrichOne(): Promise<void> {
     // Trustpilot blocks even residential IPs at the fingerprint level, so prefer
     // the paid unlocker channel when configured; fall back to the residential path.
     const init = { headers: { 'User-Agent': UA, 'Accept-Encoding': 'gzip, deflate' }, signal: AbortSignal.timeout(70_000) }
-    const res = (await (webFetchUnlocked(target, init) ?? webFetch(target, init)))
+    const res = (await unlockedFetch('trustpilot', target, init)) ?? (await webFetch(target, init))
     if (res.status === 404) {
       // no Trustpilot profile — mark checked so we stop retrying it
       update.run({ domain: row.domain, rating: null, reviews: null, now })

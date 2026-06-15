@@ -150,7 +150,15 @@ export async function registerApi(app: FastifyInstance) {
         return null
       }
     }
-    return { ...d, guruFetched: queue.fetched, guruPending: queue.pending, guruLast: parse('guru:last'), tpLast: parse('trustpilot:last') }
+    const tier = (c: string) => Number(stateGet(`scraper:tier:${c}`) ?? '0') || 0
+    return {
+      ...d,
+      guruFetched: queue.fetched,
+      guruPending: queue.pending,
+      guruLast: parse('guru:last'),
+      tpLast: parse('trustpilot:last'),
+      scraperTier: { trustpilot: tier('trustpilot'), reddit: tier('reddit') },
+    }
   })
 
   // ── casino directory (login-gated — outreach/contact data) ───────────────────

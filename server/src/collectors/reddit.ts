@@ -1,5 +1,6 @@
 import { db } from '../db.ts'
 import { webFetch } from '../net.ts'
+import { unlockedFetch } from './unlocker.ts'
 import { score as lexScore } from '../sentiment.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -46,10 +47,11 @@ export async function runRedditOnce() {
   for (let attempt = 0; attempt < 3 && !json; attempt++) {
     const url = urls[attempt % urls.length]
     try {
-      const res = await webFetch(url, {
-        headers: { 'User-Agent': UA, Accept: 'application/json', 'Accept-Language': 'en-US,en;q=0.9' },
-        signal: AbortSignal.timeout(20_000),
-      })
+      // Reddit fingerprint-blocks datacenter AND residential IPs, so prefer the
+      // paid unlocker (ScraperAPI residential pool, no render → raw JSON) when
+      // configured; fall back to the residential proxy otherwise.
+      const init = { headers: { 'User-Agent': UA, Accept: 'application/json', 'Accept-Language': 'en-US,en;q=0.9' }, signal: AbortSignal.timeout(40_000) }
+      const res = (await unlockedFetch('reddit', url, init)) ?? (await webFetch(url, { ...init, signal: AbortSignal.timeout(20_000) }))
       if (res.ok) {
         json = await res.json()
         break
