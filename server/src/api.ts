@@ -152,14 +152,25 @@ export async function registerApi(app: FastifyInstance) {
         return null
       }
     }
-    const tier = (c: string) => Number(stateGet(`scraper:tier:${c}`) ?? '0') || 0
+    let arkham: any = { seeded: 0, resolved: 0, withReserves: 0 }
+    try {
+      arkham = db
+        .prepare(
+          `SELECT COUNT(*) seeded, COALESCE(SUM(CASE WHEN entity_id != '' THEN 1 ELSE 0 END),0) resolved,
+                  COALESCE(SUM(CASE WHEN reserves_usd IS NOT NULL THEN 1 ELSE 0 END),0) withReserves,
+                  COALESCE(SUM(CASE WHEN resolved_at>0 THEN 1 ELSE 0 END),0) searched FROM arkham_casino`,
+        )
+        .get()
+    } catch {
+      /* table may not exist yet */
+    }
     return {
       ...d,
       guruFetched: queue.fetched,
       guruPending: queue.pending,
       guruLast: parse('guru:last'),
       tpLast: parse('trustpilot:last'),
-      scraperTier: { trustpilot: tier('trustpilot'), reddit: tier('reddit') },
+      arkham,
     }
   })
 

@@ -182,6 +182,21 @@ CREATE TABLE IF NOT EXISTS crawl_queue (
 );
 CREATE INDEX IF NOT EXISTS idx_crawl_done ON crawl_queue(done);
 
+-- Arkham on-chain attribution per casino: maps a casino → its Arkham "gambling"
+-- entity, then pulls all-chain reserves (portfolio) + volume. Expands transaction
+-- coverage far beyond what we index ourselves (Arkham attributes Tron/BTC/EVM…).
+CREATE TABLE IF NOT EXISTS arkham_casino (
+  key          TEXT PRIMARY KEY,        -- roster slug (stable local id)
+  name         TEXT NOT NULL,
+  entity_id    TEXT,                    -- Arkham entity id; '' = searched, no gambling match
+  entity_type  TEXT,
+  reserves_usd REAL,                    -- Σ portfolio USD (mainstream tokens only)
+  volume7d_usd REAL,                    -- Σ transfer USD over 7d (mainstream tokens) — phase 2
+  resolved_at  INTEGER NOT NULL DEFAULT 0,
+  updated_at   INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_arkham_updated ON arkham_casino(updated_at);
+
 -- daily solvency snapshots per casino brand, for the reserve-adequacy trend.
 -- coverage = reserves / weekly-outflow (≈ weeks of withdrawals the reserves cover)
 CREATE TABLE IF NOT EXISTS reserve_history (
