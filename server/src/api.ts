@@ -242,16 +242,31 @@ export async function registerApi(app: FastifyInstance) {
   // public all-chain proof-of-reserves, sourced from Arkham entity portfolios.
   // On-chain balances are public data — and a strong "we cover every chain" signal.
   app.get('/api/arkham/reserves', async () => {
+    const wk = Date.now() - 7 * 86400_000
     const rows = db
       .prepare(
-        "SELECT name, domain, entity_id, reserves_usd FROM arkham_casino WHERE entity_id != '' AND reserves_usd IS NOT NULL ORDER BY reserves_usd DESC LIMIT 500",
+        `SELECT a.key, a.name, a.domain, a.entity_id, a.reserves_usd,
+           (SELECT h.reserves_usd FROM arkham_reserve_history h WHERE h.key=a.key AND h.ts <= ? ORDER BY h.ts DESC LIMIT 1) AS prev7d
+         FROM arkham_casino a
+         WHERE a.entity_id != '' AND a.reserves_usd IS NOT NULL
+         ORDER BY a.reserves_usd DESC LIMIT 500`,
       )
-      .all() as { name: string; domain: string | null; entity_id: string; reserves_usd: number }[]
+      .all(wk) as { key: string; name: string; domain: string | null; entity_id: string; reserves_usd: number; prev7d: number | null }[]
     const total = rows.reduce((s, r) => s + (r.reserves_usd || 0), 0)
     return {
       count: rows.length,
       totalUsd: total,
-      casinos: rows.map((r) => ({ name: r.name, domain: r.domain, entityId: r.entity_id, reservesUsd: r.reserves_usd })),
+      casinos: rows.map((r) => {
+        const change7d = r.prev7d && r.prev7d > 0 ? (r.reserves_usd - r.prev7d) / r.prev7d : null
+        return {
+          name: r.name,
+          domain: r.domain,
+          entityId: r.entity_id,
+          reservesUsd: r.reserves_usd,
+          change7d, // fraction; fills in once a week of history accrues
+          solvencyAlert: change7d != null && change7d <= -0.3, // ≥30% weekly drawdown
+        }
+      }),
     }
   })
 

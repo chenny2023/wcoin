@@ -198,6 +198,15 @@ CREATE TABLE IF NOT EXISTS arkham_casino (
 );
 CREATE INDEX IF NOT EXISTS idx_arkham_updated ON arkham_casino(updated_at);
 
+-- reserve snapshots over time → solvency trend + drop detection (proof-of-reserves
+-- is only as good as its trend: a casino draining its wallets is the real signal).
+CREATE TABLE IF NOT EXISTS arkham_reserve_history (
+  key      TEXT NOT NULL,
+  reserves_usd REAL,
+  ts       INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_arkres_key_ts ON arkham_reserve_history(key, ts);
+
 -- On-chain iGaming protocols (prediction markets, yield lotteries, on-chain books)
 -- from DefiLlama. Expands the layer beyond comprehensive casinos to the whole
 -- on-chain betting landscape — all transparent, verifiable TVL/flows.

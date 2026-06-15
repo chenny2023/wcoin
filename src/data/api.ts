@@ -258,7 +258,7 @@ export interface PredictionsResp {
 export interface ArkhamReserves {
   count: number
   totalUsd: number
-  casinos: { name: string; domain: string | null; entityId: string; reservesUsd: number }[]
+  casinos: { name: string; domain: string | null; entityId: string; reservesUsd: number; change7d: number | null; solvencyAlert: boolean }[]
 }
 export interface DirStats {
   total: number

@@ -141,6 +141,7 @@ async function refreshOne(): Promise<boolean> {
     if (r.status === 200) {
       const reserves = sumReserves((await r.json()) as any)
       setMetrics.run({ key: row.key, reserves, now })
+      db.prepare('INSERT INTO arkham_reserve_history(key, reserves_usd, ts) VALUES(?, ?, ?)').run(row.key, reserves, now)
       console.log(`[arkham] ${row.name}: reserves $${Math.round(reserves).toLocaleString()}`)
     } else {
       console.warn(`[arkham] portfolio ${row.name}: HTTP ${r.status}`)

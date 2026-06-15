@@ -216,7 +216,15 @@ export default function Sentiment() {
                         {c.name}
                         {c.domain && <ExternalLink size={10} className="shrink-0 text-white/30" />}
                       </a>
-                      <span className="shrink-0 text-[13px] font-semibold tabular-nums text-mint-400">{fmtUsd(c.reservesUsd)}</span>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {c.solvencyAlert && <span title="≥30% weekly reserve drawdown" className="rounded bg-rose-400/15 px-1 text-[10px] font-bold text-rose-400">⚠ DRAIN</span>}
+                        {c.change7d != null && Math.abs(c.change7d) >= 0.01 && (
+                          <span className={`text-[11px] tabular-nums ${c.change7d >= 0 ? 'text-mint-400/70' : 'text-rose-400'}`}>
+                            {c.change7d >= 0 ? '▲' : '▼'}{Math.abs(c.change7d * 100).toFixed(0)}%
+                          </span>
+                        )}
+                        <span className="text-[13px] font-semibold tabular-nums text-mint-400">{fmtUsd(c.reservesUsd)}</span>
+                      </div>
                     </div>
                     <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/6">
                       <div className="h-full rounded-full bg-gradient-to-r from-mint-400/70 to-mint-400" style={{ width: `${Math.max(pct, 1.5)}%` }} />
