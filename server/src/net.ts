@@ -102,13 +102,17 @@ function pick(pool: ProxyAgent[]): ProxyAgent | undefined {
 // sites accept. Configure REDDIT_PROXY with one or more residential proxy URLs
 // (comma-separated http://user:pass@host:port); reddit.com then routes through it
 // instead of the datacenter pool. Without it, reddit.com goes direct (and 403s).
+// Two residential exits are configured (REDDIT_PROXY + PROXY); pool both so the
+// load of all the blocked collectors is spread across both home IPs.
 const residentialAgents = buildAgents(
-  (process.env.REDDIT_PROXY || process.env.RESIDENTIAL_PROXY || '')
+  [process.env.REDDIT_PROXY, process.env.PROXY, process.env.RESIDENTIAL_PROXY]
+    .filter(Boolean)
+    .join(',')
     .split(',')
     .map((s) => s.trim())
     .filter((s) => /^https?:\/\/.+/.test(s)),
 )
-if (residentialAgents.length) console.log(`[net] ${residentialAgents.length} residential prox${residentialAgents.length > 1 ? 'ies' : 'y'} for IP-blocked hosts (reddit…)`)
+if (residentialAgents.length) console.log(`[net] ${residentialAgents.length} residential prox${residentialAgents.length > 1 ? 'ies' : 'y'} for all IP-blocked collection`)
 // All the hosts that block datacenter IPs route through the residential proxy:
 // Reddit, Bluesky and GDELT each maintain their OWN blocklist, so a residential
 // IP that one rejects may well be fine for the others — worth trying all via the
@@ -127,14 +131,16 @@ const proxyHosts = (process.env.PROXY_HOSTS || 'casino.guru,archive.org,casino.o
   .map((s) => s.trim().toLowerCase())
   .filter(Boolean)
 
-// Choose the right dispatcher for a URL: residential pool for hosts that block
-// datacenter IPs, the datacenter pool for the Cloudflare-walled review sites,
-// else direct.
+// Every blocked host (Reddit/Bluesky/GDELT + the Cloudflare-walled review sites
+// casino.guru/trustpilot/casino.org/bitcointalk/archive.org) now routes through
+// the RESIDENTIAL pool — datacenter IPs get blocked, so we no longer use them for
+// collection. The datacenter pool stays only as a last-resort fallback if no
+// residential proxy is configured. Non-blocked hosts go direct.
 function dispatcherFor(url: string): ProxyAgent | undefined {
   const u = url.toLowerCase()
-  if (residentialAgents.length && residentialHosts.some((h) => u.includes(h))) return pick(residentialAgents)
-  if (agents.length && proxyHosts.some((h) => u.includes(h))) return pick(agents)
-  return undefined
+  const blocked = residentialHosts.some((h) => u.includes(h)) || proxyHosts.some((h) => u.includes(h))
+  if (!blocked) return undefined
+  return pick(residentialAgents) ?? pick(agents)
 }
 
 type FetchInit = NonNullable<Parameters<typeof undiciFetch>[1]>
@@ -143,10 +149,9 @@ export function webFetch(url: string, init: FetchInit = {}) {
   return undiciFetch(url, { ...init, dispatcher: dispatcherFor(url) })
 }
 
-// Force a datacenter proxy for ANY url (the casino-directory crawler hits
-// thousands of arbitrary casino domains, many Cloudflare-walled to datacenter
-// IPs — routing through the pool gets past that). Falls back to direct if no
-// proxy is configured.
+// Force a proxy for ANY url (the casino-directory crawler hits thousands of
+// arbitrary casino domains, many Cloudflare-walled). Routes through the
+// RESIDENTIAL pool (datacenter IPs get blocked), datacenter only as a fallback.
 export function webFetchProxied(url: string, init: FetchInit = {}) {
-  return undiciFetch(url, { ...init, dispatcher: pick(agents) })
+  return undiciFetch(url, { ...init, dispatcher: pick(residentialAgents) ?? pick(agents) })
 }
