@@ -1,7 +1,20 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { db } from '../db.ts'
+import { db, stateGet, stateSet } from '../db.ts'
 import { arkhamFetch } from '../net.ts'
+
+function hostOf(u: string): string | null {
+  if (!u) return null
+  try {
+    return new URL(u.startsWith('http') ? u : 'https://' + u).hostname.replace(/^www\./, '').toLowerCase() || null
+  } catch {
+    return null
+  }
+}
+// normalize a casino/entity name for comparison (drop generic words + punctuation)
+function normName(s: string): string {
+  return (s || '').toLowerCase().replace(/casino|sportsbook|\.com|\.io|\.gg|\.bet|official|crypto/g, '').replace(/[^a-z0-9]+/g, '')
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Arkham Intelligence collector. Maps each roster casino → its Arkham "gambling"
@@ -22,7 +35,7 @@ function isMainstream(symbol: string): boolean {
   return MAIN_SYMBOLS.has((symbol || '').toLowerCase())
 }
 
-const upsertSeed = db.prepare('INSERT INTO arkham_casino(key, name) VALUES(@key, @name) ON CONFLICT(key) DO NOTHING')
+const upsertSeed = db.prepare('INSERT INTO arkham_casino(key, name, domain) VALUES(@key, @name, @domain) ON CONFLICT(key) DO UPDATE SET domain=COALESCE(arkham_casino.domain, @domain)')
 const setResolved = db.prepare('UPDATE arkham_casino SET entity_id=@id, entity_type=@type, resolved_at=@now WHERE key=@key')
 const setMetrics = db.prepare('UPDATE arkham_casino SET reserves_usd=@reserves, updated_at=@now WHERE key=@key')
 
@@ -35,7 +48,8 @@ function seedFromRoster() {
       for (const c of roster) {
         const name = String(c.name ?? '').trim()
         const key = String(c.slug ?? name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-        if (name && key) n += upsertSeed.run({ key, name }).changes
+        const domain = hostOf(String(c.website_url || c.website || ''))
+        if (name && key) n += upsertSeed.run({ key, name, domain }).changes
       }
     })
     tx()
@@ -45,26 +59,53 @@ function seedFromRoster() {
   }
 }
 
-// search Arkham for a casino name → first entity tagged "gambling"
+// fetch an entity's canonical website (search results omit it) for domain validation
+async function entityWebsite(id: string): Promise<string | null> {
+  try {
+    const res = arkhamFetch(`/intelligence/entity/${encodeURIComponent(id)}`, { signal: AbortSignal.timeout(25_000) })
+    if (!res) return null
+    const r = await res
+    if (r.status !== 200) return null
+    return ((await r.json()) as { website?: string }).website ?? null
+  } catch {
+    return null
+  }
+}
+
+// Resolve a casino → its Arkham gambling entity, VALIDATED (the search ranks loosely
+// and would otherwise mis-attribute, e.g. "7Bit Casino" → "500-casino"). Accept a
+// candidate only when its name matches OR its real website domain == the casino's.
 async function resolveOne(): Promise<boolean> {
-  const row = db.prepare('SELECT key, name FROM arkham_casino WHERE resolved_at=0 ORDER BY key LIMIT 1').get() as
-    | { key: string; name: string }
+  const row = db.prepare('SELECT key, name, domain FROM arkham_casino WHERE resolved_at=0 ORDER BY key LIMIT 1').get() as
+    | { key: string; name: string; domain: string | null }
     | undefined
   if (!row) return false
   const now = Date.now()
   try {
-    const res = arkhamFetch(`/intelligence/search?query=${encodeURIComponent(row.name)}`, { signal: AbortSignal.timeout(25_000) })
+    const res = arkhamFetch(`/intelligence/search?query=${encodeURIComponent(row.name)}`, { signal: AbortSignal.timeout(30_000) })
     if (!res) return false
     const r = await res
-    if (r.status === 200) {
-      const j = (await r.json()) as { arkhamEntities?: { id: string; name: string; type: string }[] }
-      const ent = (j.arkhamEntities ?? []).find((e) => e.type === 'gambling')
-      setResolved.run({ key: row.key, id: ent?.id ?? '', type: ent?.type ?? '', now })
-      if (ent) console.log(`[arkham] ${row.name} → entity ${ent.id}`)
-    } else {
-      // transient — leave unresolved for a later tick (don't mark)
-      console.warn(`[arkham] search ${row.name}: HTTP ${r.status}`)
+    if (r.status !== 200) {
+      console.warn(`[arkham] search ${row.name}: HTTP ${r.status}`) // transient — retry later
+      return true
     }
+    const j = (await r.json()) as { arkhamEntities?: { id: string; name: string; type: string }[] }
+    const cands = (j.arkhamEntities ?? []).filter((e) => e.type === 'gambling')
+    const want = normName(row.name)
+    // 1) exact normalized-name match among candidates (free)
+    let chosen = cands.find((e) => normName(e.name) === want)
+    // 2) else validate the top candidates by their real website domain
+    if (!chosen && row.domain) {
+      for (const c of cands.slice(0, 3)) {
+        if (hostOf(await entityWebsite(c.id)) === row.domain) {
+          chosen = c
+          break
+        }
+      }
+    }
+    setResolved.run({ key: row.key, id: chosen?.id ?? '', type: chosen?.type ?? '', now })
+    if (chosen) console.log(`[arkham] ${row.name} → entity ${chosen.id}`)
+    else console.log(`[arkham] ${row.name}: no confident match (${cands.length} gambling cands)`)
   } catch (e) {
     console.warn(`[arkham] search ${row.name}: ${(e as Error).message.slice(0, 40)}`)
   }
@@ -119,6 +160,12 @@ export function startArkham() {
   }
   console.log('[arkham] entity attribution collector active')
   seedFromRoster()
+  // one-time: the first run matched without domain validation (some wrong) — redo
+  if (!stateGet('arkham:revalidate:v1')) {
+    const n = db.prepare('UPDATE arkham_casino SET resolved_at=0, entity_id=NULL, reserves_usd=NULL').run().changes
+    stateSet('arkham:revalidate:v1', 1)
+    if (n) console.log(`[arkham] cleared ${n} matches to re-resolve with domain validation`)
+  }
   const loop = async () => {
     // resolve everything first, then keep reserves fresh
     const did = (await resolveOne().catch(() => false)) || (await refreshOne().catch(() => false))

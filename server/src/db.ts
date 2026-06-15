@@ -188,6 +188,7 @@ CREATE INDEX IF NOT EXISTS idx_crawl_done ON crawl_queue(done);
 CREATE TABLE IF NOT EXISTS arkham_casino (
   key          TEXT PRIMARY KEY,        -- roster slug (stable local id)
   name         TEXT NOT NULL,
+  domain       TEXT,                    -- casino website domain, for match validation
   entity_id    TEXT,                    -- Arkham entity id; '' = searched, no gambling match
   entity_type  TEXT,
   reserves_usd REAL,                    -- Σ portfolio USD (mainstream tokens only)
@@ -260,6 +261,7 @@ for (const ddl of [
   'ALTER TABLE casino_directory ADD COLUMN tp_rating REAL',
   'ALTER TABLE casino_directory ADD COLUMN tp_reviews INTEGER',
   'ALTER TABLE casino_directory ADD COLUMN tp_checked INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE arkham_casino ADD COLUMN domain TEXT',
 ]) {
   try {
     db.exec(ddl)
