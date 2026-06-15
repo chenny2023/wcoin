@@ -217,6 +217,22 @@ CREATE TABLE IF NOT EXISTS onchain_protocol (
 );
 CREATE INDEX IF NOT EXISTS idx_protocol_tvl ON onchain_protocol(tvl);
 
+-- Top prediction markets (Polymarket) — the live "what the world is betting on"
+-- feed: question, traded volume, current odds. Rich, unique iGaming-layer content.
+CREATE TABLE IF NOT EXISTS prediction_market (
+  id         TEXT PRIMARY KEY,
+  question   TEXT NOT NULL,
+  volume     REAL,
+  liquidity  REAL,
+  outcomes   TEXT,                       -- JSON array
+  prices     TEXT,                       -- JSON array (current odds, aligned to outcomes)
+  end_date   TEXT,
+  category   TEXT,
+  url        TEXT,
+  updated_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_prediction_vol ON prediction_market(volume);
+
 -- daily solvency snapshots per casino brand, for the reserve-adequacy trend.
 -- coverage = reserves / weekly-outflow (≈ weeks of withdrawals the reserves cover)
 CREATE TABLE IF NOT EXISTS reserve_history (

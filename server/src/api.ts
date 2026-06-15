@@ -222,6 +222,23 @@ export async function registerApi(app: FastifyInstance) {
     return { count: rows.length, totalTvl, byCategory, protocols: rows }
   })
 
+  // public — top prediction markets (Polymarket): live odds + traded volume
+  app.get('/api/predictions', async () => {
+    const rows = db.prepare('SELECT id, question, volume, liquidity, outcomes, prices, end_date, category, url FROM prediction_market ORDER BY volume DESC LIMIT 60').all() as any[]
+    const parse = (s: any) => {
+      try {
+        return s ? JSON.parse(s) : null
+      } catch {
+        return null
+      }
+    }
+    return {
+      count: rows.length,
+      totalVolume: rows.reduce((s, r) => s + (r.volume || 0), 0),
+      markets: rows.map((r) => ({ ...r, outcomes: parse(r.outcomes), prices: parse(r.prices) })),
+    }
+  })
+
   // public all-chain proof-of-reserves, sourced from Arkham entity portfolios.
   // On-chain balances are public data — and a strong "we cover every chain" signal.
   app.get('/api/arkham/reserves', async () => {
