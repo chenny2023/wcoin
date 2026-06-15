@@ -21,6 +21,12 @@ const ROSTER_SEED = [
   'roshtein', 'trainwreckstv', 'classybeef', 'xposed', 'ayezee', 'deuceace',
   'xqc', 'adinross', 'cuffem', 'watchgamestv', 'bbjess', 'cheesur',
   'mvdoom', 'casinodaddy', 'slotspinner', 'letsgiveitaspin', 'fruityslots',
+  // expanded iGaming roster — wrong/renamed slugs 404 and self-deactivate
+  'vondy', 'spintwix', 'jackpotmike', 'nickslots', 'mrgambleslots', 'hideousslots',
+  'daskino', 'slotsfighter', 'davidlabowski', 'frankietv', 'scuffedjesse', 'kingjafi',
+  'bdh', 'mhmdtv', 'm0xy', 'bobbynetwork', 'eddie', 'n3on', 'stake', 'yassuo',
+  'westcol', 'eliasn97', 'knossi', 'montanablack', 'rebeu', 'agente', 'gambleboyz',
+  'casinotest247', 'slotmonster', 'hugequads', 'thebandit',
 ]
 
 // Common casino brands for affiliation matching (extended at runtime with
