@@ -30,13 +30,14 @@ export async function unlockedFetch(channel: string, url: string, init: FetchIni
 
 // One-off probe: fetch a target through a SPECIFIC tier and report the outcome.
 // Powers the /unlockertest diagnostic so we can see which tier actually works.
-export async function probeTier(url: string, tier: string, init: FetchInit): Promise<{ tier: string; status: number | string; len: number }> {
+export async function probeTier(url: string, tier: string, init: FetchInit): Promise<{ tier: string; status: number | string; len: number; body?: string }> {
   const p = webFetchUnlocked(url, init, TIER_PARAM[tier] ?? '')
   if (!p) return { tier, status: 'no-key', len: 0 }
   try {
     const r = await p
     const body = await r.text()
-    return { tier, status: r.status, len: body.length }
+    // surface a snippet so we can read ScraperAPI's error / confirm real content
+    return { tier, status: r.status, len: body.length, body: r.status === 200 ? undefined : body.slice(0, 200) }
   } catch (e) {
     return { tier, status: (e as Error).message.slice(0, 40), len: 0 }
   }
