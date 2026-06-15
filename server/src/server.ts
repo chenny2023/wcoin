@@ -45,6 +45,7 @@ import { startTrustpilotCategory } from './collectors/trustpilotcat.ts'
 import { startArkham } from './collectors/arkham.ts'
 import { startDefiLlama } from './collectors/defillama.ts'
 import { startPolymarket } from './collectors/polymarket.ts'
+import { startYouTube } from './collectors/youtube.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const distDir = join(__dirname, '../../dist')
@@ -89,7 +90,8 @@ async function main() {
   startWayback() // etherscan-nametag attribution via Wayback snapshots (keyless)
   startCircus() // casino attribution via circus.fyi whale-feed → on-chain tx resolution
   startKick() // streamer monitoring (Kick public API, keyless)
-  startTwitch() // streamer monitoring (Twitch Helix, optional creds)
+  startTwitch() // streamer monitoring (Twitch public GraphQL, keyless)
+  startYouTube() // streamer monitoring (YouTube channel-page scrape, keyless)
   startReddit() // social mentions (Reddit OAuth, optional creds)
   startNews() // brand mentions (Google News RSS, keyless)
   startPress() // brand mentions (iGaming trade-press RSS, keyless)
