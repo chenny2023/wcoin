@@ -97,19 +97,32 @@ export async function registerApi(app: FastifyInstance) {
     () => aggCache.set('series:30:all', { data: computeSeries(30, 'all'), at: Date.now(), refreshing: false }),
     () => void computeStats(), // primes statsCache + the expensive COUNT(DISTINCT) cache
   ]
-  const warm = () => {
-    for (const task of warmTasks) {
-      setImmediate(() => {
+  // Run the warm tasks SEQUENTIALLY with a yield between each, and never overlap a
+  // cycle with itself. The old version fired all 8 heavy computes via setImmediate
+  // on a 30s interval — but at boot (cold disk cache) each takes 12-16s, so a cycle
+  // ran far longer than 30s and the next cycle piled on top, permanently saturating
+  // the single thread until the disk cache warmed (the post-deploy stall window).
+  // Sequential + guarded + a 5-min cadence keeps the keys primed without flooding;
+  // the SWR cache refreshes any key that goes stale between cycles on access.
+  let warming = false
+  const warm = async () => {
+    if (warming) return
+    warming = true
+    try {
+      for (const task of warmTasks) {
         try {
           task()
         } catch {
           /* a transient DB error shouldn't kill the warmer */
         }
-      })
+        await new Promise((r) => setImmediate(r)) // hand the loop back between heavy tasks
+      }
+    } finally {
+      warming = false
     }
   }
-  setTimeout(warm, 8_000)
-  setInterval(warm, Math.max(15_000, config.aggregateMs))
+  setTimeout(() => void warm(), 8_000)
+  setInterval(() => void warm(), 300_000)
 
   // Let browsers and the CDN serve the public, non-user-specific leaderboards from
   // cache. The data moves slowly (rolling 7d/30d aggregates), so a short fresh
@@ -221,7 +234,7 @@ export async function registerApi(app: FastifyInstance) {
     const { category } = req.query as { category?: string }
     // the generic leaderboard intentionally spans every category by default
     const cat = category ?? 'all'
-    return aggCached('ent:' + cat, () => aggregateEntities(cat))
+    return aggCached('ent:' + cat, () => aggregateEntities(cat), 120_000)
   })
 
   // casino-centric leaderboard — defaults to iGaming only so exchanges/whales
@@ -229,7 +242,7 @@ export async function registerApi(app: FastifyInstance) {
   app.get('/api/casinos', async (req) => {
     const { category } = req.query as { category?: string }
     const cat = category ?? 'casino'
-    return aggCached('ent:' + cat, () => aggregateEntities(cat))
+    return aggCached('ent:' + cat, () => aggregateEntities(cat), 120_000)
   })
 
   // brand-aggregated leaderboard — wallets clustered by known attribution.
@@ -237,7 +250,7 @@ export async function registerApi(app: FastifyInstance) {
   app.get('/api/brands', async (req) => {
     const { category } = req.query as { category?: string }
     const cat = category ?? 'casino'
-    return aggCached('brand:' + cat, () => aggregateBrands(cat))
+    return aggCached('brand:' + cat, () => aggregateBrands(cat), 120_000)
   })
 
   // public, non-sensitive aggregate counts — landing-page social proof + a health
@@ -725,7 +738,7 @@ export async function registerApi(app: FastifyInstance) {
     // trust / reviews / social sentiment are casino concepts — default to
     // iGaming only so exchange & whale wallets don't pollute the sentiment board
     const cat = category ?? 'casino'
-    const entities = aggCached('ent:' + cat, () => aggregateEntities(cat))
+    const entities = aggCached('ent:' + cat, () => aggregateEntities(cat), 120_000)
     const d7 = Date.now() - 7 * 86_400_000
     const mentionRows = db
       .prepare(
