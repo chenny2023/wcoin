@@ -53,6 +53,19 @@ export interface EntityAgg {
 // recompute at most once per aggregation interval.
 let aggCache: { at: number; data: EntityAgg[] } | null = null
 
+// first-seen timestamp per watched address. MIN(ts) GROUP BY watch_id over the
+// full (24M-row) transfers table is expensive, but first-seen is near-static, so
+// cache it for an hour rather than recomputing it on every 30s aggregate refresh.
+let firstSeenCache: { at: number; map: Map<number, number> } | null = null
+function getFirstSeen(): Map<number, number> {
+  if (firstSeenCache && Date.now() - firstSeenCache.at < 3600_000) return firstSeenCache.map
+  const map = new Map<number, number>(
+    (db.prepare('SELECT watch_id, MIN(ts) f FROM transfers GROUP BY watch_id').all() as any[]).map((r) => [r.watch_id, r.f]),
+  )
+  firstSeenCache = { at: Date.now(), map }
+  return map
+}
+
 // Optional `category` filter keeps non-iGaming entities (exchanges, whales,
 // discovered services) out of the casino-facing views. The full list is still
 // computed once and cached; filtering happens on the cached snapshot so callers
@@ -113,9 +126,7 @@ function computeEntities(): EntityAgg[] {
     )
     .all(params) as any[]
   const aggMap = new Map<number, any>(aggRows.map((r) => [r.watch_id, r]))
-  const firstMap = new Map<number, number>(
-    (db.prepare('SELECT watch_id, MIN(ts) f FROM transfers GROUP BY watch_id').all() as any[]).map((r) => [r.watch_id, r.f]),
-  )
+  const firstMap = getFirstSeen() // first-seen barely changes — cached hourly, off the hot path
   const balMap = new Map<number, number>((db.prepare('SELECT watch_id, usd FROM balances').all() as any[]).map((r) => [r.watch_id, r.usd]))
 
   for (const w of rows) {
