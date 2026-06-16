@@ -1,5 +1,6 @@
 import { config } from './config.ts'
 import { db, stmt, stateGet, stateSet, WatchRow } from './db.ts'
+import { workerGet } from './readpool.ts'
 import { evmBalanceUsd } from './collectors/evm.ts'
 import { tronBalanceUsd } from './collectors/tron.ts'
 import { tronRpcBalanceUsd } from './collectors/tronrpc.ts'
@@ -100,8 +101,12 @@ export async function startStatsMaintenance(): Promise<void> {
   if (maintaining) return
   maintaining = true
   const idsQ = db.prepare('SELECT id FROM watchlist WHERE active=1')
-  const pQ = db.prepare('SELECT COUNT(DISTINCT counterparty) p FROM transfers WHERE watch_id=? AND ts>=?')
-  const fQ = db.prepare('SELECT MIN(ts) f FROM transfers WHERE watch_id=?')
+  // These two are the costly per-entity scans (COUNT(DISTINCT counterparty), MIN(ts)).
+  // Run them through the read worker so they execute OFF the main event loop — when
+  // READ_WORKER is disabled, workerGet transparently runs them on the main thread
+  // (same as before). Either way the loop yields between every entity.
+  const P_SQL = 'SELECT COUNT(DISTINCT counterparty) p FROM transfers WHERE watch_id=? AND ts>=?'
+  const F_SQL = 'SELECT MIN(ts) f FROM transfers WHERE watch_id=?'
   const yield_ = () => new Promise((r) => setImmediate(r))
   for (;;) {
     try {
@@ -109,8 +114,12 @@ export async function startStatsMaintenance(): Promise<void> {
       const d7 = Date.now() - 7 * 86_400_000
       for (const id of ids) {
         try {
-          playersMap.set(id, ((pQ.get(id, d7) as any)?.p as number) ?? 0)
-          if (!firstSeenMap.has(id)) firstSeenMap.set(id, ((fQ.get(id) as any)?.f as number) ?? 0) // first-seen is static
+          const p = await workerGet<{ p: number }>(P_SQL, [id, d7])
+          playersMap.set(id, p?.p ?? 0)
+          if (!firstSeenMap.has(id)) {
+            const f = await workerGet<{ f: number }>(F_SQL, [id]) // first-seen is static
+            firstSeenMap.set(id, f?.f ?? 0)
+          }
         } catch {
           /* skip a bad row */
         }

@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs'
 import { config } from './config.ts'
 import { db } from './db.ts'
 import { startMonitor } from './monitor.ts'
+import { startReadWorker } from './readpool.ts'
 import { seedWatchlist } from './watchlist.ts'
 import { registerApi } from './api.ts'
 import { registerAuth } from './auth.ts'
@@ -150,6 +151,7 @@ async function main() {
   // event loop — which previously timed out Railway's deploy healthcheck before
   // it could pass. Letting /api/health go green first, then indexing, avoids that.
   setTimeout(() => {
+  startReadWorker() // read-only analytics worker (offloads heavy reads; flag READ_WORKER)
   startMonitor() // built-in disk / event-loop-lag / DB-size self-monitor (+ optional webhook)
   startEvm() // ETH transfer indexer (public RPC)
   startPrices() // daily historical price series (SOL) for non-1:1 valuation
