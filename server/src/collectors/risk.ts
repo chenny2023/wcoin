@@ -1,4 +1,5 @@
 import { db } from '../db.ts'
+import { workerAll } from '../readpool.ts'
 import { webFetch } from '../net.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -71,15 +72,17 @@ async function loadLists(): Promise<Record<string, number>> {
 // scan the transfer graph for counterparties on the sanctioned list. The
 // counterparty index makes this a set of point lookups (≈150 addresses) rather
 // than a full scan.
-export function evalRisk() {
-  const rows = db
-    .prepare(
-      `SELECT t.watch_id AS watch_id, COUNT(*) AS hits, SUM(t.usd) AS usd, MAX(t.ts) AS last_ts,
-              GROUP_CONCAT(DISTINCT t.counterparty) AS addrs
-       FROM transfers t JOIN risk_addresses r ON t.counterparty = r.address
-       GROUP BY t.watch_id`,
-    )
-    .all() as { watch_id: number; hits: number; usd: number; last_ts: number; addrs: string }[]
+export async function evalRisk() {
+  // ~150 sanctioned addresses, but a mixer (Tornado Cash) can have MILLIONS of
+  // transfers — so this join + GROUP_CONCAT is a multi-second-to-minute scan. Run
+  // it in the read worker (off the main loop); the result is tiny (one row per
+  // exposed watch_id, counterparty ∈ the ~150-address list).
+  const rows = (await workerAll(
+    `SELECT t.watch_id AS watch_id, COUNT(*) AS hits, SUM(t.usd) AS usd, MAX(t.ts) AS last_ts,
+            GROUP_CONCAT(DISTINCT t.counterparty) AS addrs
+     FROM transfers t JOIN risk_addresses r ON t.counterparty = r.address
+     GROUP BY t.watch_id`,
+  )) as { watch_id: number; hits: number; usd: number; last_ts: number; addrs: string }[]
   // clear stale flags that no longer have hits
   const flagged = new Set(rows.map((r) => r.watch_id))
   for (const f of db.prepare('SELECT watch_id FROM risk_flags').all() as { watch_id: number }[]) {
@@ -117,15 +120,15 @@ export async function refreshRisk(force = false) {
     db.prepare("INSERT INTO sync_state(key,value) VALUES('risk:lastRun',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(String(Date.now()))
   }
   console.log(`[risk] OFAC sanctioned list loaded — ${total} addresses (${JSON.stringify(counts)})`)
-  evalRisk()
+  await evalRisk()
 }
 
 export function startRisk() {
   refreshRisk().catch((e) => console.warn('[risk] load failed:', (e as Error).message))
   setInterval(() => refreshRisk().catch(() => {}), 12 * 3600_000)
   // re-scan the graph every few minutes (cheap with the counterparty index)
-  setTimeout(function loop() {
-    try { evalRisk() } catch (e) { console.warn('[risk] eval', (e as Error).message) }
+  setTimeout(async function loop() {
+    try { await evalRisk() } catch (e) { console.warn('[risk] eval', (e as Error).message) }
     setTimeout(loop, 5 * 60_000)
   }, 90_000)
 }
