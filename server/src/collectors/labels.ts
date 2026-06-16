@@ -223,8 +223,12 @@ export async function classifyServices(): Promise<number> {
       .all(category) as { id: number; label: string }[]
     const sets: { label: string; set: Set<string> }[] = []
     for (const r of rows) {
-      const cps = ((await workerAll('SELECT DISTINCT counterparty c FROM transfers WHERE watch_id=?', [r.id])) as any[]).map((x) => x.c)
-      if (cps.length >= CLASSIFY_REF_MIN_CPS) sets.push({ label: r.label, set: new Set(cps) })
+      // bound the set: a 50k sample is ample for an overlap heuristic, and a
+      // mega-exchange's millions of counterparties would otherwise deserialize +
+      // build a Set on the MAIN thread (a ~90s freeze) and be too broad to
+      // discriminate anyway.
+      const cps = ((await workerAll('SELECT DISTINCT counterparty c FROM transfers WHERE watch_id=? LIMIT 50000', [r.id])) as any[]).map((x) => x.c)
+      if (cps.length >= CLASSIFY_REF_MIN_CPS && cps.length < 50000) sets.push({ label: r.label, set: new Set(cps) })
       await yieldLoop()
     }
     return sets
@@ -249,7 +253,7 @@ export async function classifyServices(): Promise<number> {
     .all() as { id: number; label: string; chain: string }[]
   let flagged = 0
   for (const s of services) {
-    const cps = ((await workerAll('SELECT DISTINCT counterparty c FROM transfers WHERE watch_id=?', [s.id])) as any[]).map((x) => x.c)
+    const cps = ((await workerAll('SELECT DISTINCT counterparty c FROM transfers WHERE watch_id=? LIMIT 50000', [s.id])) as any[]).map((x) => x.c)
     await yieldLoop()
     if (cps.length < CLASSIFY_MIN_CPS) continue
     const cas = maxOverlap(cps, casinoRefs)
