@@ -125,17 +125,17 @@ footer{border-top:1px solid var(--line);margin-top:30px}footer .wrap{display:fle
 </style></head><body>
 <header class="nav"><div class="wrap">
 <a class="brand" href="/">WCOIN.CASINO</a>
-<nav class="navlinks"><a href="/">Home</a><a href="/rankings">Rankings</a><a href="/daily">Daily report</a><a href="/methodology/attribution">Methodology</a><a class="cta" href="/app">Live dashboard →</a></nav>
+<nav class="navlinks"><a href="/">Home</a><a href="/rankings">Rankings</a><a href="/daily">Daily report</a><a href="/methodology/address-attribution">Methodology</a><a class="cta" href="/app">Live dashboard →</a></nav>
 </div></header>
 <main class="wrap">
 <div class="crumb">${crumbHtml}</div>
 <h1>${esc(h1)}</h1>
 ${body}
-<p class="note"><strong>Methodology &amp; disclaimer.</strong> Figures are derived from on-chain transfers attributed to wallets we associate with each operator, plus third-party ratings shown with their source. Blockchain attribution carries inherent uncertainty, and reserves are an all-chain best-effort estimate from mapped wallets — coverage varies by operator. These pages describe <em>observed activity and third-party data only</em>; they are not a statement on any operator's solvency, legality, fairness, or safety, and nothing here is financial advice. See <a href="/methodology/attribution">how we attribute on-chain activity</a>. Data updates roughly every 30 minutes.</p>
+<p class="note"><strong>Methodology &amp; disclaimer.</strong> Figures are derived from on-chain transfers attributed to wallets we associate with each operator, plus third-party ratings shown with their source. Blockchain attribution carries inherent uncertainty, and reserves are an all-chain best-effort estimate from mapped wallets — coverage varies by operator. These pages describe <em>observed activity and third-party data only</em>; they are not a statement on any operator's solvency, legality, fairness, or safety, and nothing here is financial advice. See <a href="/methodology/address-attribution">how we attribute on-chain activity</a>. Data updates roughly every 30 minutes.</p>
 </main>
 <footer><div class="wrap">
 <span>© 2026 WCOIN.CASINO — the on-chain intelligence layer for iGaming</span>
-<span><a href="/rankings">Rankings</a> · <a href="/daily">Daily report</a> · <a href="/app">Live data</a> · <a href="/methodology/reserves">Reserves methodology</a></span>
+<span><a href="/rankings">Rankings</a> · <a href="/daily">Daily report</a> · <a href="/app">Live data</a> · <a href="/methodology/proof-of-reserves">Reserves methodology</a></span>
 </div></footer>
 </body></html>`
 }
@@ -195,10 +195,12 @@ function blendedTrust(v: CasinoView): { score: number; sources: number } | null 
 // per-page data confidence (for honest labelling)
 function dataConfidence(v: CasinoView): 'high' | 'medium' | 'low' {
   const oc = v.onchain
+  const r = ratingsOf(v)
+  const authoritative = r.safety != null || r.ag != null // casino.guru / AskGamblers
   const s = trustSources(v).length
   if ((oc && oc.volume7d > 0) || s >= 3) return 'high'
-  if ((oc && oc.reserves > 0) || s >= 2) return 'medium'
-  return 'low'
+  if ((oc && oc.reserves > 0) || s >= 2 || authoritative) return 'medium'
+  return 'low' // e.g. a single low-weight Trustpilot rating only
 }
 
 // data-sufficiency gate: on-chain activity, an authoritative rating (casino.guru /
@@ -558,7 +560,7 @@ function chainPage(chain: string, brands: BrandAgg[], slugOfBrand: (b: BrandAgg)
 <p class="sub">Tracked crypto-casino transaction volume settled on <strong>${esc(name)}</strong>, by operator (7-day window).</p>
 <p class="upd">${onChain.length} operators · ${fmtUsd(total)} total 7d volume · <a href="/rankings">all rankings</a></p>
 <table><thead><tr><th>#</th><th>Operator</th><th style="text-align:right">7d volume on ${esc(name)}</th><th></th></tr></thead><tbody>${trows}</tbody></table>
-<p class="prose" style="margin-top:22px">This is on-chain settlement volume attributed to casino wallets on ${esc(name)} — see the <a href="/methodology/volume">volume methodology</a> for how it's measured, or the live <a href="/app/blockchain">on-chain feed</a>.</p>`
+<p class="prose" style="margin-top:22px">This is on-chain settlement volume attributed to casino wallets on ${esc(name)} — see the <a href="/methodology/on-chain-volume">volume methodology</a> for how it's measured, or the live <a href="/app/blockchain">on-chain feed</a>.</p>`
   const jsonLd = [
     { '@type': 'Dataset', name: `${name} crypto-casino on-chain volume`, description, url, creator: { '@type': 'Organization', name: 'WCOIN.CASINO', url: SITE }, isAccessibleForFree: true },
   ]
@@ -603,7 +605,7 @@ function reportPage(snap: any, prev: string | null, next: string | null): { titl
 
   const movers = (p.topMovers ?? []).slice(0, 8)
   const moversT = movers.length
-    ? `<h2>Biggest movers (24h)</h2><table><thead><tr><th>Operator</th><th style="text-align:right">24h volume</th><th style="text-align:right">7d volume</th></tr></thead><tbody>${movers
+    ? `<h2>Verified casino flow — biggest movers (24h)</h2><table><thead><tr><th>Operator</th><th style="text-align:right">24h volume</th><th style="text-align:right">7d volume</th></tr></thead><tbody>${movers
         .map((m: any) => `<tr><td><a href="/casino/${slugify(m.label)}">${esc(m.label)}</a></td><td class="n">${fmtUsd(m.vol24h)}</td><td class="n" style="color:var(--mut)">${fmtUsd(m.vol7d ?? 0)}</td></tr>`)
         .join('')}</tbody></table>`
     : ''
@@ -628,10 +630,21 @@ function reportPage(snap: any, prev: string | null, next: string | null): { titl
 
   const reserves = (p.topReserves ?? []).slice(0, 8)
   const reservesT = reserves.length
-    ? `<h2>All-chain reserves</h2><table><tbody>${reserves
+    ? `<h2>Reserve watch — all-chain tracked reserves</h2><table><tbody>${reserves
         .map((r: any) => `<tr><td><a href="/casino/${slugify(r.label)}">${esc(r.label)}</a></td><td class="n mint">${fmtUsd(r.reserves)}</td></tr>`)
         .join('')}</tbody></table>`
     : ''
+
+  // unattributed flow — pattern-detected, never mixed into the verified figures above
+  const u = p.unattributed
+  const unattrT =
+    u && u.count
+      ? `<h2>Unattributed Casino Flow</h2><p class="prose" style="font-size:13px;color:var(--dim)">Pattern-detected casino-related flow not attributed to a verified brand — shown separately and excluded from every figure above.</p><table><tbody>${(u.top ?? [])
+          .map((x: any) => `<tr><td>${esc(x.label)}</td><td class="n">${fmtUsd(x.vol7d)} 7d</td></tr>`)
+          .join('')}<tr><td><strong>Total unattributed</strong></td><td class="n"><strong>${fmtUsd(u.vol24h)} 24h · ${fmtUsd(u.vol7d)} 7d</strong></td></tr></tbody></table>`
+      : ''
+
+  const confNote = `<p class="prose" style="margin-top:20px;font-size:13px"><strong>Data confidence notes.</strong> All figures are brand-merged, verified on-chain observations for the stated window; unattributed pattern flow is reported separately above. Snapshot confidence for this day: <span class="pill">${esc(snap.confidence_level || 'medium')}</span>. See <a href="/methodology/data-confidence">how we rate data confidence</a>.</p>`
 
   const pager =
     prev || next
@@ -647,8 +660,10 @@ ${moversT}
 ${chainsT}
 ${whalesT}
 ${reservesT}
+${unattrT}
+${confNote}
 ${pager}
-<p class="prose" style="margin-top:22px">Numbers are observed on-chain activity for the stated 24-hour window. See the <a href="/methodology/volume">volume</a> and <a href="/methodology/reserves">reserves</a> methodology, or the live <a href="/app">dashboard</a>.</p>`
+<p class="prose" style="margin-top:22px">Numbers are observed on-chain activity for the stated 24-hour window. See the <a href="/methodology/on-chain-volume">volume</a> and <a href="/methodology/proof-of-reserves">reserves</a> methodology, or the live <a href="/app">dashboard</a>.</p>`
   const jsonLd = [
     { '@type': 'Dataset', name: `Crypto casino market snapshot ${date}`, description, url, temporalCoverage: date, creator: { '@type': 'Organization', name: 'WCOIN.CASINO', url: SITE }, isAccessibleForFree: true },
   ]
@@ -690,7 +705,7 @@ function unattributedFlowPage(brands: BrandAgg[]): { title: string; description:
 <p class="sub">Pattern-detected casino-related wallet activity <strong>not yet attributed</strong> to a verified casino brand — listed here for transparency and deliberately kept out of the verified rankings.</p>
 <p class="upd">${rows.length} wallet clusters · ${fmtUsd(total)} observed 7d flow · <span class="pill">data confidence: low</span></p>
 <table><thead><tr><th>#</th><th>Wallet cluster</th><th style="text-align:right">7d flow</th><th style="text-align:right">Tracked reserves</th><th>Chains</th></tr></thead><tbody>${trows}</tbody></table>
-<p class="prose" style="margin-top:22px">These clusters show on-chain patterns consistent with casino activity, but we have not confirmed which operator (if any) controls them — so they are <em>excluded</em> from the <a href="/rankings/trust">verified rankings</a> and get no casino profile. See <a href="/methodology/attribution">how we attribute on-chain activity</a>.</p>`
+<p class="prose" style="margin-top:22px">These clusters show on-chain patterns consistent with casino activity, but we have not confirmed which operator (if any) controls them — so they are <em>excluded</em> from the <a href="/rankings/trust">verified rankings</a> and get no casino profile. See <a href="/methodology/address-attribution">how we attribute on-chain activity</a>.</p>`
   return {
     title,
     description,
@@ -713,26 +728,37 @@ function unattributedFlowPage(brands: BrandAgg[]): { title: string; description:
 
 // methodology: hand-written explainers (stable, link targets for the disclaimers)
 const METHODOLOGY: Record<string, { title: string; body: string }> = {
-  attribution: {
+  'address-attribution': {
     title: 'How we attribute on-chain activity to crypto casinos',
-    body: `<p>WCOIN.CASINO links blockchain wallets to crypto-casino operators using public block-explorer name-tags, published hot-wallet addresses, on-chain clustering of deposit/withdrawal patterns, and cross-referencing against third-party datasets. A single operator typically runs many wallets across several chains, which we group under one entity.</p>
+    body: `<p>WCOIN.CASINO links blockchain wallets to crypto-casino operators using public block-explorer name-tags, published hot-wallet addresses, on-chain clustering of deposit/withdrawal patterns, and cross-referencing against third-party datasets. A single operator typically runs many wallets across several chains, which we group under one brand.</p>
 <p>Attribution is a best-effort inference, not a certainty. Wallets can be mislabelled, shared, rotated, or operated by third parties (payment processors, market makers). We continuously revise mappings as new evidence appears. Figures should be read as <em>observed activity for the wallets we associate with an operator</em> — not an audited, operator-confirmed total.</p>
-<p>We deliberately do not publish verdicts on operators. We surface measurements and attributed third-party ratings, and let you judge.</p>`,
+<p>Activity we detect as casino-like but cannot yet tie to a specific brand is marked <strong>unattributed</strong> and kept out of verified rankings — see the <a href="/rankings/unattributed-flow">Unattributed Casino Flow</a> page. We deliberately do not publish verdicts on operators.</p>`,
   },
-  volume: {
+  'on-chain-volume': {
     title: 'How on-chain volume is measured',
     body: `<p>On-chain volume is the USD value of transfers to and from attributed casino wallets over a window (24-hour and 7-day), priced at transfer time. It captures on-chain settlement — deposits and withdrawals that touch the public blockchain — and excludes purely off-chain ledger movements inside an operator, which are not observable.</p>
-<p>Net flow is inflow minus outflow over the window. A figure reflects observed settlement only and should not be read as revenue, profit, or gross gaming revenue.</p>
-<p><strong>Why we don't rank by volume.</strong> On-chain volume is easily inflated — wash trading, internal transfers between an operator's own wallets, and market-maker activity all add observable volume without reflecting real player activity or quality. We therefore treat volume as an activity/liquidity signal only, and our recommended ranking is <a href="/rankings/trust">by blended third-party trust</a>, which is far harder to manufacture.</p>`,
+<p>A figure reflects observed settlement only and should not be read as revenue, profit, or gross gaming revenue.</p>
+<p><strong>Why we don't rank by volume.</strong> On-chain volume is easily inflated — wash trading, internal transfers between an operator's own wallets, and market-maker activity all add observable volume without reflecting real player activity or quality. We therefore treat volume as an activity/liquidity signal only, and our recommended ranking is <a href="/rankings/trust">by blended third-party trust signals</a>, which is far harder to manufacture.</p>`,
   },
-  reserves: {
+  'net-flow': {
+    title: 'How net flow is measured',
+    body: `<p>Net flow is observed inflow (deposits) minus outflow (withdrawals) to attributed casino wallets over a window, in USD. A positive net flow means more value moved in than out over the period; a negative net flow means more moved out.</p>
+<p>It is an <em>observation of on-chain settlement</em>, not a profit-and-loss figure. Sustained net outflow can have many benign causes — treasury rebalancing, cold-storage moves, processor settlement — so we describe it neutrally as <strong>observed net flow</strong> and never infer financial distress, insolvency, or wrongdoing from it. Reserve context (see <a href="/methodology/proof-of-reserves">proof-of-reserves</a>) matters when reading flow.</p>`,
+  },
+  'proof-of-reserves': {
     title: 'How we estimate all-chain reserves (proof-of-reserves)',
     body: `<p>Reserves are the current on-chain balance of stablecoins and major assets held by wallets we attribute to an operator, summed across every chain we map and priced in USD. It is an all-chain, best-effort proof-of-reserves estimate.</p>
 <p>Coverage varies: we can only sum wallets we have mapped, so the true figure may be higher, and some balances belong to processors rather than the operator. The withdrawal-coverage ratio (reserves ÷ 7-day outflow) is a descriptive liquidity indicator, <em>not</em> a solvency rating. None of this is a statement that any operator is or is not solvent.</p>`,
   },
+  'data-confidence': {
+    title: 'How we rate data confidence',
+    body: `<p>Every brand and page carries a <strong>data-confidence</strong> label — high, medium or low — so you can weigh the numbers appropriately. It reflects how much independent signal backs the figures, not a judgement of the operator.</p>
+<p><strong>High</strong>: tracked on-chain activity, or three or more independent third-party rating sources. <strong>Medium</strong>: tracked on-chain reserves, an authoritative single source (casino.guru or AskGamblers), or two sources. <strong>Low</strong>: a single low-weight signal, or pattern-detected activity not yet attributed to a verified brand.</p>
+<p>Public casino profiles and rankings require at least <em>medium</em> confidence. Low-confidence and unattributed data is shown only in clearly-labelled contexts and is never presented as a verified casino.</p>`,
+  },
   trust: {
-    title: 'How third-party trust ratings are sourced',
-    body: `<p>We aggregate independently published ratings — the casino.guru Safety Index, Trustpilot consumer scores, AskGamblers expert ratings, casino.org editorial ratings, and casino.guru complaint counts — and show each with its source. Where we display a blended score, it is a transparent combination of those external signals plus on-chain liquidity heuristics.</p>
+    title: 'How third-party trust signals are sourced',
+    body: `<p>We aggregate independently published ratings — the casino.guru Safety Index, Trustpilot consumer scores, AskGamblers expert ratings, casino.org editorial ratings, and casino.guru complaint counts — and show each with its source. Where we display a blended score, it is a transparent combination of those external signals, and we only publish a blended score when at least two independent sources exist.</p>
 <p>These ratings are produced by third parties and shown for convenience with attribution. We do not endorse, verify, or originate them, and they are not our judgement of any operator.</p>`,
   },
 }
@@ -760,7 +786,7 @@ function methodologyPage(topic: string): { title: string; description: string; h
       jsonLd: [{ '@type': 'Article', headline: m.title, author: { '@type': 'Organization', name: 'WCOIN.CASINO' }, publisher: { '@type': 'Organization', name: 'WCOIN.CASINO' } }],
       breadcrumb: [
         { name: 'Home', url: SITE + '/' },
-        { name: 'Methodology', url: SITE + '/methodology/attribution' },
+        { name: 'Methodology', url: SITE + '/methodology/address-attribution' },
         { name: m.title, url },
       ],
       h1: m.title,
@@ -828,8 +854,9 @@ export async function generateSeoPages(): Promise<void> {
   }
 
   const writeAll = db.transaction(() => {
-    // casino pages (gated views, capped)
-    const cap = ranked.slice(0, MAX_CASINOS)
+    // casino pages — public profiles require confidence >= medium (a bare single
+    // low-weight rating is not enough); keeps pages authoritative, no thin content.
+    const cap = ranked.filter((v) => dataConfidence(v) !== 'low').slice(0, MAX_CASINOS)
     cap.forEach((v, idx) => {
       const peers = [cap[idx - 2], cap[idx - 1], cap[idx + 1], cap[idx + 2]].filter(Boolean).map((x) => ({ slug: slugOfView(x), label: x.name }))
       const fallback = cap.filter((x) => x.key !== v.key).slice(0, 4).map((x) => ({ slug: slugOfView(x), label: x.name }))

@@ -252,6 +252,19 @@ export default function Daily() {
               <ReserveList rows={p?.topReserves ?? []} />
             </div>
 
+            {/* Unattributed flow — pattern-detected, shown separately from verified totals */}
+            {p?.unattributed && p.unattributed.count > 0 && (
+              <Card className="p-5">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-display text-base font-semibold">Unattributed Casino Flow</h3>
+                  <span className="text-[13px] text-white/50">{p.unattributed.count} clusters · {fmtUsd(p.unattributed.vol7d)} 7d <span className="rounded bg-white/8 px-1.5 py-0.5 text-[11px] text-white/45">confidence: low</span></span>
+                </div>
+                <p className="text-[13px] text-white/45">
+                  Pattern-detected casino-related wallet activity not yet attributed to a verified brand — excluded from every figure above. <a href="/rankings/unattributed-flow" className="text-gold-400 hover:underline">View details →</a>
+                </p>
+              </Card>
+            )}
+
             {/* Subscribe CTA */}
             <Card className="ring-gold flex flex-col items-center gap-4 p-8 text-center">
               <h2 className="font-display text-2xl font-bold">
