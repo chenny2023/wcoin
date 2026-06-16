@@ -432,6 +432,29 @@ export const api = {
     sendJson<{ ok: boolean }>('/alerts/rules', 'POST', body),
   deleteAlertRule: (id: number) => sendJson<{ ok: boolean }>(`/alerts/rules/${id}`, 'DELETE'),
   alertEvents: (limit = 50) => getJson<AlertEvent[]>(`/alerts/events?limit=${limit}`),
+  marketSnapshot: () => getJson<MarketSnapshot>('/snapshot/market'),
+  subscribe: (email: string) => sendJson<{ sent: boolean; delivered?: boolean; devCode?: string; alreadyActive?: boolean }>('/subscribe', 'POST', { email }),
+  subscribeVerify: (email: string, code: string) =>
+    sendJson<{ active: boolean; unsubscribeToken?: string; frequency?: string }>('/subscribe/verify', 'POST', { email, code }),
+}
+
+export interface MarketSnapshot {
+  snapshot_date: string
+  tracked_volume_24h: number
+  net_flow_24h: number
+  active_casinos: number
+  active_chains: number
+  live_streamers: number
+  reserves_total: number
+  reserve_change_7d: number | null
+  confidence_level: string
+  payload: {
+    topMovers: { label: string; vol24h: number; vol7d: number; net7d: number; trust: number | null }[]
+    topReserves: { label: string; reserves: number; coverage: number | null }[]
+    chainVolume: { chain: string; vol24h: number }[]
+    whales: { label: string; chain: string; usd: number; direction: string; ts: number }[]
+  }
+  error?: string
 }
 
 export interface FlowNode {

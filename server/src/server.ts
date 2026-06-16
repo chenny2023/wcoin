@@ -12,6 +12,7 @@ import { startReadWorker } from './readpool.ts'
 import { seedWatchlist } from './watchlist.ts'
 import { registerApi } from './api.ts'
 import { registerAuth } from './auth.ts'
+import { registerSubscribe } from './subscribe.ts'
 import { startEvm } from './collectors/evm.ts'
 import { startBackfill } from './collectors/backfill.ts'
 import { startTron } from './collectors/tron.ts'
@@ -74,6 +75,7 @@ async function main() {
   registerRateLimit(app) // per-IP API rate limiting (defense-in-depth behind CF)
   await registerAuth(app)
   await registerApi(app)
+  registerSubscribe(app) // email digest subscription (double opt-in)
 
   // Serve the built SPA in production (single-process deploy). Vite emits
   // content-hashed asset filenames, so they're safe to cache hard (immutable);

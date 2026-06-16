@@ -1,3 +1,4 @@
+import { useState, FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
@@ -84,6 +85,119 @@ function CoverageBoard() {
   )
 }
 
+// Email capture → double opt-in. The lead CTA for the data-media pivot.
+function EmailCapture() {
+  const [email, setEmail] = useState('')
+  const [code, setCode] = useState('')
+  const [stage, setStage] = useState<'idle' | 'sending' | 'code' | 'done'>('idle')
+  const [msg, setMsg] = useState('')
+
+  const request = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return setMsg('Enter a valid email')
+    setStage('sending')
+    setMsg('')
+    try {
+      const r = await api.subscribe(email)
+      if (r.alreadyActive) return (setStage('done'), setMsg("You're already subscribed ✓"))
+      setStage('code')
+      setMsg(r.devCode ? `Dev code: ${r.devCode}` : 'Check your inbox for a 6-digit code.')
+    } catch {
+      setStage('idle')
+      setMsg('Something went wrong — try again.')
+    }
+  }
+  const verify = async (e: FormEvent) => {
+    e.preventDefault()
+    try {
+      const r = await api.subscribeVerify(email, code.trim())
+      if (r.active) return (setStage('done'), setMsg("You're in — the first Daily Report arrives tomorrow ✓"))
+      setMsg('Invalid code.')
+    } catch {
+      setMsg('Invalid or expired code.')
+    }
+  }
+
+  return (
+    <div className="mx-auto mt-7 max-w-md">
+      {stage === 'done' ? (
+        <div className="rounded-xl border border-mint-400/30 bg-mint-400/10 px-4 py-3 text-sm font-medium text-mint-300">{msg}</div>
+      ) : stage === 'code' ? (
+        <form onSubmit={verify} className="flex gap-2">
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            inputMode="numeric"
+            placeholder="6-digit code"
+            className="min-w-0 flex-1 rounded-xl border border-white/12 bg-white/5 px-4 py-3 text-sm tracking-[0.3em] text-white placeholder:tracking-normal placeholder:text-white/35 focus:border-gold-500/50 focus:outline-none"
+          />
+          <button className="rounded-xl bg-gradient-to-r from-gold-400 to-gold-600 px-5 py-3 text-sm font-semibold text-ink-950 hover:brightness-110">Confirm</button>
+        </form>
+      ) : (
+        <form onSubmit={request} className="flex gap-2">
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            type="email"
+            placeholder="you@email.com"
+            className="min-w-0 flex-1 rounded-xl border border-white/12 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/35 focus:border-gold-500/50 focus:outline-none"
+          />
+          <button
+            disabled={stage === 'sending'}
+            className="whitespace-nowrap rounded-xl bg-gradient-to-r from-gold-400 to-gold-600 px-5 py-3 text-sm font-semibold text-ink-950 hover:brightness-110 disabled:opacity-60"
+          >
+            {stage === 'sending' ? 'Sending…' : 'Get the Daily Report'}
+          </button>
+        </form>
+      )}
+      {msg && stage !== 'done' && <p className="mt-2 text-[13px] text-white/45">{msg}</p>}
+      {stage === 'idle' && <p className="mt-2 text-[12px] text-white/35">Free daily on-chain crypto-casino market report. Unsubscribe anytime.</p>}
+    </div>
+  )
+}
+
+// "Today in Crypto Casino" — the precomputed daily snapshot first screen.
+function TodayStrip() {
+  const { data } = usePoll(api.marketSnapshot, 60_000)
+  if (!data || data.error) return null
+  const net = data.net_flow_24h ?? 0
+  const cells = [
+    { label: '24h Volume', value: fmtUsd(data.tracked_volume_24h ?? 0) },
+    { label: 'Net Flow 24h', value: (net >= 0 ? '+' : '−') + fmtUsd(Math.abs(net)) },
+    { label: 'Active Casinos', value: fmtNum(data.active_casinos ?? 0) },
+    { label: 'Chains', value: String(data.active_chains ?? 0) },
+    { label: 'Live Streamers', value: String(data.live_streamers ?? 0) },
+    { label: 'Tracked Reserves', value: fmtUsd(data.reserves_total ?? 0) },
+  ]
+  const movers = data.payload?.topMovers?.slice(0, 5) ?? []
+  return (
+    <section className="mx-auto max-w-7xl px-5 py-10">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="font-display text-xl font-bold sm:text-2xl">Today in Crypto Casino</h2>
+        <Link to="/daily" className="text-[13px] font-medium text-gold-400 hover:underline">Full daily report →</Link>
+      </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        {cells.map((c) => (
+          <Card key={c.label} className="p-4">
+            <div className="text-[11px] uppercase tracking-wider text-white/40">{c.label}</div>
+            <div className="mt-1.5 font-display text-lg font-bold tabular-nums">{c.value}</div>
+          </Card>
+        ))}
+      </div>
+      {movers.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[13px] text-white/55">
+          <span className="text-white/35">Biggest movers (24h):</span>
+          {movers.map((m) => (
+            <span key={m.label}>
+              {m.label} <span className="font-semibold tabular-nums text-gold-400">{fmtUsd(m.vol24h)}</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
 export default function Landing() {
   const { data: stats } = usePoll(api.stats, 12_000)
   const { data: entities } = usePoll(api.casinos, 15_000)
@@ -129,21 +243,17 @@ export default function Landing() {
               The <span className="text-gradient-gold">Intelligence Layer</span><br />for iGaming
             </h1>
             <p className="mx-auto mt-5 max-w-xl text-base text-white/55 sm:text-lg">
-              Real-time on-chain analytics, casino leaderboards, streamer monitoring and player
-              intelligence — purpose-built for casino operators on the WCOIN network.
+              The most complete on-chain data layer for crypto casinos — real-time volume, all-chain
+              proof-of-reserves, trust ratings & streamer signals. Free, summarised every day.
             </p>
-            <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
-              <Link
-                to="/login"
-                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-gold-400 to-gold-600 px-6 py-3 text-sm font-semibold text-ink-950 hover:brightness-110"
-              >
-                Sign up free <ArrowRight size={16} />
-              </Link>
+            {/* Lead CTA: daily report email capture */}
+            <EmailCapture />
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
               <Link
                 to="/app"
                 className="rounded-xl border border-white/12 bg-white/5 px-6 py-3 text-sm font-semibold text-white/85 hover:bg-white/10"
               >
-                Browse the live data
+                Browse the live data <ArrowRight size={15} className="inline" />
               </Link>
             </div>
 
@@ -163,6 +273,7 @@ export default function Landing() {
         </div>
       </section>
 
+      <TodayStrip />
       <Ticker />
 
       <CoverageBoard />

@@ -316,6 +316,19 @@ CREATE TABLE IF NOT EXISTS daily_market_snapshot (
   created_at         INTEGER NOT NULL,
   updated_at         INTEGER NOT NULL
 );
+
+-- 1.0 email digest subscribers (frequency preference inline for simplicity).
+-- The double-opt-in confirm reuses the existing verification_codes table.
+CREATE TABLE IF NOT EXISTS email_subscriber (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  email             TEXT NOT NULL UNIQUE,
+  status            TEXT NOT NULL DEFAULT 'pending',  -- pending|active|unsubscribed|bounced
+  frequency         TEXT NOT NULL DEFAULT 'daily',    -- daily|weekly
+  unsubscribe_token TEXT NOT NULL UNIQUE,
+  verified_at       INTEGER,
+  created_at        INTEGER NOT NULL,
+  updated_at        INTEGER NOT NULL
+);
 `)
 
 // additive migrations for DBs created before these columns existed

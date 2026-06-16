@@ -13,7 +13,7 @@ const WINDOW_MS = 60_000
 const GENERAL = Number(process.env.RATE_LIMIT_PER_MIN ?? 300)
 const TIGHT = Number(process.env.RATE_LIMIT_TIGHT_PER_MIN ?? 40)
 // expensive / less-cached endpoints get a stricter budget
-const TIGHT_RE = /^\/api\/(search|transfers|entity\/\d+\/flow)\b/
+const TIGHT_RE = /^\/api\/(search|transfers|entity\/\d+\/flow|subscribe)\b/
 
 type Bucket = { count: number; resetAt: number }
 const buckets = new Map<string, Bucket>()
