@@ -80,8 +80,6 @@ async function main() {
     console.log('[web] serving built SPA from /dist')
   }
 
-  void startStatsMaintenance() // background-maintain the costly per-casino player/first-seen counts off the event loop
-
   await app.listen({ port: config.port, host: '0.0.0.0' })
   const primaryRpc = new URL(config.evmRpcs[0]).host
   const tronHost =
@@ -142,6 +140,10 @@ async function main() {
     }
     startEvmChains() // extra EVM chains (BSC, Base, Arbitrum, Optimism) — backfill each
   }, 90_000)
+  // Third wave (+180s): background player/first-seen maintenance. Starts LAST,
+  // long after /api/health has gone green, so its first heavy pass never blocks
+  // the deploy healthcheck (running it pre-listen crashed the deploy).
+  setTimeout(() => void startStatsMaintenance(), 180_000)
   }, 45_000)
 }
 
