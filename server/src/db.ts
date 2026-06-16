@@ -194,7 +194,8 @@ CREATE TABLE IF NOT EXISTS arkham_casino (
   reserves_usd REAL,                    -- Σ portfolio USD (mainstream tokens only)
   volume7d_usd REAL,                    -- Σ transfer USD over 7d (mainstream tokens) — phase 2
   resolved_at  INTEGER NOT NULL DEFAULT 0,
-  updated_at   INTEGER NOT NULL DEFAULT 0
+  updated_at   INTEGER NOT NULL DEFAULT 0,
+  addr_harvested INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_arkham_updated ON arkham_casino(updated_at);
 
@@ -306,6 +307,7 @@ for (const ddl of [
   'ALTER TABLE casino_directory ADD COLUMN tp_reviews INTEGER',
   'ALTER TABLE casino_directory ADD COLUMN tp_checked INTEGER NOT NULL DEFAULT 0',
   'ALTER TABLE arkham_casino ADD COLUMN domain TEXT',
+  'ALTER TABLE arkham_casino ADD COLUMN addr_harvested INTEGER NOT NULL DEFAULT 0',
 ]) {
   try {
     db.exec(ddl)

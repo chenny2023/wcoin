@@ -1,7 +1,18 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { db, stateGet, stateSet } from '../db.ts'
+import { db, stateGet, stateSet, stmt } from '../db.ts'
 import { arkhamFetch } from '../net.ts'
+
+// Arkham chain → our watchlist chain code. All EVM chains share one 'ETH' row
+// (the indexer reuses the address across every EVM network); Tron/Sol/BTC direct.
+function ourChain(chain: string, chainType: string): string | null {
+  if (chainType === 'evm') return 'ETH'
+  const c = (chain || '').toLowerCase()
+  if (c === 'tron') return 'TRON'
+  if (c === 'solana' || c === 'sol') return 'SOL'
+  if (c === 'bitcoin' || c === 'btc') return 'BTC'
+  return null
+}
 
 function hostOf(u: string): string | null {
   if (!u) return null
@@ -153,6 +164,47 @@ async function refreshOne(): Promise<boolean> {
   return true
 }
 
+// Harvest the casino's own hot-wallet addresses from its transfers and add them
+// to the watchlist → the multi-chain indexer then tracks their volume. This is
+// how we expand transaction coverage beyond the hand-curated brands. Per-user
+// deposit addresses are skipped (thousands, noisy); we take the labelled wallets.
+async function harvestOne(): Promise<boolean> {
+  const row = db
+    .prepare("SELECT key, name, entity_id FROM arkham_casino WHERE entity_id != '' AND addr_harvested=0 ORDER BY reserves_usd DESC LIMIT 1")
+    .get() as { key: string; name: string; entity_id: string } | undefined
+  if (!row) return false
+  try {
+    const res = arkhamFetch(`/transfers?base=${encodeURIComponent(row.entity_id)}&limit=250`, { signal: AbortSignal.timeout(30_000) })
+    if (!res) return false
+    const r = await res
+    if (r.status !== 200) return true // transient — retry later (don't mark harvested)
+    const j = (await r.json()) as { transfers?: any[] }
+    const seen = new Set<string>()
+    const now = Date.now()
+    let added = 0
+    for (const t of j.transfers ?? []) {
+      for (const a of [t.fromAddress, t.toAddress]) {
+        if (!a?.address) continue
+        const owned = a.arkhamEntity?.id === row.entity_id || a.depositServiceID === row.entity_id
+        if (!owned) continue
+        if (/deposit/i.test(a.arkhamLabel?.name ?? '')) continue // skip per-user deposit addrs
+        const chain = ourChain(a.chain, a.arkhamLabel?.chainType ?? '')
+        if (!chain) continue
+        const addr = chain === 'ETH' ? String(a.address).toLowerCase() : String(a.address) // ETH lowercased, TRON base58
+        const dkey = chain + ':' + addr.toLowerCase()
+        if (seen.has(dkey)) continue
+        seen.add(dkey)
+        added += stmt.addWatch.run(chain, addr, row.name, 'casino', now).changes
+      }
+    }
+    db.prepare('UPDATE arkham_casino SET addr_harvested=1 WHERE key=?').run(row.key)
+    if (added) console.log(`[arkham] ${row.name}: +${added} wallet addresses → indexer`)
+  } catch (e) {
+    console.warn(`[arkham] harvest ${row.name}: ${(e as Error).message.slice(0, 40)}`)
+  }
+  return true
+}
+
 export function startArkham() {
   if ((process.env.ARKHAM_ENABLED ?? '1') === '0') return
   if (!(process.env.arkham || process.env.ARKHAM_API_KEY)) {
@@ -169,12 +221,13 @@ export function startArkham() {
   }
   let iter = 0
   const loop = async () => {
-    // interleave: resolve each tick, but also refresh reserves every 3rd tick so
-    // matched casinos start showing reserves without waiting for the full resolve.
-    const resolved = await resolveOne().catch(() => false)
+    // priority: resolve entities → harvest their addresses into the indexer →
+    // keep reserves fresh. Interleave a reserve refresh every 3rd tick so matched
+    // casinos surface reserves without waiting for the full resolve/harvest pass.
+    const worked = (await resolveOne().catch(() => false)) || (await harvestOne().catch(() => false))
     let refreshed = false
-    if (!resolved || ++iter % 3 === 0) refreshed = await refreshOne().catch(() => false)
-    setTimeout(loop, resolved || refreshed ? 6_000 : 60_000)
+    if (!worked || ++iter % 3 === 0) refreshed = await refreshOne().catch(() => false)
+    setTimeout(loop, worked || refreshed ? 6_000 : 60_000)
   }
   setTimeout(loop, 30_000)
 }
