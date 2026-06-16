@@ -197,6 +197,9 @@ export default function Sentiment() {
             <div className="text-[13px] text-white/55">
               <span className="font-display text-xl font-bold text-gradient-gold">{fmtUsd(ark.totalUsd)}</span>
               <span className="ml-1.5">across {ark.count} casinos · every chain</span>
+              {ark.totalVolume7d > 0 && (
+                <span className="ml-1.5 text-white/40">· <span className="font-semibold text-violet-300">{fmtUsd(ark.totalVolume7d)}</span> 7d volume</span>
+              )}
             </div>
           </div>
           <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
@@ -224,6 +227,9 @@ export default function Sentiment() {
                           </span>
                         )}
                         <span className="text-[13px] font-semibold tabular-nums text-mint-400">{fmtUsd(c.reservesUsd)}</span>
+                        {c.volume7dUsd != null && c.volume7dUsd > 0 && (
+                          <span title="Arkham-attributed cross-chain volume, trailing 7d (a floor for the largest)" className="w-16 text-right text-[11px] tabular-nums text-violet-300/80">{fmtUsd(c.volume7dUsd)}</span>
+                        )}
                       </div>
                     </div>
                     <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/6">

@@ -48,7 +48,7 @@ function isMainstream(symbol: string): boolean {
 
 const upsertSeed = db.prepare('INSERT INTO arkham_casino(key, name, domain) VALUES(@key, @name, @domain) ON CONFLICT(key) DO UPDATE SET domain=COALESCE(arkham_casino.domain, @domain)')
 const setResolved = db.prepare('UPDATE arkham_casino SET entity_id=@id, entity_type=@type, resolved_at=@now WHERE key=@key')
-const setMetrics = db.prepare('UPDATE arkham_casino SET reserves_usd=@reserves, updated_at=@now WHERE key=@key')
+const setMetrics = db.prepare('UPDATE arkham_casino SET reserves_usd=@reserves, volume7d_usd=COALESCE(@volume, volume7d_usd), updated_at=@now WHERE key=@key')
 
 function seedFromRoster() {
   try {
@@ -137,6 +137,39 @@ function sumReserves(portfolio: Record<string, Record<string, any>>): number {
 }
 
 const REFRESH_MS = 6 * 3600_000 // refresh reserves every ~6h
+const VOL_WINDOW_MS = 7 * 86400_000
+const VOL_MAX_PAGES = 8 // up to 2000 recent transfers; the very largest entities undercount (a 7d floor)
+
+// Phase 2 — Arkham-attributed cross-chain transfer volume over the trailing 7d.
+// This counts throughput on chains/tokens we don't index ourselves (BTC native,
+// full Tron, every EVM), so it complements the on-chain volume the indexer derives
+// from harvested wallets. Bounded paging keeps it within the rate limit; for the
+// highest-volume entities (Stake-scale) the window isn't fully covered, so the
+// figure is a floor — surfaced as such, never as an exact total.
+async function entityVolume7d(entityId: string): Promise<number | null> {
+  const since = Date.now() - VOL_WINDOW_MS
+  let total = 0
+  let sawAny = false
+  for (let page = 0; page < VOL_MAX_PAGES; page++) {
+    const res = arkhamFetch(
+      `/transfers?base=${encodeURIComponent(entityId)}&timeGte=${since}&limit=250&offset=${page * 250}&sortKey=time&sortDir=desc`,
+      { signal: AbortSignal.timeout(30_000) },
+    )
+    if (!res) return null
+    const r = await res
+    if (r.status !== 200) return sawAny ? total : null // transient mid-sweep → keep what we have
+    const list = ((await r.json()) as { transfers?: any[] }).transfers ?? []
+    if (!list.length) break
+    sawAny = true
+    for (const t of list) {
+      const sym = t.tokenSymbol ?? t.token?.symbol ?? t.symbol ?? ''
+      const usd = typeof t.historicalUSD === 'number' ? t.historicalUSD : typeof t.usd === 'number' ? t.usd : 0
+      if (isMainstream(sym) && Number.isFinite(usd) && usd > 0) total += usd
+    }
+    if (list.length < 250) break // window exhausted
+  }
+  return total
+}
 
 // pull all-chain portfolio for a resolved entity → mainstream reserves USD
 async function refreshOne(): Promise<boolean> {
@@ -151,12 +184,16 @@ async function refreshOne(): Promise<boolean> {
     const r = await res
     if (r.status === 200) {
       const reserves = sumReserves((await r.json()) as any)
-      setMetrics.run({ key: row.key, reserves, now })
+      // same pass: trailing-7d cross-chain volume (Phase 2). Null on failure leaves
+      // the prior value untouched would be ideal, but a single UPDATE is simpler —
+      // we COALESCE so a transient null doesn't wipe a good reading.
+      const volume = await entityVolume7d(row.entity_id).catch(() => null)
+      setMetrics.run({ key: row.key, reserves, volume, now })
       db.prepare('INSERT INTO arkham_reserve_history(key, reserves_usd, ts) VALUES(?, ?, ?)').run(row.key, reserves, now)
-      console.log(`[arkham] ${row.name}: reserves $${Math.round(reserves).toLocaleString()}`)
+      console.log(`[arkham] ${row.name}: reserves $${Math.round(reserves).toLocaleString()}${volume != null ? `, vol7d $${Math.round(volume).toLocaleString()}` : ''}`)
     } else {
       console.warn(`[arkham] portfolio ${row.name}: HTTP ${r.status}`)
-      setMetrics.run({ key: row.key, reserves: null, now }) // advance so we don't loop on a bad entity
+      setMetrics.run({ key: row.key, reserves: null, volume: null, now }) // advance so we don't loop on a bad entity
     }
   } catch (e) {
     console.warn(`[arkham] portfolio ${row.name}: ${(e as Error).message.slice(0, 40)}`)
@@ -234,12 +271,13 @@ export function startArkham() {
 
 export interface ArkhamMetric {
   reserves: number | null
+  volume7d: number | null
 }
 // key (roster slug) → arkham metrics, for the aggregate/leaderboard merge
 export function arkhamMetrics(): Map<string, ArkhamMetric> {
   const out = new Map<string, ArkhamMetric>()
-  for (const r of db.prepare("SELECT key, reserves_usd FROM arkham_casino WHERE entity_id != ''").all() as any[]) {
-    out.set(r.key, { reserves: r.reserves_usd })
+  for (const r of db.prepare("SELECT key, reserves_usd, volume7d_usd FROM arkham_casino WHERE entity_id != ''").all() as any[]) {
+    out.set(r.key, { reserves: r.reserves_usd, volume7d: r.volume7d_usd })
   }
   return out
 }

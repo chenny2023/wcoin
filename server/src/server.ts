@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { config } from './config.ts'
+import { db } from './db.ts'
 import { seedWatchlist } from './watchlist.ts'
 import { registerApi } from './api.ts'
 import { registerAuth } from './auth.ts'
@@ -27,6 +28,7 @@ import { startCircus } from './collectors/circus.ts'
 import { startPrices } from './collectors/prices.ts'
 import { startNative } from './collectors/native.ts'
 import { startBluesky } from './collectors/bluesky.ts'
+import { startTwitter } from './collectors/twitter.ts'
 import { startGdelt } from './collectors/gdelt.ts'
 import { startBitcointalk } from './collectors/bitcointalk.ts'
 import { startCasinoTokens } from './collectors/casinotokens.ts'
@@ -86,6 +88,45 @@ async function main() {
   }
 
   await app.listen({ port: config.port, host: '0.0.0.0' })
+
+  // ── Graceful shutdown ─────────────────────────────────────────────────────
+  // The service has a mounted volume, so Railway deploys with a recreate
+  // strategy: it SIGTERMs the old container before starting the new one. Without
+  // a handler, a SIGTERM landing mid synchronous bulk-insert can't be processed
+  // until that blocking C++ call returns; if Railway's grace window expires it
+  // SIGKILLs us → exit 137, which Railway flags as "Crashed" on every deploy, and
+  // the hard kill leaves a dirty WAL the next boot must recover. Here we stop the
+  // listener, checkpoint+truncate the WAL so the next container opens a clean DB,
+  // close the handle, and exit 0 — a clean handover, no crash flag.
+  let shuttingDown = false
+  const shutdown = async (sig: string) => {
+    if (shuttingDown) return
+    shuttingDown = true
+    console.log(`[shutdown] ${sig} received — draining…`)
+    const done = () => {
+      try {
+        db.pragma('wal_checkpoint(TRUNCATE)')
+        db.close()
+        console.log('[shutdown] WAL checkpointed, DB closed — bye')
+      } catch (e) {
+        console.warn('[shutdown] checkpoint/close failed:', (e as Error).message)
+      }
+      process.exit(0)
+    }
+    // hard cap so a blocked loop can't hang the handover past Railway's grace
+    const t = setTimeout(done, 4_000)
+    t.unref?.()
+    try {
+      await app.close()
+    } catch {
+      /* ignore */
+    }
+    clearTimeout(t)
+    done()
+  }
+  process.on('SIGTERM', () => void shutdown('SIGTERM'))
+  process.on('SIGINT', () => void shutdown('SIGINT'))
+
   const primaryRpc = new URL(config.evmRpcs[0]).host
   const tronHost =
     config.tronMode === 'jsonrpc' ? new URL(config.tronJsonRpc).host : new URL(config.tronApi).host
@@ -113,6 +154,7 @@ async function main() {
   startNews() // brand mentions (Google News RSS, keyless)
   startPress() // brand mentions (iGaming trade-press RSS, keyless)
   startBluesky() // social mentions (Bluesky public post search, keyless)
+  startTwitter() // X/Twitter official-account activity (syndication widget, keyless)
   startGdelt() // brand mentions (GDELT global news index, keyless)
   startBitcointalk() // social mentions (Bitcointalk gambling forum, keyless)
   startAppStore() // user reviews (Apple App Store, keyless — apps that exist)

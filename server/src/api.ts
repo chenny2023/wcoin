@@ -372,17 +372,19 @@ export async function registerApi(app: FastifyInstance) {
     const wk = Date.now() - 7 * 86400_000
     const rows = db
       .prepare(
-        `SELECT a.key, a.name, a.domain, a.entity_id, a.reserves_usd,
+        `SELECT a.key, a.name, a.domain, a.entity_id, a.reserves_usd, a.volume7d_usd,
            (SELECT h.reserves_usd FROM arkham_reserve_history h WHERE h.key=a.key AND h.ts <= ? ORDER BY h.ts DESC LIMIT 1) AS prev7d
          FROM arkham_casino a
          WHERE a.entity_id != '' AND a.reserves_usd IS NOT NULL
          ORDER BY a.reserves_usd DESC LIMIT 500`,
       )
-      .all(wk) as { key: string; name: string; domain: string | null; entity_id: string; reserves_usd: number; prev7d: number | null }[]
+      .all(wk) as { key: string; name: string; domain: string | null; entity_id: string; reserves_usd: number; volume7d_usd: number | null; prev7d: number | null }[]
     const total = rows.reduce((s, r) => s + (r.reserves_usd || 0), 0)
+    const totalVol = rows.reduce((s, r) => s + (r.volume7d_usd || 0), 0)
     return {
       count: rows.length,
       totalUsd: total,
+      totalVolume7d: totalVol, // Arkham-attributed cross-chain 7d throughput (a floor for the largest)
       casinos: rows.map((r) => {
         const change7d = r.prev7d && r.prev7d > 0 ? (r.reserves_usd - r.prev7d) / r.prev7d : null
         return {
@@ -390,6 +392,7 @@ export async function registerApi(app: FastifyInstance) {
           domain: r.domain,
           entityId: r.entity_id,
           reservesUsd: r.reserves_usd,
+          volume7dUsd: r.volume7d_usd ?? null, // cross-chain on-chain volume (Arkham), trailing 7d
           change7d, // fraction; fills in once a week of history accrues
           solvencyAlert: change7d != null && change7d <= -0.3, // ≥30% weekly drawdown
         }

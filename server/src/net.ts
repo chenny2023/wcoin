@@ -117,7 +117,7 @@ if (residentialAgents.length) console.log(`[net] ${residentialAgents.length} res
 // Reddit, Bluesky and GDELT each maintain their OWN blocklist, so a residential
 // IP that one rejects may well be fine for the others — worth trying all via the
 // residential exit rather than the (failing) datacenter pool.
-const residentialHosts = (process.env.RESIDENTIAL_HOSTS || 'reddit.com,bsky.app,gdeltproject.org,trustpilot.com,gql.twitch.tv')
+const residentialHosts = (process.env.RESIDENTIAL_HOSTS || 'reddit.com,bsky.app,gdeltproject.org,trustpilot.com,gql.twitch.tv,syndication.twitter.com')
   .split(',')
   .map((s) => s.trim().toLowerCase())
   .filter(Boolean)
