@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { BellRing, Plus, Trash2, Webhook, Activity, TrendingDown, Fish } from 'lucide-react'
+import { BellRing, Plus, Trash2, Webhook, Activity, TrendingDown, Fish, Mail } from 'lucide-react'
 import { Card, PageHead, ChainPill, Skeleton } from '../components/ui'
 import { api, usePoll, getToken, AlertRule } from '../data/api'
 import { fmtUsd, timeAgo } from '../data/format'
@@ -23,6 +23,7 @@ export default function Alerts() {
   const [threshold, setThreshold] = useState(100000)
   const [windowH, setWindowH] = useState(24)
   const [webhook, setWebhook] = useState('')
+  const [notifyEmail, setNotifyEmail] = useState(true)
   const [busy, setBusy] = useState(false)
   const meta = KINDS.find((k) => k.key === kind)!
 
@@ -31,7 +32,7 @@ export default function Alerts() {
     setBusy(true)
     try {
       const scopeLabel = scope === 'all' ? 'All watched entities' : (entities ?? []).find((x) => String(x.id) === scope)?.label
-      await api.createAlertRule({ kind, scope, scopeLabel, threshold, windowH, webhook: webhook || undefined })
+      await api.createAlertRule({ kind, scope, scopeLabel, threshold, windowH, webhook: webhook || undefined, notifyEmail })
       setWebhook('')
       setTick((t) => t + 1)
     } finally {
@@ -103,6 +104,10 @@ export default function Alerts() {
               <label className="mb-1 flex items-center gap-1.5 text-[13px] text-white/55"><Webhook size={12} /> Webhook URL (optional)</label>
               <input value={webhook} onChange={(e) => setWebhook(e.target.value)} placeholder="https://hooks.…" className="w-full rounded-xl border border-white/10 bg-white/4 px-3 py-2 font-mono text-[12px] placeholder:text-white/25 focus:border-gold-500/40 focus:outline-none" />
             </div>
+            <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-white/10 bg-white/3 px-3 py-2.5 text-[13px]">
+              <input type="checkbox" checked={notifyEmail} onChange={(e) => setNotifyEmail(e.target.checked)} className="h-4 w-4 accent-gold-500" />
+              <span className="flex items-center gap-1.5 text-white/70"><Mail size={13} className="text-gold-400" /> Email me when this fires</span>
+            </label>
             <button type="submit" disabled={busy} className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-gold-400 to-gold-600 py-2.5 text-sm font-semibold text-ink-950 hover:brightness-110 disabled:opacity-60">
               <Plus size={15} /> Create rule
             </button>

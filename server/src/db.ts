@@ -364,6 +364,19 @@ CREATE TABLE IF NOT EXISTS seo_page (
   html        TEXT NOT NULL,
   updated_at  INTEGER NOT NULL
 );
+
+-- Per-user personal watchlist (favourites). Distinct from the global watchlist
+-- (the operator-curated set of tracked addresses): this is each signed-in user's
+-- own list of casinos they follow, keyed by brandKey so it survives wallet churn.
+CREATE TABLE IF NOT EXISTS user_watch (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL,
+  brand_key  TEXT NOT NULL,
+  label      TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE(user_id, brand_key)
+);
+CREATE INDEX IF NOT EXISTS idx_user_watch_user ON user_watch(user_id);
 `)
 
 // additive migrations for DBs created before these columns existed
@@ -376,6 +389,8 @@ for (const ddl of [
   'ALTER TABLE casino_directory ADD COLUMN tp_checked INTEGER NOT NULL DEFAULT 0',
   'ALTER TABLE arkham_casino ADD COLUMN domain TEXT',
   'ALTER TABLE arkham_casino ADD COLUMN addr_harvested INTEGER NOT NULL DEFAULT 0',
+  // alerts can email the rule owner when they fire (per-rule opt-out)
+  'ALTER TABLE alert_rules ADD COLUMN notify_email INTEGER NOT NULL DEFAULT 1',
 ]) {
   try {
     db.exec(ddl)

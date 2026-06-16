@@ -1,6 +1,7 @@
 import { db } from './db.ts'
 import { bus, TransferEvent } from './bus.ts'
 import { webFetch } from './net.ts'
+import { sendEmail } from './email.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Alert engine — turns the dashboard from "look" into "be told". Operators set
@@ -25,6 +26,39 @@ interface Rule {
   threshold: number
   window_h: number
   webhook: string | null
+  notify_email: number
+}
+
+const SITE = 'https://wcoin.casino'
+const EMAIL_COOLDOWN_MS = Number(process.env.ALERT_EMAIL_COOLDOWN_MS ?? 10 * 60_000)
+const esc = (s: string) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
+
+// Email the rule owner when an alert fires — with a per-user cooldown so a burst
+// of whale events can't flood the inbox (the in-app feed still has every event).
+async function maybeEmailAlert(rule: Rule, ev: { title: string; detail?: string | null }) {
+  try {
+    const u = db.prepare('SELECT email FROM users WHERE id=?').get(rule.user_id) as { email?: string } | undefined
+    if (!u?.email) return
+    const key = `alert:email:${rule.user_id}`
+    const last = Number((db.prepare('SELECT value FROM sync_state WHERE key=?').get(key) as any)?.value ?? 0)
+    if (Date.now() - last < EMAIL_COOLDOWN_MS) return
+    // claim the cooldown slot BEFORE the async send so concurrent events don't both pass
+    db.prepare('INSERT INTO sync_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key, String(Date.now()))
+    const subject = `WCOIN alert — ${ev.title}`.slice(0, 140)
+    const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0b0d12;padding:24px;color:#e8eaf0">
+      <div style="max-width:520px;margin:0 auto;background:#11141c;border:1px solid #1e2230;border-radius:16px;padding:26px">
+        <div style="font-weight:700;font-size:17px;letter-spacing:.04em;color:#f5b100">WCOIN.CASINO</div>
+        <div style="color:#6b7080;font-size:12px;margin-top:2px">On-chain alert triggered</div>
+        <h2 style="font-size:18px;margin:18px 0 6px;color:#fff">${esc(ev.title)}</h2>
+        ${ev.detail ? `<p style="color:#9aa0b4;font-size:14px;margin:0 0 8px">${esc(ev.detail)}</p>` : ''}
+        <div style="margin-top:18px"><a href="${SITE}/app/alerts" style="display:inline-block;background:#f5b100;color:#0b0d12;font-weight:700;text-decoration:none;padding:10px 16px;border-radius:9px;font-size:14px">View in dashboard →</a></div>
+        <p style="color:#6b7080;font-size:11px;margin:22px 0 0;line-height:1.6">You set this alert at WCOIN.CASINO. Observed on-chain activity — not financial advice. A short cooldown means one email may stand in for several events; the dashboard has them all.</p>
+      </div></div>`
+    const text = `WCOIN.CASINO alert\n\n${ev.title}\n${ev.detail ?? ''}\n\nView: ${SITE}/app/alerts`
+    await sendEmail(u.email, { subject, html, text })
+  } catch {
+    /* email delivery is best-effort */
+  }
 }
 
 function activeRules(kind: string): Rule[] {
@@ -62,6 +96,7 @@ function emit(rule: Rule, ev: { title: string; detail?: string; usd?: number; en
   if (r.changes > 0) {
     bus.emit('alert', row)
     if (rule.webhook) fireWebhook(rule.webhook, row)
+    if (rule.notify_email) void maybeEmailAlert(rule, { title: ev.title, detail: ev.detail })
   }
 }
 

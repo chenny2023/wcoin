@@ -178,6 +178,23 @@ export interface StreamerDetail {
   live: StreamerRow | null
 }
 
+export interface FavoriteItem {
+  brandKey: string
+  label: string
+  createdAt: number
+  stats: {
+    volume7d: number
+    volume24h: number
+    net7d: number
+    reserves: number
+    trust: number
+    chains: string[]
+    safetyIndex: number | null
+    trustpilot: number | null
+    change24h: number
+  } | null
+}
+
 export interface SentimentEntity extends Entity {
   mentions7d: number
   mentionsPos: number
@@ -406,6 +423,10 @@ export const api = {
   addWatch: (body: { chain: string; address: string; label: string; category: string }) =>
     sendJson<{ ok: boolean }>('/watchlist', 'POST', body),
   removeWatch: (id: number) => sendJson<{ ok: boolean }>(`/watchlist/${id}`, 'DELETE'),
+  // personal watchlist (per-user favourited casinos)
+  myWatchlist: () => getJson<{ items: FavoriteItem[] }>('/me/watchlist'),
+  addFavorite: (label: string) => sendJson<{ ok: boolean; brandKey: string }>('/me/watchlist', 'POST', { label }),
+  removeFavorite: (key: string) => sendJson<{ ok: boolean }>(`/me/watchlist/${encodeURIComponent(key)}`, 'DELETE'),
   addRoster: (body: { platform: string; slug: string }) => sendJson<{ ok: boolean }>('/roster', 'POST', body),
   vote: (watch_id: number, vote: 1 | -1) => sendJson<{ ok: boolean }>('/vote', 'POST', { watch_id, vote }),
   // passwordless auth: request a 6-digit code, then exchange it for a session
@@ -430,7 +451,7 @@ export const api = {
   protocols: (category?: string) => getJson<ProtocolsResp>('/protocols' + (category ? `?category=${encodeURIComponent(category)}` : '')),
   predictions: () => getJson<PredictionsResp>('/predictions'),
   alertRules: () => getJson<AlertRule[]>('/alerts/rules'),
-  createAlertRule: (body: { kind: string; scope: string; scopeLabel?: string; threshold: number; windowH?: number; webhook?: string }) =>
+  createAlertRule: (body: { kind: string; scope: string; scopeLabel?: string; threshold: number; windowH?: number; webhook?: string; notifyEmail?: boolean }) =>
     sendJson<{ ok: boolean }>('/alerts/rules', 'POST', body),
   deleteAlertRule: (id: number) => sendJson<{ ok: boolean }>(`/alerts/rules/${id}`, 'DELETE'),
   alertEvents: (limit = 50) => getJson<AlertEvent[]>(`/alerts/events?limit=${limit}`),

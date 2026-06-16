@@ -881,6 +881,62 @@ export async function registerApi(app: FastifyInstance) {
     return { ok: true }
   })
 
+  // ── personal watchlist — each signed-in user's own favourited casinos ─────────
+  // Keyed by brandKey (survives wallet churn) and joined to live brand stats on read.
+  // Distinct from the global /api/watchlist (operator-curated tracked addresses).
+  app.get('/api/me/watchlist', async (req, reply) => {
+    const user = userFromRequest(req)
+    if (!user) return reply.code(401).send({ error: 'login required' })
+    const favs = db
+      .prepare('SELECT brand_key, label, created_at FROM user_watch WHERE user_id=? ORDER BY created_at DESC')
+      .all(user.id) as { brand_key: string; label: string; created_at: number }[]
+    if (!favs.length) return { items: [] }
+    const brands = (await aggCachedAsync('brand:casino', () => aggregateBrands('casino'), 120_000)) as any[]
+    const byKey = new Map(brands.map((b) => [brandKey(b.brand), b]))
+    return {
+      items: favs.map((f) => {
+        const b = byKey.get(f.brand_key)
+        return {
+          brandKey: f.brand_key,
+          label: b?.brand ?? f.label,
+          createdAt: f.created_at,
+          stats: b
+            ? {
+                volume7d: b.volume7d,
+                volume24h: b.volume24h,
+                net7d: b.net7d,
+                reserves: b.reserves,
+                trust: b.trust,
+                chains: b.chains,
+                safetyIndex: b.safetyIndex,
+                trustpilot: b.trustpilot,
+                change24h: b.change24h,
+              }
+            : null,
+        }
+      }),
+    }
+  })
+  app.post('/api/me/watchlist', async (req, reply) => {
+    const user = userFromRequest(req)
+    if (!user) return reply.code(401).send({ error: 'login required' })
+    const label = String((req.body as { label?: string })?.label ?? '').trim()
+    if (!label) return reply.code(400).send({ error: 'label required' })
+    const key = brandKey(label)
+    if (!key) return reply.code(400).send({ error: 'invalid label' })
+    db.prepare(
+      'INSERT INTO user_watch(user_id, brand_key, label, created_at) VALUES(?,?,?,?) ON CONFLICT(user_id, brand_key) DO UPDATE SET label=excluded.label',
+    ).run(user.id, key, label, Date.now())
+    return { ok: true, brandKey: key }
+  })
+  app.delete('/api/me/watchlist/:key', async (req, reply) => {
+    const user = userFromRequest(req)
+    if (!user) return reply.code(401).send({ error: 'login required' })
+    const { key } = req.params as { key: string }
+    db.prepare('DELETE FROM user_watch WHERE user_id=? AND brand_key=?').run(user.id, key)
+    return { ok: true }
+  })
+
   // ── alerts: user-defined rules + fired events ────────────────────────────────
   app.get('/api/alerts/rules', async (req, reply) => {
     const user = userFromRequest(req)
@@ -890,14 +946,14 @@ export async function registerApi(app: FastifyInstance) {
   app.post('/api/alerts/rules', async (req, reply) => {
     const user = userFromRequest(req)
     if (!user) return reply.code(401).send({ error: 'login required' })
-    const b = req.body as { kind?: string; scope?: string; scopeLabel?: string; threshold?: number; windowH?: number; webhook?: string }
+    const b = req.body as { kind?: string; scope?: string; scopeLabel?: string; threshold?: number; windowH?: number; webhook?: string; notifyEmail?: boolean }
     const kind = b?.kind ?? ''
     if (!['whale', 'netflow', 'reserve_drop'].includes(kind)) return reply.code(400).send({ error: 'invalid kind' })
     if (!(Number(b?.threshold) > 0)) return reply.code(400).send({ error: 'threshold must be > 0' })
     db.prepare(
-      `INSERT INTO alert_rules(user_id, kind, scope, scope_label, threshold, window_h, webhook, active, created_at)
-       VALUES(?, ?, ?, ?, ?, ?, ?, 1, ?)`,
-    ).run(user.id, kind, b.scope || 'all', b.scopeLabel ?? null, Number(b.threshold), Number(b.windowH ?? 24), b.webhook?.trim() || null, Date.now())
+      `INSERT INTO alert_rules(user_id, kind, scope, scope_label, threshold, window_h, webhook, notify_email, active, created_at)
+       VALUES(?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+    ).run(user.id, kind, b.scope || 'all', b.scopeLabel ?? null, Number(b.threshold), Number(b.windowH ?? 24), b.webhook?.trim() || null, b.notifyEmail === false ? 0 : 1, Date.now())
     return { ok: true }
   })
   app.delete('/api/alerts/rules/:id', async (req, reply) => {
