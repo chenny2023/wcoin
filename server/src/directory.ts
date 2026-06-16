@@ -44,6 +44,17 @@ export function seedDirectory(rows: { name: string; website: string; source: str
   return n
 }
 
+// hand-curated casinos surfaced in research (Reddit review reports etc.) to make
+// sure the well-known crypto books are covered even before the spider reaches them
+const CURATED = [
+  { name: 'Cloudbet', website: 'cloudbet.com' }, { name: 'mBit Casino', website: 'mbitcasino.com' },
+  { name: 'Vave', website: 'vave.com' }, { name: 'Wild.io', website: 'wild.io' },
+  { name: 'TrustDice', website: 'trustdice.win' }, { name: 'FortuneJack', website: 'fortunejack.com' },
+  { name: 'Fairspin', website: 'fairspin.io' }, { name: 'Betplay', website: 'betplay.io' },
+  { name: 'Metaspins', website: 'metaspins.com' }, { name: 'Jackbit', website: 'jackbit.com' },
+  { name: 'mBit', website: 'mbitcasino.com' },
+]
+
 function seedFromRoster() {
   try {
     const path = fileURLToPath(new URL('./data/casino-roster.json', import.meta.url))
@@ -54,6 +65,8 @@ function seedFromRoster() {
         .filter((c) => c.website),
     )
     if (n) console.log(`[directory] seeded ${n} casinos from roster`)
+    const c = seedDirectory(CURATED.map((x) => ({ ...x, source: 'curated' })))
+    if (c) console.log(`[directory] seeded ${c} curated casinos`)
   } catch (e) {
     console.warn('[directory] roster seed failed:', (e as Error).message)
   }

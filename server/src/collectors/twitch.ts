@@ -26,6 +26,13 @@ const ROSTER_SEED = [
   'ngslots', 'kimslots', 'rawslots', 'casinoninja', 'slothunters', 'bigwinboard',
   'deuceace_', 'thomas', 'rincon', 'dinoo', 'gambit', 'p2isten', 'foltyn',
   'montanablack88', 'eliasn97', 'westcol', 'adinross', 'cuffem', 'yassuo', 'm0xyy',
+  // curated from a SullyGnome Slots-category export (52 real handles, by followers)
+  'coringa', 'elded', 'ddg', 'zilverk', 'vicens', 'komanche', 'markilokurasy', 'llobeti4',
+  'mrlust', 'alkapone', 'aircool', 'khanada_', 'mateoz', 'm0e_tv', 'pgod', 'snoopdogg',
+  'jaycinco', 'piuzinho', 'ryux', 'prod', 'giggand', 'mitchjones', 'lobanjicaa', 'shanks_ttv',
+  'andymilonakis', 'blou', 'demisux', 'faxuty', 'pabellon_4', 'bugha', 'anomaly', 'soypan',
+  'okyyy', 'blackelespanolito', 'hastad', 'mrsoki', 'yetz', 'jjjjoaco', 'choc', 'elmiillor',
+  'zony', 'liljarvis', 'nakoo_fn', 'fnxlntc', 'crusherfooxi10', 'hasvik', 'rickyedit', 'huskerrs',
 ]
 
 const upsert = db.prepare(`
