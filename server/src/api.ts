@@ -808,7 +808,7 @@ export async function registerApi(app: FastifyInstance) {
       redditEnabled: redditEnabled(),
       newsEnabled: newsEnabled(),
       mentionsBySource: Object.fromEntries(sourceRows.map((r) => [r.source, r.n])),
-      entities: brands.map((b) => {
+      entities: brands.filter((b) => b.attributed).map((b) => {
         const members = b.members ?? []
         const head = members.slice().sort((x, y) => y.volume7d - x.volume7d)[0]
         const ids = members.map((m) => m.id)

@@ -85,6 +85,8 @@ export interface CasinoMeta {
 export interface Brand {
   brand: string
   category: string
+  attributed: boolean
+  confidence: 'high' | 'medium' | 'low'
   wallets: number
   chains: string[]
   volume24h: number
@@ -476,6 +478,7 @@ export interface MarketSnapshot {
     topReserves: { label: string; reserves: number; coverage: number | null }[]
     chainVolume: { chain: string; vol24h: number }[]
     whales: { label: string; chain: string; usd: number; direction: string; ts: number }[]
+    unattributed?: { count: number; vol24h: number; vol7d: number; top: { label: string; vol7d: number }[] }
   }
   error?: string
 }

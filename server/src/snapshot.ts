@@ -1,5 +1,5 @@
 import { db } from './db.ts'
-import { aggregateEntities } from './aggregate.ts'
+import { aggregateBrands } from './aggregate.ts'
 import { workerGet, workerAll } from './readpool.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -30,29 +30,36 @@ export async function generateMarketSnapshot(): Promise<void> {
   const d1 = now - DAY
   const d7 = now - 7 * DAY
 
-  // casino leaderboard — already computed in the read worker (our refactor)
-  const cas = (await aggregateEntities('casino')).filter((e) => e.volume7d > 0 || e.reserves > 0)
+  // brand-MERGED, VERIFIED casinos only. Auto-detected 'Casino-pattern 0x…' wallets
+  // are kept OUT of verified totals and surfaced as a separate unattributed block.
+  const brands = (await aggregateBrands('casino')).filter((b) => b.volume7d > 0 || b.reserves > 0)
+  const verified = brands.filter((b) => b.attributed)
+  const unattr = brands.filter((b) => !b.attributed)
 
-  // 24h casino totals (worker)
+  // exclude unattributed wallet labels from the raw 24h roll-ups (vol / flow / chain / whales)
+  const NOT_UNATTR =
+    "AND label NOT LIKE 'Casino-pattern%' AND label NOT LIKE '0x%' AND label NOT LIKE 'Unknown%' AND label NOT LIKE 'Unnamed%'"
+
+  // 24h verified casino totals (worker)
   const tot = (await workerGet(
     `SELECT SUM(usd) vol,
             SUM(CASE WHEN direction='in'  THEN usd ELSE 0 END) inflow,
             SUM(CASE WHEN direction='out' THEN usd ELSE 0 END) outflow
-     FROM transfers WHERE category='casino' AND ts>=?`,
+     FROM transfers WHERE category='casino' AND ts>=? ${NOT_UNATTR}`,
     [d1],
   )) as { vol: number; inflow: number; outflow: number }
   const trackedVol24 = tot?.vol ?? 0
   const netFlow24 = (tot?.inflow ?? 0) - (tot?.outflow ?? 0)
 
-  // 24h casino volume per chain (worker)
+  // 24h verified casino volume per chain (worker)
   const chainRows = (await workerAll(
-    `SELECT chain, SUM(usd) v FROM transfers WHERE category='casino' AND ts>=? GROUP BY chain ORDER BY v DESC`,
+    `SELECT chain, SUM(usd) v FROM transfers WHERE category='casino' AND ts>=? ${NOT_UNATTR} GROUP BY chain ORDER BY v DESC`,
     [d1],
   )) as { chain: string; v: number }[]
 
-  // recent whale transfers (worker; indexed by usd)
+  // recent verified whale transfers (worker; indexed by usd)
   const whales = (await workerAll(
-    `SELECT label, chain, usd, direction, ts FROM transfers WHERE category='casino' AND ts>=? AND usd>=50000 ORDER BY ts DESC LIMIT 12`,
+    `SELECT label, chain, usd, direction, ts FROM transfers WHERE category='casino' AND ts>=? AND usd>=50000 ${NOT_UNATTR} ORDER BY ts DESC LIMIT 12`,
     [d1],
   )) as { label: string; chain: string; usd: number; direction: string; ts: number }[]
 
@@ -70,21 +77,32 @@ export async function generateMarketSnapshot(): Promise<void> {
   const reserveChange7d = prevReserves > 0 ? (reservesTotal - prevReserves) / prevReserves : null
 
   const liveStreamers = (db.prepare('SELECT COUNT(*) n FROM streamers WHERE live=1').get() as any).n ?? 0
-  const activeCasinos = cas.filter((e) => (e.volume24h ?? 0) > 0).length
+  const activeCasinos = verified.filter((b) => (b.volume24h ?? 0) > 0).length
 
   const payload = {
-    topMovers: cas
-      .slice() // already sorted by volume7d desc; re-sort by 24h for "movers"
+    topMovers: verified
+      .slice()
       .sort((a, b) => (b.volume24h ?? 0) - (a.volume24h ?? 0))
       .slice(0, 8)
-      .map((e) => ({ label: e.label, vol24h: e.volume24h ?? 0, vol7d: e.volume7d ?? 0, net7d: e.net7d ?? 0, trust: e.trust ?? null })),
-    topReserves: cas
-      .filter((e) => e.reserves > 0)
+      .map((b) => ({ label: b.brand, vol24h: b.volume24h ?? 0, vol7d: b.volume7d ?? 0, net7d: b.net7d ?? 0, trust: b.trust ?? null })),
+    topReserves: verified
+      .filter((b) => b.reserves > 0)
       .sort((a, b) => b.reserves - a.reserves)
       .slice(0, 8)
-      .map((e) => ({ label: e.label, reserves: e.reserves, coverage: e.reserveCoverage ?? null })),
+      .map((b) => ({ label: b.brand, reserves: b.reserves, coverage: b.reserveCoverage ?? null })),
     chainVolume: chainRows.map((c) => ({ chain: c.chain, vol24h: c.v ?? 0 })),
     whales: whales.map((w) => ({ label: w.label, chain: w.chain, usd: w.usd, direction: w.direction, ts: w.ts })),
+    // pattern-detected flow not attributed to a verified brand — shown separately
+    unattributed: {
+      count: unattr.length,
+      vol24h: unattr.reduce((s, b) => s + (b.volume24h ?? 0), 0),
+      vol7d: unattr.reduce((s, b) => s + (b.volume7d ?? 0), 0),
+      top: unattr
+        .slice()
+        .sort((a, b) => (b.volume7d ?? 0) - (a.volume7d ?? 0))
+        .slice(0, 5)
+        .map((b) => ({ label: b.brand, vol7d: b.volume7d ?? 0 })),
+    },
   }
 
   // confidence: lower when we have thin coverage today

@@ -65,7 +65,7 @@ export default function Overview() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Casino Volume" value={fmtUsd(animTotal)} accent="gold" icon={<Activity size={18} />} />
         <StatCard label="Casino Reserves" value={fmtUsd(cs?.reserves ?? stats?.reserves ?? 0)} accent="violet" icon={<Wallet size={18} />} />
-        <StatCard label="Casino Players" value={fmtNum(cs?.uniquePlayers ?? stats?.uniquePlayers ?? 0)} accent="mint" icon={<Users size={18} />} />
+        <StatCard label="Active Counterparties" value={fmtNum(cs?.uniquePlayers ?? stats?.uniquePlayers ?? 0)} accent="mint" icon={<Users size={18} />} />
         <StatCard label="Casinos Tracked" value={String(cs?.entities ?? stats?.entities ?? 0)} accent="gold" icon={<Building2 size={18} />} />
       </div>
 

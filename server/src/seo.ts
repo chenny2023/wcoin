@@ -450,8 +450,8 @@ function trustRankingPage(views: CasinoView[], slugOfView: (v: CasinoView) => st
     .filter((x): x is { v: CasinoView; t: { score: number; sources: number } } => x.t != null)
     .sort((a, b) => b.t.score - a.t.score)
     .slice(0, 50)
-  const title = 'Most trusted crypto casinos — third-party trust ranking | WCOIN.CASINO'
-  const description = `Crypto casinos ranked by a blended score of independently published trust ratings (casino.guru, AskGamblers, casino.org, Trustpilot). Only operators with ≥2 verified sources. ${rows.length} operators, updated continuously.`
+  const title = 'Crypto casinos by trust signals — third-party rating ranking | WCOIN.CASINO'
+  const description = `Crypto casinos ranked by a blended score of independently published trust signals (casino.guru, AskGamblers, casino.org, Trustpilot). Only operators with ≥2 verified sources. ${rows.length} operators, updated continuously.`
   const trows = rows
     .map((x, i) => {
       const s = trustSources(x.v)
@@ -493,7 +493,7 @@ function trustRankingPage(views: CasinoView[], slugOfView: (v: CasinoView) => st
 const rankingLabel = (k: string) =>
   k === 'trust' ? 'By trust rating' : k === 'volume' ? 'By 7d volume' : k === 'movers' ? 'By 24h volume' : k === 'reserves' ? 'By reserves' : k === 'coverage' ? 'By coverage ratio' : k === 'netflow' ? 'By net flow' : k === 'players' ? 'By active counterparties' : k
 
-function rankingsIndexPage(chains: string[]): { title: string; description: string; html: string } {
+function rankingsIndexPage(chains: string[], hasUnattributed: boolean): { title: string; description: string; html: string } {
   const url = `${SITE}/rankings`
   const title = 'Crypto casino rankings — most trusted, reserves & on-chain activity | WCOIN.CASINO'
   const description = 'Crypto-casino leaderboards led by blended third-party trust ratings (our recommended ranking), plus mapped reserves, withdrawal coverage and on-chain activity. All from live data, clearly sourced.'
@@ -503,9 +503,9 @@ function rankingsIndexPage(chains: string[]): { title: string; description: stri
   const chainLinks = chains.map((c) => `<a class="pill" href="/chains/${slugify(c)}">${esc(chainName(c))}</a>`).join('')
   const body = `
 <p class="sub">Crypto-casino leaderboards, built from live on-chain data and independently published third-party ratings — every figure shown with its source.</p>
-<h2>★ Most trusted <span class="pill">recommended</span></h2>
-<p class="prose">Our primary ranking: a blended score from independent third-party ratings (operators with ≥2 verified sources). We rank by trust, not transaction volume — <a href="/methodology/trust">why</a>.</p>
-<ul class="prose" style="line-height:2"><li><a href="/rankings/trust"><strong>Most trusted crypto casinos →</strong></a></li></ul>
+<h2>★ Top by trust signals <span class="pill">recommended</span></h2>
+<p class="prose">Our primary ranking: a blended score from independent third-party trust signals (operators with ≥2 verified sources). We rank by trust, not transaction volume — <a href="/methodology/trust">why</a>.</p>
+<ul class="prose" style="line-height:2"><li><a href="/rankings/trust"><strong>Crypto casinos by trust signals →</strong></a></li></ul>
 <h2>Reserves &amp; solvency</h2>
 <ul class="prose" style="line-height:2">${reserveKeys.map(li).join('')}</ul>
 <h2>On-chain activity</h2>
@@ -514,6 +514,7 @@ function rankingsIndexPage(chains: string[]): { title: string; description: stri
 <h2>By blockchain</h2>
 <p class="prose">Per-network casino volume:</p>
 <div class="chips">${chainLinks}</div>
+${hasUnattributed ? `<h2>Unattributed flow</h2><p class="prose">Pattern-detected casino-related wallet activity not yet attributed to a verified brand — kept out of the rankings above. <a href="/rankings/unattributed-flow">View unattributed casino flow →</a></p>` : ''}
 <p class="prose" style="margin-top:22px">Or see the whole-market snapshot in the <a href="/daily">daily report</a>.</p>`
   return {
     title,
@@ -671,6 +672,45 @@ ${pager}
   }
 }
 
+// Unattributed Casino Flow — pattern-detected wallet clusters we can't yet tie to a
+// verified brand. Listed transparently, kept OUT of verified rankings, no profiles.
+function unattributedFlowPage(brands: BrandAgg[]): { title: string; description: string; html: string } {
+  const url = `${SITE}/rankings/unattributed-flow`
+  const rows = brands.filter((b) => b.volume7d > 0).sort((a, b) => b.volume7d - a.volume7d).slice(0, 30)
+  const total = rows.reduce((s, b) => s + b.volume7d, 0)
+  const title = 'Unattributed Casino Flow — pattern-detected wallet activity | WCOIN.CASINO'
+  const description = 'Pattern-detected casino-related on-chain wallet activity not yet attributed to a verified casino brand. Shown separately from verified rankings, for transparency.'
+  const trows = rows
+    .map(
+      (b, i) =>
+        `<tr><td class="n" style="text-align:left;color:var(--dim);width:34px">${i + 1}</td><td>${esc(b.brand)}</td><td class="n">${fmtUsd(b.volume7d)}</td><td class="n" style="color:var(--mut)">${fmtUsd(b.reserves)}</td><td>${(b.chains || []).slice(0, 3).map((c) => `<span class="pill">${esc(chainName(c))}</span>`).join(' ')}</td></tr>`,
+    )
+    .join('')
+  const body = `
+<p class="sub">Pattern-detected casino-related wallet activity <strong>not yet attributed</strong> to a verified casino brand — listed here for transparency and deliberately kept out of the verified rankings.</p>
+<p class="upd">${rows.length} wallet clusters · ${fmtUsd(total)} observed 7d flow · <span class="pill">data confidence: low</span></p>
+<table><thead><tr><th>#</th><th>Wallet cluster</th><th style="text-align:right">7d flow</th><th style="text-align:right">Tracked reserves</th><th>Chains</th></tr></thead><tbody>${trows}</tbody></table>
+<p class="prose" style="margin-top:22px">These clusters show on-chain patterns consistent with casino activity, but we have not confirmed which operator (if any) controls them — so they are <em>excluded</em> from the <a href="/rankings/trust">verified rankings</a> and get no casino profile. See <a href="/methodology/attribution">how we attribute on-chain activity</a>.</p>`
+  return {
+    title,
+    description,
+    html: layout({
+      title,
+      description,
+      canonical: url,
+      jsonLd: [],
+      breadcrumb: [
+        { name: 'Home', url: SITE + '/' },
+        { name: 'Rankings', url: SITE + '/rankings' },
+        { name: 'Unattributed flow', url },
+      ],
+      h1: 'Unattributed Casino Flow',
+      updated: Date.now(),
+      body,
+    }),
+  }
+}
+
 // methodology: hand-written explainers (stable, link targets for the disclaimers)
 const METHODOLOGY: Record<string, { title: string; body: string }> = {
   attribution: {
@@ -743,15 +783,19 @@ const MAX_REPORTS = Number(process.env.SEO_MAX_REPORTS ?? 400)
 
 export async function generateSeoPages(): Promise<void> {
   const views = await buildViews()
-  // sort: on-chain operators first (by 7d volume), then rated-only (by review depth)
-  const ranked = views.slice().sort((a, b) => {
+  const sorted = views.slice().sort((a, b) => {
     const av = a.onchain?.volume7d ?? 0
     const bv = b.onchain?.volume7d ?? 0
     if (bv !== av) return bv - av
     return (b.tpReviews ?? 0) - (a.tpReviews ?? 0)
   })
+  // VERIFIED only on public surfaces: auto-detected 'Casino-pattern 0x…' wallets are
+  // never shown as verified casinos (no profile, no ranking) — they get a separate,
+  // clearly-labelled Unattributed Casino Flow page instead.
+  const ranked = sorted.filter((v) => !v.onchain || v.onchain.attributed)
+  const unattributed = sorted.filter((v) => v.onchain && !v.onchain.attributed).map((v) => v.onchain!)
 
-  // stable, collision-free slug map keyed by brandKey
+  // stable, collision-free slug map keyed by brandKey (verified brands only)
   const slugByKey = new Map<string, string>()
   const used = new Set<string>()
   let seq = 0
@@ -764,7 +808,7 @@ export async function generateSeoPages(): Promise<void> {
   const slugOfView = (v: CasinoView) => slugByKey.get(v.key) ?? slugify(v.name)
   const slugOfBrand = (b: BrandAgg) => slugByKey.get(brandKey(b.brand)) ?? slugify(b.brand)
 
-  const onchainBrands = ranked.filter((v) => v.onchain).map((v) => v.onchain!) // for metric rankings / chains
+  const onchainBrands = ranked.filter((v) => v.onchain).map((v) => v.onchain!) // verified, for metric rankings / chains
   const chainSet = new Set<string>()
   for (const b of onchainBrands) for (const c of b.byChain ?? []) if (c.value > 0) chainSet.add(slugify(c.chain))
 
@@ -797,7 +841,8 @@ export async function generateSeoPages(): Promise<void> {
       if (pg) put(`/rankings/${key}`, 'rankings', pg)
     }
     put('/rankings/trust', 'rankings', trustRankingPage(ranked, slugOfView))
-    put('/rankings', 'rankings', rankingsIndexPage([...chainSet]))
+    put('/rankings', 'rankings', rankingsIndexPage([...chainSet], unattributed.length > 0))
+    if (unattributed.length) put('/rankings/unattributed-flow', 'rankings', unattributedFlowPage(unattributed))
     // chains
     for (const cs of chainSet) if (cs) put(`/chains/${cs}`, 'chains', chainPage(cs, onchainBrands, slugOfBrand))
     // daily report archive (prev = older, next = newer)

@@ -283,9 +283,19 @@ async function computeEntities(): Promise<EntityAgg[]> {
 // by its brand key and sum — matching how circus.fyi reports one figure per
 // casino. This is exact, not heuristic: the wallets are grouped by their own
 // block-explorer name-tags, which we already trust.
+// An auto-detected "Casino-pattern 0x…" / raw-address / unknown label is on-chain
+// activity we can't yet attribute to a real brand — it must never be shown as a
+// verified casino (kept out of rankings, profiles, sentiment & verified totals).
+export function isUnattributed(label: string): boolean {
+  const s = String(label || '').trim().toLowerCase()
+  return /^casino-pattern\b/.test(s) || /^0x[0-9a-f]{4,}/.test(s) || /^(unknown|unnamed|unidentified|unattributed)\b/.test(s)
+}
+
 export interface BrandAgg {
   brand: string
   category: string
+  attributed: boolean // false for auto-detected 'Casino-pattern 0x…' / raw-address labels
+  confidence: 'high' | 'medium' | 'low' // data confidence for public display
   wallets: number
   chains: string[]
   volume24h: number
@@ -357,9 +367,26 @@ async function computeBrands(): Promise<BrandAgg[]> {
     // period-over-period coverage change (vs ~7d ago) — null until history exists
     const prior = head.category === 'casino' ? priorCoverage(bName) : null
     const coverageChange = prior != null && prior > 0 && brCoverage != null ? (brCoverage - prior) / prior : null
+    // attribution + data confidence (drives what's allowed on public surfaces)
+    const metaV = members.map((e) => e.meta).find(Boolean) ?? null
+    const safetyV = members.map((e) => e.safetyIndex).find((s) => s != null) ?? null
+    const tpV = members.map((e) => e.trustpilot).find((s) => s != null) ?? null
+    const agV = members.map((e) => e.askgamblers).find((s) => s != null) ?? null
+    const edV = members.map((e) => e.editorial).find((s) => s != null) ?? null
+    const ratingCount = [safetyV, tpV, agV, edV].filter((v) => v != null).length
+    const attributed = !isUnattributed(bName) && !isUnattributed(head.label)
+    const confidence: 'high' | 'medium' | 'low' = !attributed
+      ? 'low'
+      : metaV || ratingCount >= 2 || (vol7 > 0 && brReserves > 0)
+        ? 'high'
+        : vol7 > 0 || brReserves > 0 || ratingCount >= 1
+          ? 'medium'
+          : 'low'
     out.push({
       brand: bName,
       category: head.category,
+      attributed,
+      confidence,
       wallets: members.length,
       chains: [...new Set(members.flatMap((e) => e.byChain.map((c) => c.chain)))].sort(),
       volume24h: vol24,
@@ -375,11 +402,11 @@ async function computeBrands(): Promise<BrandAgg[]> {
       coverageChange,
       trust: vol7 > 0 ? Math.round(sum((e) => e.trust * e.volume7d) / vol7) : head.trust, // volume-weighted
       byChain: [...chainVol.entries()].map(([chain, value]) => ({ chain, value })).sort((a, b) => b.value - a.value),
-      meta: members.map((e) => e.meta).find(Boolean) ?? null,
-      safetyIndex: members.map((e) => e.safetyIndex).find((s) => s != null) ?? null,
-      trustpilot: members.map((e) => e.trustpilot).find((s) => s != null) ?? null,
-      editorial: members.map((e) => e.editorial).find((s) => s != null) ?? null,
-      askgamblers: members.map((e) => e.askgamblers).find((s) => s != null) ?? null,
+      meta: metaV,
+      safetyIndex: safetyV,
+      trustpilot: tpV,
+      editorial: edV,
+      askgamblers: agV,
       complaints: members.map((e) => e.complaints).find((s) => s != null) ?? null,
       unresolved: members.map((e) => e.unresolved).find((s) => s != null) ?? null,
       userReviews: members.map((e) => e.userReviews).find((s) => s != null) ?? null,
