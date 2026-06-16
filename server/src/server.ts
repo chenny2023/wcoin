@@ -13,6 +13,7 @@ import { seedWatchlist } from './watchlist.ts'
 import { registerApi } from './api.ts'
 import { registerAuth } from './auth.ts'
 import { registerSubscribe } from './subscribe.ts'
+import { startDigest, registerDigest } from './digest.ts'
 import { startEvm } from './collectors/evm.ts'
 import { startBackfill } from './collectors/backfill.ts'
 import { startTron } from './collectors/tron.ts'
@@ -76,6 +77,7 @@ async function main() {
   await registerAuth(app)
   await registerApi(app)
   registerSubscribe(app) // email digest subscription (double opt-in)
+  registerDigest(app) // admin digest preview + test send
 
   // Serve the built SPA in production (single-process deploy). Vite emits
   // content-hashed asset filenames, so they're safe to cache hard (immutable);
@@ -191,6 +193,7 @@ async function main() {
   startRetention() // periodic prune of transfers past the retention window
   startReserveHistory() // daily solvency snapshots → reserve-adequacy trend
   startSnapshots() // 1.0 content layer: daily market snapshot (homepage + email source)
+  startDigest() // 1.0 daily email digest scheduler (sends at DIGEST_SEND_HOUR_UTC)
   startDirectory() // casino directory crawler (site/X/email vetting for outreach)
   startGuruSpider() // casino.guru spider — fans the directory out to thousands of casinos
   startTrustpilotCategory() // Trustpilot casino-category sweep — merges consumer ratings onto the directory

@@ -329,6 +329,27 @@ CREATE TABLE IF NOT EXISTS email_subscriber (
   created_at        INTEGER NOT NULL,
   updated_at        INTEGER NOT NULL
 );
+
+-- 1.0 daily digest: one row per send date (the rendered email), + a per-recipient
+-- send log whose UNIQUE(digest_id, subscriber_id) guarantees no double-send.
+CREATE TABLE IF NOT EXISTS email_digest (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  digest_date TEXT NOT NULL UNIQUE,   -- YYYY-MM-DD (UTC)
+  subject     TEXT,
+  html        TEXT,
+  text        TEXT,
+  status      TEXT NOT NULL DEFAULT 'draft',  -- draft|sent
+  created_at  INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS email_digest_log (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  digest_id     INTEGER NOT NULL,
+  subscriber_id INTEGER NOT NULL,
+  send_status   TEXT NOT NULL,         -- sent|failed
+  last_error    TEXT,
+  sent_at       INTEGER,
+  UNIQUE(digest_id, subscriber_id)
+);
 `)
 
 // additive migrations for DBs created before these columns existed
