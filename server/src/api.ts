@@ -772,7 +772,11 @@ export async function registerApi(app: FastifyInstance) {
     // trust / reviews / social sentiment are casino concepts — default to
     // iGaming only so exchange & whale wallets don't pollute the sentiment board
     const cat = category ?? 'casino'
-    const entities = await aggCachedAsync('ent:' + cat, () => aggregateEntities(cat), 120_000)
+    // Brand-MERGED view: one row per operator (Stake.com + Stake(11) + Tron wallets
+    // → a single "Stake"), but genuinely distinct products (e.g. Stake.us) stay
+    // separate — dedup is by brandKey, matching the rest of the product. Votes and
+    // mentions are rolled up across each brand's member wallets.
+    const brands = await aggCachedAsync('brand:' + cat, () => aggregateBrands(cat), 120_000)
     const d7 = Date.now() - 7 * 86_400_000
     const mentionRows = db
       .prepare(
@@ -789,26 +793,62 @@ export async function registerApi(app: FastifyInstance) {
       .prepare('SELECT source, COUNT(*) n FROM mentions WHERE ts >= ? GROUP BY source')
       .all(d7) as { source: string; n: number }[]
     const subs = telegramSubs()
-    const myVotes = user
-      ? new Map(
-          (db.prepare('SELECT watch_id, vote FROM votes WHERE user_id = ?').all(user.id) as any[]).map(
-            (v) => [v.watch_id, v.vote],
-          ),
+    // vote tallies per watch_id, rolled up across a brand's member wallets
+    const voteAgg = new Map<number, { up: number; down: number }>(
+      (db
+        .prepare(
+          'SELECT watch_id, SUM(CASE WHEN vote=1 THEN 1 ELSE 0 END) up, SUM(CASE WHEN vote=-1 THEN 1 ELSE 0 END) down FROM votes GROUP BY watch_id',
         )
+        .all() as any[]).map((r) => [r.watch_id, { up: r.up, down: r.down }]),
+    )
+    const myVotes: Map<number, number> = user
+      ? new Map((db.prepare('SELECT watch_id, vote FROM votes WHERE user_id = ?').all(user.id) as any[]).map((v) => [v.watch_id, v.vote]))
       : new Map()
     return {
       redditEnabled: redditEnabled(),
       newsEnabled: newsEnabled(),
       mentionsBySource: Object.fromEntries(sourceRows.map((r) => [r.source, r.n])),
-      entities: entities.map((e) => {
-        const m = mMap.get(e.label)
+      entities: brands.map((b) => {
+        const members = b.members ?? []
+        const head = members.slice().sort((x, y) => y.volume7d - x.volume7d)[0]
+        const ids = members.map((m) => m.id)
+        const votesUp = ids.reduce((s, id) => s + (voteAgg.get(id)?.up ?? 0), 0)
+        const votesDown = ids.reduce((s, id) => s + (voteAgg.get(id)?.down ?? 0), 0)
+        const myVote = ids.map((id) => myVotes.get(id)).find((v) => v != null) ?? 0
+        // mentions: sum across the brand label + every member label (deduped)
+        let mentions7d = 0,
+          mentionsPos = 0,
+          mentionsNeg = 0
+        for (const l of new Set<string>([b.brand, ...members.map((m) => m.label)])) {
+          const x = mMap.get(l)
+          if (x) {
+            mentions7d += x.mentions
+            mentionsPos += x.pos
+            mentionsNeg += x.neg
+          }
+        }
         return {
-          ...e,
-          mentions7d: m?.mentions ?? 0,
-          mentionsPos: m?.pos ?? 0,
-          mentionsNeg: m?.neg ?? 0,
-          telegramSubs: subs.get(brandKey(e.label)) ?? 0,
-          myVote: myVotes.get(e.id) ?? 0,
+          id: head?.id ?? ids[0] ?? 0, // representative wallet for casting a vote
+          label: b.brand,
+          category: b.category,
+          chain: head?.chain ?? b.chains[0] ?? '',
+          chains: b.chains,
+          wallets: b.wallets,
+          trust: b.trust,
+          onchainTrust: b.trust,
+          safetyIndex: b.safetyIndex,
+          trustpilot: b.trustpilot,
+          inflow7d: b.inflow7d,
+          outflow7d: b.outflow7d,
+          change24h: b.change24h,
+          reserves: b.reserves,
+          votesUp,
+          votesDown,
+          myVote,
+          mentions7d,
+          mentionsPos,
+          mentionsNeg,
+          telegramSubs: subs.get(brandKey(b.brand)) ?? 0,
         }
       }),
     }

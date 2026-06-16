@@ -62,7 +62,7 @@ export default function Markets() {
                 return (
                   <a
                     key={m.id}
-                    href={m.url ?? undefined}
+                    href={m.url || 'https://polymarket.com'}
                     target="_blank"
                     rel="noreferrer"
                     className="flex items-center gap-3 border-b border-white/5 px-4 py-2.5 transition hover:bg-white/[0.03]"
@@ -95,10 +95,14 @@ export default function Markets() {
             <div className="space-y-2 p-4">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-9 w-full" />)}</div>
           ) : (
             <div className="max-h-[560px] overflow-y-auto">
-              {(proto?.protocols ?? []).map((p, i) => (
+              {(proto?.protocols ?? []).map((p, i) => {
+                // every protocol has a DefiLlama page by slug — fall back to it when
+                // the protocol's own website URL is missing (≈27% of rows).
+                const href = p.url || (p.slug ? `https://defillama.com/protocol/${p.slug}` : undefined)
+                return (
                 <a
                   key={p.slug}
-                  href={p.url ?? undefined}
+                  href={href}
                   target="_blank"
                   rel="noreferrer"
                   className="flex items-center gap-3 border-b border-white/5 px-4 py-2.5 transition hover:bg-white/[0.03]"
@@ -108,7 +112,7 @@ export default function Markets() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1 truncate text-[13px] font-medium">
                       {p.name}
-                      {p.url && <ExternalLink size={10} className="shrink-0 text-white/25" />}
+                      {href && <ExternalLink size={10} className="shrink-0 text-white/25" />}
                     </div>
                     <div className="truncate text-[11px] text-white/40">{p.category} · {p.chains}</div>
                   </div>
@@ -121,7 +125,8 @@ export default function Markets() {
                     )}
                   </div>
                 </a>
-              ))}
+                )
+              })}
             </div>
           )}
         </Card>

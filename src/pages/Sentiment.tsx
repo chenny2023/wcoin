@@ -107,7 +107,12 @@ export default function Sentiment() {
                           <Bubble seed={s.label} size={30} />
                           <div>
                             <div className="flex items-center gap-1.5"><span className="font-medium">{s.label}</span><CategoryBadge category={s.category} /></div>
-                            <div className="mt-0.5"><ChainPill chain={s.chain} /></div>
+                            <div className="mt-0.5 flex items-center gap-1.5">
+                              <ChainPill chain={s.chain} />
+                              {s.chains && s.chains.length > 1 && (
+                                <span className="text-[10px] text-white/35" title={s.chains.join(', ')}>+{s.chains.length - 1} chain{s.chains.length - 1 > 1 ? 's' : ''}</span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </td>

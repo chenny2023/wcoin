@@ -184,6 +184,8 @@ export interface SentimentEntity extends Entity {
   mentionsNeg: number
   telegramSubs: number
   myVote: number
+  chains?: string[] // brand-merged: every chain the operator transacts on
+  wallets?: number // brand-merged: number of attributed wallets
 }
 
 export interface AuthUser {

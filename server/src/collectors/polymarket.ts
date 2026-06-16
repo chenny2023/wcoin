@@ -49,7 +49,14 @@ export async function runPolymarketOnce(): Promise<void> {
           prices: jstr(m.outcomePrices),
           end_date: m.endDate ?? null,
           category: m.category ?? null,
-          url: m.slug ? `https://polymarket.com/event/${m.slug}` : null,
+          // a market's own slug resolves at /market/{slug} (200); /event/{marketSlug}
+          // 404s because event slugs differ. Prefer the parent event's slug when
+          // present (lands on the grouped market), else the direct /market/ URL.
+          url: m.events?.[0]?.slug
+            ? `https://polymarket.com/event/${m.events[0].slug}`
+            : m.slug
+              ? `https://polymarket.com/market/${m.slug}`
+              : null,
           now,
         })
         n++

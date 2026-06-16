@@ -1,9 +1,69 @@
 import { useState } from 'react'
 import { FileBarChart, Download, Clock, CheckCircle2, Loader2 } from 'lucide-react'
+import { jsPDF } from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import { Card, PageHead } from '../components/ui'
 import { api } from '../data/api'
 
-type Format = 'csv' | 'json'
+type Format = 'csv' | 'json' | 'pdf'
+
+// Branded PDF export: a WCOIN.CASINO header, a diagonal "wcoin.casino" watermark on
+// every page, a data table (scalar columns only, so nested objects don't clutter it),
+// and a methodology footer. Built client-side so the server stays light.
+function brandedPdf(title: string, rows: any[]): jsPDF {
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
+  const W = doc.internal.pageSize.getWidth()
+  const H = doc.internal.pageSize.getHeight()
+  // keep scalar columns only — drop byChain/meta/token/risk objects for a clean table
+  const keys = rows.length ? Object.keys(rows[0]) : []
+  const cols = keys.filter((k) => rows.every((r) => r[k] == null || typeof r[k] !== 'object'))
+  const body = rows.map((r) =>
+    cols.map((c) => {
+      const v = r[c]
+      const s = v == null ? '' : String(v)
+      return s.length > 42 ? s.slice(0, 40) + '…' : s
+    }),
+  )
+  const stampUtc = new Date().toUTCString()
+  autoTable(doc, {
+    head: [cols],
+    body,
+    startY: 72,
+    margin: { top: 66, bottom: 46, left: 28, right: 28 },
+    styles: { fontSize: 7, cellPadding: 3, overflow: 'ellipsize', textColor: [38, 38, 46], lineColor: [225, 225, 230], lineWidth: 0.4 },
+    headStyles: { fillColor: [17, 17, 24], textColor: [245, 177, 0], fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248, 248, 250] },
+    didDrawPage: (data) => {
+      // faint diagonal watermark across the whole page (over content, low opacity)
+      const g: any = doc as any
+      g.saveGraphicsState?.()
+      if (g.GState) g.setGState(new g.GState({ opacity: 0.06 }))
+      doc.setTextColor(120, 120, 130)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(38)
+      for (let y = 130; y < H; y += 170) for (let x = -10; x < W; x += 290) doc.text('wcoin.casino', x, y, { angle: 28 })
+      g.restoreGraphicsState?.()
+      // header
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(15)
+      doc.setTextColor(245, 177, 0)
+      doc.text('WCOIN.CASINO', 28, 34)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(11)
+      doc.setTextColor(55, 55, 64)
+      doc.text(title, 28, 52)
+      doc.setFontSize(8)
+      doc.setTextColor(130, 130, 140)
+      doc.text(`Generated ${stampUtc} · ${rows.length} rows · wcoin.casino`, W - 28, 34, { align: 'right' })
+      // footer
+      doc.setFontSize(7)
+      doc.setTextColor(130, 130, 140)
+      doc.text('Observed on-chain & third-party data — not financial advice, not a verdict on any operator. © WCOIN.CASINO', 28, H - 18)
+      doc.text(`Page ${data.pageNumber}`, W - 28, H - 18, { align: 'right' })
+    },
+  })
+  return doc
+}
 
 const TEMPLATES = [
   { key: 'transfers', name: 'On-chain Transfer Log', desc: 'Every indexed USDT/USDC deposit & withdrawal', est: 'live' },
@@ -35,7 +95,7 @@ function download(name: string, content: string, type: string) {
 export default function Reports() {
   const [busy, setBusy] = useState<string | null>(null)
   const [done, setDone] = useState<Record<string, number>>({})
-  const [fmt, setFmt] = useState<Format>('csv')
+  const [fmt, setFmt] = useState<Format>('pdf')
 
   async function generate(key: string) {
     setBusy(key)
@@ -48,7 +108,11 @@ export default function Reports() {
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
       const fname = `wcoin_${key}_${stamp}.${fmt}`
       if (fmt === 'csv') download(fname, toCsv(rows), 'text/csv')
-      else download(fname, JSON.stringify(rows, null, 2), 'application/json')
+      else if (fmt === 'json') download(fname, JSON.stringify(rows, null, 2), 'application/json')
+      else {
+        const title = TEMPLATES.find((t) => t.key === key)?.name ?? 'Report'
+        brandedPdf(title, rows).save(fname)
+      }
       setDone((d) => ({ ...d, [key]: rows.length }))
     } finally {
       setBusy(null)
@@ -62,7 +126,7 @@ export default function Reports() {
         subtitle="Generate and download reports built from live on-chain data"
         right={
           <div className="flex items-center gap-1 rounded-xl border border-white/8 bg-white/4 p-1 text-sm">
-            {(['csv', 'json'] as Format[]).map((f) => (
+            {(['pdf', 'csv', 'json'] as Format[]).map((f) => (
               <button key={f} onClick={() => setFmt(f)} className={`rounded-lg px-3 py-1.5 font-semibold uppercase transition ${fmt === f ? 'bg-gold-500/15 text-gold-400' : 'text-white/50 hover:text-white'}`}>
                 {f}
               </button>
