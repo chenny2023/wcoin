@@ -53,34 +53,44 @@ export interface EntityAgg {
 // recompute at most once per aggregation interval.
 let aggCache: { at: number; data: EntityAgg[] } | null = null
 
-// first-seen timestamp per watched address. MIN(ts) GROUP BY watch_id over the
-// full (24M-row) transfers table is expensive, but first-seen is near-static, so
-// cache it for an hour rather than recomputing it on every 30s aggregate refresh.
-let firstSeenCache: { at: number; map: Map<number, number> } | null = null
-function getFirstSeen(): Map<number, number> {
-  if (firstSeenCache && Date.now() - firstSeenCache.at < 3600_000) return firstSeenCache.map
-  const map = new Map<number, number>(
-    (db.prepare('SELECT watch_id, MIN(ts) f FROM transfers GROUP BY watch_id').all() as any[]).map((r) => [r.watch_id, r.f]),
-  )
-  firstSeenCache = { at: Date.now(), map }
-  return map
-}
+// Per-address unique-counterparties (players) + first-seen. COUNT(DISTINCT
+// counterparty) and MIN(ts) are the two costly parts of the leaderboard — done in
+// one grouped scan they freeze the single-threaded loop for tens of seconds. So
+// instead we maintain them in the BACKGROUND, one address at a time (each
+// WHERE watch_id=? query is fast + index-backed), yielding to the event loop
+// between addresses, so the heavy work NEVER blocks a request. Eventually
+// consistent: every casino's count is refreshed each cycle.
+const playersMap = new Map<number, number>()
+const firstSeenMap = new Map<number, number>()
+const getPlayers = (): Map<number, number> => playersMap
+const getFirstSeen = (): Map<number, number> => firstSeenMap
 
-// unique counterparties (players) per watched address over the 7d window. The
-// COUNT(DISTINCT counterparty) over millions of rows is the single most expensive
-// part of the leaderboard — and it moves slowly, so cache it for ~10 min rather
-// than paying it on every 30s aggregate refresh.
-let playersCache: { at: number; map: Map<number, number> } | null = null
-function getPlayers(d7: number): Map<number, number> {
-  if (playersCache && Date.now() - playersCache.at < 3600_000) return playersCache.map
-  const map = new Map<number, number>(
-    (db.prepare('SELECT watch_id, COUNT(DISTINCT counterparty) p FROM transfers WHERE ts >= ? GROUP BY watch_id').all(d7) as any[]).map((r) => [
-      r.watch_id,
-      r.p,
-    ]),
-  )
-  playersCache = { at: Date.now(), map }
-  return map
+let maintaining = false
+export async function startStatsMaintenance(): Promise<void> {
+  if (maintaining) return
+  maintaining = true
+  const idsQ = db.prepare('SELECT id FROM watchlist WHERE active=1')
+  const pQ = db.prepare('SELECT COUNT(DISTINCT counterparty) p FROM transfers WHERE watch_id=? AND ts>=?')
+  const fQ = db.prepare('SELECT MIN(ts) f FROM transfers WHERE watch_id=?')
+  const yield_ = () => new Promise((r) => setImmediate(r))
+  for (;;) {
+    try {
+      const ids = (idsQ.all() as { id: number }[]).map((r) => r.id)
+      const d7 = Date.now() - 7 * 86_400_000
+      for (const id of ids) {
+        try {
+          playersMap.set(id, ((pQ.get(id, d7) as any)?.p as number) ?? 0)
+          if (!firstSeenMap.has(id)) firstSeenMap.set(id, ((fQ.get(id) as any)?.f as number) ?? 0) // first-seen is static
+        } catch {
+          /* skip a bad row */
+        }
+        await yield_() // hand the event loop back between every address
+      }
+    } catch {
+      /* transient */
+    }
+    await new Promise((r) => setTimeout(r, 120_000)) // ~2 min between full refresh cycles
+  }
 }
 
 // Optional `category` filter keeps non-iGaming entities (exchanges, whales,
@@ -143,7 +153,7 @@ function computeEntities(): EntityAgg[] {
     .all(params) as any[]
   const aggMap = new Map<number, any>(aggRows.map((r) => [r.watch_id, r]))
   const firstMap = getFirstSeen() // first-seen barely changes — cached hourly, off the hot path
-  const playersMap = getPlayers(params.d7) // COUNT(DISTINCT counterparty) is the costly bit — cached, off the hot path
+  const playerCounts = getPlayers() // background-maintained — never blocks the request
   const balMap = new Map<number, number>((db.prepare('SELECT watch_id, usd FROM balances').all() as any[]).map((r) => [r.watch_id, r.usd]))
 
   for (const w of rows) {
@@ -170,7 +180,7 @@ function computeEntities(): EntityAgg[] {
       net7d: (a.in7 ?? 0) - (a.out7 ?? 0),
       change24h,
       txCount7d: a.tx7 ?? 0,
-      players: playersMap.get(w.id) ?? 0,
+      players: playerCounts.get(w.id) ?? 0,
       reserves: bal,
       reserveCoverage: (a.out7 ?? 0) > 0 ? bal / (a.out7 as number) : null, // weeks of withdrawal coverage
       ...blendTrust(

@@ -46,6 +46,7 @@ import { startArkham } from './collectors/arkham.ts'
 import { startDefiLlama } from './collectors/defillama.ts'
 import { startPolymarket } from './collectors/polymarket.ts'
 import { startYouTube } from './collectors/youtube.ts'
+import { startStatsMaintenance } from './aggregate.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const distDir = join(__dirname, '../../dist')
@@ -78,6 +79,8 @@ async function main() {
     })
     console.log('[web] serving built SPA from /dist')
   }
+
+  void startStatsMaintenance() // background-maintain the costly per-casino player/first-seen counts off the event loop
 
   await app.listen({ port: config.port, host: '0.0.0.0' })
   const primaryRpc = new URL(config.evmRpcs[0]).host
