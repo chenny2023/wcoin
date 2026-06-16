@@ -76,7 +76,7 @@ export async function registerApi(app: FastifyInstance) {
   // public, non-user-specific leaderboards from cache for a few seconds —
   // collapses repeated polls and offloads the origin. Gated/auth endpoints and
   // anything user-specific (sentiment carries per-user votes) are excluded.
-  const PUBLIC_CACHEABLE = /^\/api\/(stats|casinos|brands|entities|coverage|protocols|predictions|sponsorships|streamers|arkham\/reserves|directory\/overview)$/
+  const PUBLIC_CACHEABLE = /^\/api\/(stats|casinos|brands|entities|coverage|protocols|predictions|sponsorships|streamers|flow|series|transfers|arkham\/reserves|directory\/overview)$/
   app.addHook('onSend', async (req, reply, payload) => {
     if (req.method === 'GET' && !reply.getHeader('Cache-Control') && PUBLIC_CACHEABLE.test(req.url.split('?')[0])) {
       reply.header('Cache-Control', 'public, max-age=10, stale-while-revalidate=30')
@@ -420,27 +420,34 @@ export async function registerApi(app: FastifyInstance) {
   app.get('/api/series', async (req) => {
     const q = req.query as { days?: string; category?: string }
     const days = Math.min(30, Math.max(1, Number(q.days ?? 7)))
-    const now = Date.now()
-    const from = now - days * 86_400_000
-    const bucketMs = days <= 7 ? 6 * 3600_000 : 24 * 3600_000 // 6h buckets ≤7d, daily beyond
-    const catFilter = q.category && q.category !== 'all' ? ' AND category = ?' : ''
-    const catArg = catFilter ? [q.category] : []
-    const rows = db
-      .prepare(
-        `SELECT CAST((ts - ?) / ? AS INTEGER) AS b,
-                SUM(CASE WHEN direction='in'  THEN usd ELSE 0 END) deposits,
-                SUM(CASE WHEN direction='out' THEN usd ELSE 0 END) withdrawals
-         FROM transfers WHERE ts >= ?${catFilter} GROUP BY b ORDER BY b`,
-      )
-      .all(from, bucketMs, from, ...catArg) as any[]
-    const map = new Map(rows.map((r) => [r.b, r]))
-    const out: { t: number; deposits: number; withdrawals: number }[] = []
-    const buckets = Math.ceil((now - from) / bucketMs)
-    for (let i = 0; i < buckets; i++) {
-      const r = map.get(i)
-      out.push({ t: from + i * bucketMs, deposits: r?.deposits ?? 0, withdrawals: r?.withdrawals ?? 0 })
-    }
-    return out
+    const cat = q.category ?? 'all'
+    return aggCached(
+      `series:${days}:${cat}`,
+      () => {
+        const now = Date.now()
+        const from = now - days * 86_400_000
+        const bucketMs = days <= 7 ? 6 * 3600_000 : 24 * 3600_000 // 6h buckets ≤7d, daily beyond
+        const catFilter = cat !== 'all' ? ' AND category = ?' : ''
+        const catArg = catFilter ? [cat] : []
+        const rows = db
+          .prepare(
+            `SELECT CAST((ts - ?) / ? AS INTEGER) AS b,
+                    SUM(CASE WHEN direction='in'  THEN usd ELSE 0 END) deposits,
+                    SUM(CASE WHEN direction='out' THEN usd ELSE 0 END) withdrawals
+             FROM transfers WHERE ts >= ?${catFilter} GROUP BY b ORDER BY b`,
+          )
+          .all(from, bucketMs, from, ...catArg) as any[]
+        const map = new Map(rows.map((r) => [r.b, r]))
+        const out: { t: number; deposits: number; withdrawals: number }[] = []
+        const buckets = Math.ceil((now - from) / bucketMs)
+        for (let i = 0; i < buckets; i++) {
+          const r = map.get(i)
+          out.push({ t: from + i * bucketMs, deposits: r?.deposits ?? 0, withdrawals: r?.withdrawals ?? 0 })
+        }
+        return out
+      },
+      120_000,
+    )
   })
 
   // ── per-entity daily volume series, split by chain (REAL) ───────────────────
@@ -516,26 +523,37 @@ export async function registerApi(app: FastifyInstance) {
   app.get('/api/flow', async (req) => {
     const { category } = req.query as { category?: string }
     const cat = category ?? 'casino'
-    const d7 = Date.now() - 7 * 86_400_000
-    const buckets = [
-      { name: 'Whale', min: 100_000, max: Infinity, color: '#f5b100' },
-      { name: 'High Roller', min: 10_000, max: 100_000, color: '#8b3df0' },
-      { name: 'Regular', min: 500, max: 10_000, color: '#2ee6a6' },
-      { name: 'Casual', min: 0, max: 500, color: '#5b8cff' },
-    ]
-    const catFilter = cat && cat !== 'all' ? ' AND category = ?' : ''
-    const catArg = catFilter ? [cat] : []
-    const rows = db
-      .prepare(`SELECT usd, counterparty FROM transfers WHERE ts>=?${catFilter}`)
-      .all(d7, ...catArg) as any[]
-    const res = buckets.map((b) => {
-      const inB = rows.filter((r) => r.usd >= b.min && r.usd < b.max)
-      const vol = inB.reduce((s, r) => s + r.usd, 0)
-      const players = new Set(inB.map((r) => r.counterparty)).size
-      return { ...b, max: undefined, count: inB.length, volume: vol, players }
-    })
-    const totalVol = res.reduce((s, b) => s + b.volume, 0) || 1
-    return res.map((b) => ({ ...b, share: (b.volume / totalVol) * 100 }))
+    return aggCached(
+      'flow:' + cat,
+      () => {
+        const d7 = Date.now() - 7 * 86_400_000
+        const meta = [
+          { name: 'Whale', color: '#f5b100' },
+          { name: 'High Roller', color: '#8b3df0' },
+          { name: 'Regular', color: '#2ee6a6' },
+          { name: 'Casual', color: '#5b8cff' },
+        ]
+        const catFilter = cat && cat !== 'all' ? ' AND category = ?' : ''
+        const catArg = catFilter ? [cat] : []
+        // bucket + aggregate in SQL — never pull millions of rows into JS (that
+        // synchronous load froze the event loop for ~10s and ran on every request)
+        const rows = db
+          .prepare(
+            `SELECT CASE WHEN usd >= 100000 THEN 0 WHEN usd >= 10000 THEN 1 WHEN usd >= 500 THEN 2 ELSE 3 END AS b,
+                    COUNT(*) cnt, SUM(usd) vol, COUNT(DISTINCT counterparty) players
+             FROM transfers WHERE ts >= ?${catFilter} GROUP BY b`,
+          )
+          .all(d7, ...catArg) as any[]
+        const byB = new Map(rows.map((r) => [r.b, r]))
+        const res = meta.map((m, i) => {
+          const r = byB.get(i)
+          return { name: m.name, color: m.color, count: r?.cnt ?? 0, volume: r?.vol ?? 0, players: r?.players ?? 0 }
+        })
+        const totalVol = res.reduce((s, b) => s + b.volume, 0) || 1
+        return res.map((b) => ({ ...b, share: (b.volume / totalVol) * 100 }))
+      },
+      120_000,
+    )
   })
 
   // public — streamer↔casino sponsorship graph: which casino each streamer reps,
