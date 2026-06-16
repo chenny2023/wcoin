@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs'
 import { config } from './config.ts'
 import { db } from './db.ts'
 import { startMonitor } from './monitor.ts'
+import { registerRateLimit } from './ratelimit.ts'
 import { startReadWorker } from './readpool.ts'
 import { seedWatchlist } from './watchlist.ts'
 import { registerApi } from './api.ts'
@@ -69,6 +70,7 @@ async function main() {
       ? (origin, cb) => cb(null, !origin || allowedOrigins.includes(origin)) // !origin = same-origin/curl
       : true,
   })
+  registerRateLimit(app) // per-IP API rate limiting (defense-in-depth behind CF)
   await registerAuth(app)
   await registerApi(app)
 
