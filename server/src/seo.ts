@@ -168,24 +168,48 @@ function ratingsOf(v: CasinoView) {
   }
 }
 
-// blended 0–100 from whatever external ratings exist (comparable across operators)
-function blendedTrust(v: CasinoView): number | null {
+// Trustpilot needs enough reviews to be a trustworthy signal — a 1–2 review star
+// is noise and must not drive a published score.
+const MIN_TP_REVIEWS = Number(process.env.SEO_MIN_TP_REVIEWS ?? 5)
+
+// Independent, QUALIFYING rating sources, each normalised to 0–100. Trustpilot
+// qualifies only when we know it has ≥ MIN_TP_REVIEWS reviews.
+function trustSources(v: CasinoView): { key: string; label: string; norm: number }[] {
   const r = ratingsOf(v)
-  const parts: number[] = []
-  if (r.safety != null) parts.push((r.safety / 10) * 100)
-  if (r.tp != null) parts.push((r.tp / 5) * 100)
-  if (r.ag != null) parts.push((r.ag / 10) * 100)
-  if (r.ed != null) parts.push((r.ed / 5) * 100)
-  if (!parts.length) return v.onchain?.trust ?? null
-  return Math.round(parts.reduce((a, b) => a + b, 0) / parts.length)
+  const out: { key: string; label: string; norm: number }[] = []
+  if (r.safety != null) out.push({ key: 'guru', label: 'casino.guru', norm: (r.safety / 10) * 100 })
+  if (r.ag != null) out.push({ key: 'ag', label: 'AskGamblers', norm: (r.ag / 10) * 100 })
+  if (r.ed != null) out.push({ key: 'org', label: 'casino.org', norm: (r.ed / 5) * 100 })
+  if (r.tp != null && (r.tpN ?? 0) >= MIN_TP_REVIEWS) out.push({ key: 'tp', label: 'Trustpilot', norm: (r.tp / 5) * 100 })
+  return out
 }
 
-// data-sufficiency gate: ≥1 real rating OR an on-chain signal
+// A PUBLISHED blended trust score requires ≥2 independent qualifying sources — a
+// single rating is shown as itself, never synthesised into a misleading "blend".
+function blendedTrust(v: CasinoView): { score: number; sources: number } | null {
+  const s = trustSources(v)
+  if (s.length < 2) return null
+  return { score: Math.round(s.reduce((a, b) => a + b.norm, 0) / s.length), sources: s.length }
+}
+
+// per-page data confidence (for honest labelling)
+function dataConfidence(v: CasinoView): 'high' | 'medium' | 'low' {
+  const oc = v.onchain
+  const s = trustSources(v).length
+  if ((oc && oc.volume7d > 0) || s >= 3) return 'high'
+  if ((oc && oc.reserves > 0) || s >= 2) return 'medium'
+  return 'low'
+}
+
+// data-sufficiency gate: on-chain activity, an authoritative rating (casino.guru /
+// AskGamblers / casino.org), or a CREDIBLE Trustpilot. A stray low-review star
+// alone is not enough — keeps every page professional and defensible.
 function hasSignal(v: CasinoView): boolean {
   const oc = v.onchain
   if (oc && (oc.volume7d > 0 || oc.reserves > 0)) return true
   const r = ratingsOf(v)
-  return r.safety != null || r.tp != null || r.ag != null || r.ed != null
+  if (r.safety != null || r.ag != null || r.ed != null) return true
+  return r.tp != null && (r.tpN ?? 0) >= MIN_TP_REVIEWS
 }
 
 async function buildViews(): Promise<CasinoView[]> {
@@ -258,10 +282,10 @@ function casinoPage(v: CasinoView, slug: string, related: { slug: string; label:
       `</div>`
   } else {
     const tiles: string[] = []
-    if (bt != null) tiles.push(stat('Blended trust', bt + ' / 100', 'gold'))
-    if (r.tp != null) tiles.push(stat('Trustpilot', r.tp.toFixed(1) + ' / 5'))
+    if (bt) tiles.push(stat(`Blended trust · ${bt.sources} sources`, `${bt.score} / 100`, 'gold'))
     if (r.safety != null) tiles.push(stat('casino.guru', r.safety.toFixed(1) + ' / 10'))
     if (r.ag != null) tiles.push(stat('AskGamblers', r.ag.toFixed(1) + ' / 10'))
+    if (r.tp != null && (r.tpN ?? 0) >= MIN_TP_REVIEWS) tiles.push(stat('Trustpilot', r.tp.toFixed(1) + ' / 5'))
     if (r.ed != null) tiles.push(stat('casino.org', r.ed.toFixed(1) + ' / 5'))
     if (tiles.length) stats = `<div class="grid">${tiles.join('')}</div>`
   }
@@ -269,7 +293,7 @@ function casinoPage(v: CasinoView, slug: string, related: { slug: string; label:
   // unified ratings table
   const ratings: string[] = []
   if (r.safety != null) ratings.push(`<tr><td>casino.guru Safety Index</td><td class="n">${r.safety.toFixed(1)} / 10</td></tr>`)
-  if (r.tp != null) ratings.push(`<tr><td>Trustpilot${r.tpN ? ` (${fmtNum(r.tpN)} reviews)` : ''}</td><td class="n">${r.tp.toFixed(1)} / 5</td></tr>`)
+  if (r.tp != null) ratings.push(`<tr><td>Trustpilot${r.tpN != null ? ` (${fmtNum(r.tpN)} reviews${r.tpN < MIN_TP_REVIEWS ? ' — limited, excluded from blend' : ''})` : ''}</td><td class="n">${r.tp.toFixed(1)} / 5</td></tr>`)
   if (r.ag != null) ratings.push(`<tr><td>AskGamblers expert</td><td class="n">${r.ag.toFixed(1)} / 10</td></tr>`)
   if (r.ed != null) ratings.push(`<tr><td>casino.org editorial</td><td class="n">${r.ed.toFixed(1)} / 5</td></tr>`)
   if (r.complaints != null) ratings.push(`<tr><td>casino.guru complaints (current)</td><td class="n">${fmtNum(r.complaints)}${r.unresolved != null ? ` (${fmtNum(r.unresolved)} unresolved)` : ''}</td></tr>`)
@@ -306,15 +330,20 @@ function casinoPage(v: CasinoView, slug: string, related: { slug: string; label:
     ? `<h2>Related operators</h2><div class="chips">${related.map((x) => `<a class="pill" href="/casino/${x.slug}">${esc(x.label)}</a>`).join('')}</div>`
     : ''
 
+  const conf = dataConfidence(v)
+  const confPill = `<span class="pill">data confidence: ${conf}</span>`
+  const trustLine = bt
+    ? `<p class="prose" style="margin-top:6px">Blended trust <strong class="gold">${bt.score} / 100</strong> from ${bt.sources} independent sources — see <a href="/rankings/trust">the trust ranking</a> and <a href="/methodology/trust">how it's sourced</a>.</p>`
+    : ''
   const sub = oc
-    ? `<p class="sub">Observed on-chain activity and third-party ratings attributed to <strong>${esc(v.name)}</strong>, across ${oc.byChain?.length || 1} blockchain${(oc.byChain?.length || 1) === 1 ? '' : 's'}.</p><p class="upd">Updated continuously from indexed on-chain data.</p>`
-    : `<p class="sub">Aggregated third-party trust ratings and reference data for <strong>${esc(v.name)}</strong>, in one place.</p><p class="upd">We don't yet track this operator's on-chain wallets — only attributed third-party signals are shown.</p>`
+    ? `<p class="sub">Observed on-chain activity and third-party ratings attributed to <strong>${esc(v.name)}</strong>, across ${oc.byChain?.length || 1} blockchain${(oc.byChain?.length || 1) === 1 ? '' : 's'}.</p><p class="upd">Updated continuously from indexed on-chain data. ${confPill}</p>`
+    : `<p class="sub">Aggregated third-party trust ratings and reference data for <strong>${esc(v.name)}</strong>, in one place.</p><p class="upd">We don't yet track this operator's on-chain wallets — only attributed third-party signals are shown. ${confPill}</p>`
 
   const cta = oc
     ? `<p class="prose" style="margin-top:24px">Explore the full live picture — real-time deposits &amp; withdrawals, whale flow and reserve history — on the <a href="/app/casinos">live casino dashboard</a>, or see the whole market in today's <a href="/daily">daily report</a>.</p>`
-    : `<p class="prose" style="margin-top:24px">Compare operators by on-chain volume and mapped reserves on the <a href="/rankings/volume">rankings</a>, or browse the live <a href="/app/casinos">casino dashboard</a>.</p>`
+    : `<p class="prose" style="margin-top:24px">Compare operators by <a href="/rankings/trust">third-party trust rating</a> (our recommended ranking — on-chain volume is easily inflated by wash trading), or browse the live <a href="/app/casinos">casino dashboard</a>.</p>`
 
-  const body = `${sub}${stats}${chainTable}${ratingsTable}${refTable}${website}${rel}${cta}`
+  const body = `${sub}${trustLine}${stats}${chainTable}${ratingsTable}${refTable}${website}${rel}${cta}`
 
   const jsonLd = oc
     ? [
@@ -339,7 +368,7 @@ function casinoPage(v: CasinoView, slug: string, related: { slug: string; label:
       jsonLd,
       breadcrumb: [
         { name: 'Home', url: SITE + '/' },
-        { name: 'Casinos', url: SITE + '/rankings/volume' },
+        { name: 'Casinos', url: SITE + '/rankings/trust' },
         { name: v.name, url },
       ],
       h1: oc ? `${v.name} — on-chain data` : `${v.name} — trust ratings & data`,
@@ -379,9 +408,15 @@ function metricRankingPage(key: string, brands: BrandAgg[], slugOfBrand: (b: Bra
     )
     .join('')
   const others = [...Object.keys(METRICS), 'trust'].filter((k) => k !== key)
+  // activity (flow) metrics are gameable on-chain — label them honestly
+  const isActivity = ['volume', 'movers', 'netflow', 'players'].includes(key)
+  const caveat = isActivity
+    ? `<p class="prose" style="margin:10px 0;padding:11px 14px;background:#ffffff08;border:1px solid var(--line);border-radius:11px;font-size:13px"><strong>Read this as activity, not quality.</strong> On-chain volume and flow can be inflated by wash trading and internal/self transfers, so this is a liquidity/activity signal — not an endorsement. For a quality ranking see <a href="/rankings/trust">most trusted casinos</a>.</p>`
+    : ''
   const body = `
 <p class="sub">${esc(cfg.blurb)}</p>
 <p class="upd">${rows.length} operators · live on-chain data, refreshed continuously · <a href="/rankings">all rankings</a></p>
+${caveat}
 <div class="chips">${others.map((k) => `<a class="pill" href="/rankings/${k}">${esc(rankingLabel(k))}</a>`).join('')}</div>
 <table><thead><tr><th>#</th><th>Operator</th><th style="text-align:right">${esc(cfg.col)}</th><th style="text-align:right">7d volume</th></tr></thead><tbody>${trows}</tbody></table>
 <p class="prose" style="margin-top:22px">See live deposits, withdrawals and reserve history on the <a href="/app/casinos">interactive dashboard</a>, or the whole-market view in the <a href="/daily">daily report</a>.</p>`
@@ -412,22 +447,23 @@ function trustRankingPage(views: CasinoView[], slugOfView: (v: CasinoView) => st
   const url = `${SITE}/rankings/trust`
   const rows = views
     .map((v) => ({ v, t: blendedTrust(v) }))
-    .filter((x) => x.t != null)
-    .sort((a, b) => (b.t as number) - (a.t as number))
+    .filter((x): x is { v: CasinoView; t: { score: number; sources: number } } => x.t != null)
+    .sort((a, b) => b.t.score - a.t.score)
     .slice(0, 50)
-  const title = 'Crypto casinos by third-party trust rating | WCOIN.CASINO'
-  const description = `Operators ordered by a blended score of independently published trust ratings (casino.guru, Trustpilot, AskGamblers, casino.org). Ranking ${rows.length} operators, updated continuously.`
+  const title = 'Most trusted crypto casinos — third-party trust ranking | WCOIN.CASINO'
+  const description = `Crypto casinos ranked by a blended score of independently published trust ratings (casino.guru, AskGamblers, casino.org, Trustpilot). Only operators with ≥2 verified sources. ${rows.length} operators, updated continuously.`
   const trows = rows
     .map((x, i) => {
-      const r = ratingsOf(x.v)
-      const srcs = [r.safety != null && 'guru', r.tp != null && 'TP', r.ag != null && 'AG', r.ed != null && 'org'].filter(Boolean).join(' · ')
-      return `<tr><td class="n" style="text-align:left;color:var(--dim);width:34px">${i + 1}</td><td><a href="/casino/${slugOfView(x.v)}">${esc(x.v.name)}</a></td><td class="n gold">${x.t} / 100</td><td class="n" style="color:var(--mut)">${esc(srcs)}</td></tr>`
+      const s = trustSources(x.v)
+        .map((q) => q.label.replace('casino.guru', 'guru').replace('AskGamblers', 'AG').replace('casino.org', 'org'))
+        .join(' · ')
+      return `<tr><td class="n" style="text-align:left;color:var(--dim);width:34px">${i + 1}</td><td><a href="/casino/${slugOfView(x.v)}">${esc(x.v.name)}</a></td><td class="n gold">${x.t.score} / 100</td><td class="n" style="color:var(--mut)">${x.t.sources} · ${esc(s)}</td></tr>`
     })
     .join('')
   const others = Object.keys(METRICS)
   const body = `
-<p class="sub">A blended 0–100 score from independently published ratings — shown with attribution, not our judgement of any operator.</p>
-<p class="upd">${rows.length} operators · <a href="/rankings">all rankings</a> · see <a href="/methodology/trust">how ratings are sourced</a></p>
+<p class="sub">Crypto casinos ranked by a blended 0–100 score from independently published ratings — only operators with <strong>≥2 verified sources</strong> qualify. Shown with attribution, not our judgement of any operator.</p>
+<p class="upd">${rows.length} operators · this is our recommended ranking (on-chain volume is easily inflated by wash trading) · <a href="/rankings">all rankings</a> · <a href="/methodology/trust">how ratings are sourced</a></p>
 <div class="chips">${others.map((k) => `<a class="pill" href="/rankings/${k}">${esc(rankingLabel(k))}</a>`).join('')}</div>
 <table><thead><tr><th>#</th><th>Operator</th><th style="text-align:right">Blended trust</th><th style="text-align:right">Sources</th></tr></thead><tbody>${trows}</tbody></table>
 <p class="prose" style="margin-top:22px">Ratings are produced by third parties; we aggregate and attribute them. Browse the live <a href="/app/sentiment">trust &amp; reserves board</a>.</p>`
@@ -459,15 +495,22 @@ const rankingLabel = (k: string) =>
 
 function rankingsIndexPage(chains: string[]): { title: string; description: string; html: string } {
   const url = `${SITE}/rankings`
-  const title = 'Crypto casino rankings — volume, reserves, trust & more | WCOIN.CASINO'
-  const description = 'Browse crypto-casino leaderboards: ranked by on-chain volume, mapped reserves, withdrawal coverage, net flow, active players and blended third-party trust ratings. All from live data.'
-  const keys = ['volume', 'movers', 'reserves', 'coverage', 'netflow', 'players', 'trust']
-  const cards = keys.map((k) => `<li><a href="/rankings/${k}">${esc(rankingLabel(k))}</a></li>`).join('')
+  const title = 'Crypto casino rankings — most trusted, reserves & on-chain activity | WCOIN.CASINO'
+  const description = 'Crypto-casino leaderboards led by blended third-party trust ratings (our recommended ranking), plus mapped reserves, withdrawal coverage and on-chain activity. All from live data, clearly sourced.'
+  const reserveKeys = ['reserves', 'coverage'] // reserve-backed, harder to fake
+  const activityKeys = ['volume', 'movers', 'netflow', 'players'] // gameable on-chain
+  const li = (k: string) => `<li><a href="/rankings/${k}">${esc(rankingLabel(k))}</a></li>`
   const chainLinks = chains.map((c) => `<a class="pill" href="/chains/${slugify(c)}">${esc(chainName(c))}</a>`).join('')
   const body = `
-<p class="sub">Every crypto-casino leaderboard we publish, built from live on-chain data and attributed third-party ratings.</p>
-<h2>Leaderboards</h2>
-<ul class="prose" style="line-height:2">${cards}</ul>
+<p class="sub">Crypto-casino leaderboards, built from live on-chain data and independently published third-party ratings — every figure shown with its source.</p>
+<h2>★ Most trusted <span class="pill">recommended</span></h2>
+<p class="prose">Our primary ranking: a blended score from independent third-party ratings (operators with ≥2 verified sources). We rank by trust, not transaction volume — <a href="/methodology/trust">why</a>.</p>
+<ul class="prose" style="line-height:2"><li><a href="/rankings/trust"><strong>Most trusted crypto casinos →</strong></a></li></ul>
+<h2>Reserves &amp; solvency</h2>
+<ul class="prose" style="line-height:2">${reserveKeys.map(li).join('')}</ul>
+<h2>On-chain activity</h2>
+<p class="prose" style="font-size:13px;color:var(--dim)">Activity/liquidity signals — not a quality measure. On-chain volume and flow can be inflated by wash trading, so treat these as scale indicators, not endorsements.</p>
+<ul class="prose" style="line-height:2">${activityKeys.map(li).join('')}</ul>
 <h2>By blockchain</h2>
 <p class="prose">Per-network casino volume:</p>
 <div class="chips">${chainLinks}</div>
@@ -639,7 +682,8 @@ const METHODOLOGY: Record<string, { title: string; body: string }> = {
   volume: {
     title: 'How on-chain volume is measured',
     body: `<p>On-chain volume is the USD value of transfers to and from attributed casino wallets over a window (24-hour and 7-day), priced at transfer time. It captures on-chain settlement — deposits and withdrawals that touch the public blockchain — and excludes purely off-chain ledger movements inside an operator, which are not observable.</p>
-<p>Net flow is inflow minus outflow over the window. A figure reflects observed settlement only and should not be read as revenue, profit, or gross gaming revenue.</p>`,
+<p>Net flow is inflow minus outflow over the window. A figure reflects observed settlement only and should not be read as revenue, profit, or gross gaming revenue.</p>
+<p><strong>Why we don't rank by volume.</strong> On-chain volume is easily inflated — wash trading, internal transfers between an operator's own wallets, and market-maker activity all add observable volume without reflecting real player activity or quality. We therefore treat volume as an activity/liquidity signal only, and our recommended ranking is <a href="/rankings/trust">by blended third-party trust</a>, which is far harder to manufacture.</p>`,
   },
   reserves: {
     title: 'How we estimate all-chain reserves (proof-of-reserves)',
