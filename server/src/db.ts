@@ -445,6 +445,20 @@ CREATE TABLE IF NOT EXISTS unattributed_entity_daily_metrics (
   last_updated_at INTEGER NOT NULL,
   PRIMARY KEY(brand_id, date)
 );
+
+-- Enrichment queue: low-confidence brands kept as limited_public_noindex pages,
+-- queued for enrichment (on-chain address / reserves / trust / social / manual
+-- mapping). When enough signal arrives they auto-promote to public_indexable.
+CREATE TABLE IF NOT EXISTS enrichment_queue (
+  brand_key   TEXT PRIMARY KEY,
+  label       TEXT NOT NULL,
+  slug        TEXT,
+  confidence  TEXT,
+  missing     TEXT,                 -- comma list: onchain,reserves,trust-sources…
+  status      TEXT NOT NULL DEFAULT 'pending',  -- pending | enriched | promoted
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
 `)
 
 // additive migrations for DBs created before these columns existed
@@ -459,6 +473,8 @@ for (const ddl of [
   'ALTER TABLE arkham_casino ADD COLUMN addr_harvested INTEGER NOT NULL DEFAULT 0',
   // alerts can email the rule owner when they fire (per-rule opt-out)
   'ALTER TABLE alert_rules ADD COLUMN notify_email INTEGER NOT NULL DEFAULT 1',
+  // SEO page lifecycle state — internal_only | limited_public_noindex | public_indexable | featured_core | archived
+  "ALTER TABLE seo_page ADD COLUMN lifecycle TEXT NOT NULL DEFAULT 'public_indexable'",
 ]) {
   try {
     db.exec(ddl)

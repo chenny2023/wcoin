@@ -67,8 +67,9 @@ function layout(opts: {
   h1: string
   updated: number
   body: string
+  noindex?: boolean
 }): string {
-  const { title, description, canonical, jsonLd = [], breadcrumb, h1, updated, body } = opts
+  const { title, description, canonical, jsonLd = [], breadcrumb, h1, updated, body, noindex } = opts
   const crumbLd = {
     '@type': 'BreadcrumbList',
     itemListElement: breadcrumb.map((b, i) => ({ '@type': 'ListItem', position: i + 1, name: b.name, item: b.url })),
@@ -81,7 +82,7 @@ function layout(opts: {
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(description)}">
-<meta name="robots" content="index,follow,max-image-preview:large">
+<meta name="robots" content="${noindex ? 'noindex,follow' : 'index,follow,max-image-preview:large'}">
 <link rel="canonical" href="${esc(canonical)}">
 <meta name="theme-color" content="#0a0a0f">
 <meta property="og:type" content="website"><meta property="og:site_name" content="WCOIN.CASINO">
@@ -257,7 +258,7 @@ async function buildViews(): Promise<CasinoView[]> {
 
 const stat = (k: string, vv: string, cls = '') => `<div class="stat"><div class="k">${esc(k)}</div><div class="v ${cls}">${esc(vv)}</div></div>`
 
-function casinoPage(v: CasinoView, slug: string, related: { slug: string; label: string }[]): { title: string; description: string; html: string } {
+function casinoPage(v: CasinoView, slug: string, related: { slug: string; label: string }[], noindex = false): { title: string; description: string; html: string } {
   const url = `${SITE}/casino/${slug}`
   const oc = v.onchain
   const r = ratingsOf(v)
@@ -346,7 +347,11 @@ function casinoPage(v: CasinoView, slug: string, related: { slug: string; label:
     ? `<p class="prose" style="margin-top:24px">Explore the full live picture — real-time deposits &amp; withdrawals, whale flow and reserve history — on the <a href="/app/casinos">live casino dashboard</a>, or see the whole market in today's <a href="/daily">daily report</a>.</p>`
     : `<p class="prose" style="margin-top:24px">Compare operators by <a href="/rankings/trust">third-party trust rating</a> (our recommended ranking — on-chain volume is easily inflated by wash trading), or browse the live <a href="/app/casinos">casino dashboard</a>.</p>`
 
-  const body = `${sub}${trustLine}${stats}${chainTable}${ratingsTable}${refTable}${website}${rel}${cta}`
+  // limited (noindex) pages get an honest banner explaining the thin data
+  const limitedNote = noindex
+    ? `<p class="prose" style="margin:0 0 4px;padding:9px 13px;background:#ffffff08;border:1px solid var(--line);border-radius:10px;font-size:13px;color:var(--dim)">Limited profile — we don't yet have enough independent data to feature ${esc(v.name)}. It will be expanded as on-chain activity and additional rating sources are added.</p>`
+    : ''
+  const body = `${limitedNote}${sub}${trustLine}${stats}${chainTable}${ratingsTable}${refTable}${website}${rel}${cta}`
 
   const jsonLd = oc
     ? [
@@ -377,6 +382,7 @@ function casinoPage(v: CasinoView, slug: string, related: { slug: string; label:
       h1: oc ? `${v.name} — on-chain data` : `${v.name} — trust ratings & data`,
       updated: Date.now(),
       body,
+      noindex,
     }),
   }
 }
@@ -801,8 +807,14 @@ function methodologyPage(topic: string): { title: string; description: string; h
 // Generation — rebuild every page into seo_page from the warm aggregate cache
 // ─────────────────────────────────────────────────────────────────────────────
 const upsert = db.prepare(
-  `INSERT INTO seo_page(path, kind, title, description, html, updated_at) VALUES(@path,@kind,@title,@description,@html,@now)
-   ON CONFLICT(path) DO UPDATE SET kind=@kind, title=@title, description=@description, html=@html, updated_at=@now`,
+  `INSERT INTO seo_page(path, kind, title, description, html, updated_at, lifecycle) VALUES(@path,@kind,@title,@description,@html,@now,@lifecycle)
+   ON CONFLICT(path) DO UPDATE SET kind=@kind, title=@title, description=@description, html=@html, updated_at=@now, lifecycle=@lifecycle`,
+)
+const enqueueEnrich = db.prepare(
+  `INSERT INTO enrichment_queue(brand_key, label, slug, confidence, missing, status, created_at, updated_at)
+   VALUES(@brand_key,@label,@slug,@confidence,@missing,'pending',@now,@now)
+   ON CONFLICT(brand_key) DO UPDATE SET label=@label, slug=@slug, confidence=@confidence, missing=@missing, updated_at=@now,
+     status=CASE WHEN enrichment_queue.status='promoted' THEN 'promoted' ELSE 'pending' END`,
 )
 
 const MAX_CASINOS = Number(process.env.SEO_MAX_CASINOS ?? 600)
@@ -848,20 +860,39 @@ export async function generateSeoPages(): Promise<void> {
   const now = Date.now()
   const written = new Set<string>()
   let n = 0
-  const put = (path: string, kind: string, pg: { title: string; description: string; html: string }) => {
-    upsert.run({ path, kind, title: pg.title, description: pg.description, html: pg.html, now })
+  const put = (path: string, kind: string, pg: { title: string; description: string; html: string }, lifecycle = 'public_indexable') => {
+    upsert.run({ path, kind, title: pg.title, description: pg.description, html: pg.html, now, lifecycle })
     written.add(path)
     n++
   }
 
+  // page lifecycle: high-confidence on-chain brand → featured_core; low confidence →
+  // limited_public_noindex (generated, accessible, noindex, NOT in sitemap, queued
+  // for enrichment); otherwise public_indexable. We never delete a thin page.
+  const lifecycleOf = (v: CasinoView): string => {
+    const c = dataConfidence(v)
+    if (c === 'low') return 'limited_public_noindex'
+    if (c === 'high' && v.onchain) return 'featured_core'
+    return 'public_indexable'
+  }
+
   const writeAll = db.transaction(() => {
-    // casino pages — public profiles require confidence >= medium (a bare single
-    // low-weight rating is not enough); keeps pages authoritative, no thin content.
-    const cap = ranked.filter((v) => dataConfidence(v) !== 'low').slice(0, MAX_CASINOS)
+    // ALL verified brands get a profile (10-year build: noindex thin ones, never
+    // delete). Low-confidence pages are limited_public_noindex + queued to enrich.
+    const cap = ranked.slice(0, MAX_CASINOS)
     cap.forEach((v, idx) => {
       const peers = [cap[idx - 2], cap[idx - 1], cap[idx + 1], cap[idx + 2]].filter(Boolean).map((x) => ({ slug: slugOfView(x), label: x.name }))
       const fallback = cap.filter((x) => x.key !== v.key).slice(0, 4).map((x) => ({ slug: slugOfView(x), label: x.name }))
-      put(`/casino/${slugOfView(v)}`, 'casino', casinoPage(v, slugOfView(v), peers.length ? peers : fallback))
+      const lc = lifecycleOf(v)
+      const noindex = lc === 'limited_public_noindex'
+      put(`/casino/${slugOfView(v)}`, 'casino', casinoPage(v, slugOfView(v), peers.length ? peers : fallback, noindex), lc)
+      if (noindex) {
+        const r = ratingsOf(v)
+        const missing = [!v.onchain && 'onchain', !(v.onchain && v.onchain.reserves > 0) && 'reserves', trustSources(v).length < 2 && 'trust-sources']
+          .filter(Boolean)
+          .join(',')
+        enqueueEnrich.run({ brand_key: v.key, label: v.name, slug: slugOfView(v), confidence: 'low', missing, now })
+      }
     })
     // rankings: metric leaderboards + trust board + index
     for (const key of Object.keys(METRICS)) {
@@ -920,12 +951,17 @@ function buildSitemap(): string {
     { loc: '/app/streamers', freq: 'hourly', pr: '0.6' },
     { loc: '/app/blockchain', freq: 'hourly', pr: '0.6' },
   ]
-  const pages = db.prepare('SELECT path, kind FROM seo_page ORDER BY kind, path').all() as { path: string; kind: string }[]
-  const pr = (k: string) => (k === 'rankings' ? '0.8' : k === 'chains' ? '0.7' : k === 'report' ? '0.6' : k === 'methodology' ? '0.5' : '0.6')
+  // only indexable lifecycle states belong in the sitemap; limited_public_noindex /
+  // internal_only / archived pages are accessible on-site but excluded from search.
+  const pages = db
+    .prepare("SELECT path, kind, lifecycle FROM seo_page WHERE lifecycle IN ('public_indexable','featured_core') ORDER BY kind, path")
+    .all() as { path: string; kind: string; lifecycle: string }[]
+  const pr = (p: { kind: string; lifecycle: string }) =>
+    p.lifecycle === 'featured_core' ? '0.9' : p.kind === 'rankings' ? '0.8' : p.kind === 'chains' ? '0.7' : p.kind === 'report' ? '0.6' : p.kind === 'methodology' ? '0.5' : '0.6'
   const cf = (k: string) => (k === 'methodology' || k === 'report' ? 'monthly' : 'daily')
   const urls = [
     ...core.map((c) => `<url><loc>${SITE}${c.loc}</loc><changefreq>${c.freq}</changefreq><priority>${c.pr}</priority></url>`),
-    ...pages.map((p) => `<url><loc>${SITE}${p.path}</loc><changefreq>${cf(p.kind)}</changefreq><priority>${pr(p.kind)}</priority></url>`),
+    ...pages.map((p) => `<url><loc>${SITE}${p.path}</loc><changefreq>${cf(p.kind)}</changefreq><priority>${pr(p)}</priority></url>`),
   ]
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join('\n')}\n</urlset>\n`
 }

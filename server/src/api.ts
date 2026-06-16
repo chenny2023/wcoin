@@ -958,6 +958,14 @@ export async function registerApi(app: FastifyInstance) {
     return { ...data, summary: `${data.results.length - fails}/${data.results.length} passed`, ok: fails === 0 }
   })
 
+  // enrichment queue (gated) — low-confidence brands kept as noindex pages, awaiting
+  // on-chain/reserve/trust enrichment before promotion to indexable.
+  app.get('/api/diag/enrichment', async (req, reply) => {
+    if (!userFromRequest(req)) return reply.code(401).send({ error: 'login required' })
+    const rows = db.prepare("SELECT brand_key, label, slug, confidence, missing, status, updated_at FROM enrichment_queue WHERE status!='promoted' ORDER BY updated_at DESC LIMIT 500").all()
+    return { count: rows.length, items: rows }
+  })
+
   // ── alerts: user-defined rules + fired events ────────────────────────────────
   app.get('/api/alerts/rules', async (req, reply) => {
     const user = userFromRequest(req)
