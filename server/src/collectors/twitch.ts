@@ -77,6 +77,33 @@ export async function runTwitchOnce(): Promise<void> {
   }
 }
 
+// Auto-discover live gambling streamers from Twitch's category directories and
+// add them to the roster — so coverage grows itself instead of relying on a
+// hand-typed list. Catches the long tail of active casino streamers continuously.
+const DISCOVER_GAMES = ['Slots', 'Virtual Casino', 'Slots & Casino']
+let discoverIdx = 0
+export async function runTwitchDiscovery(): Promise<void> {
+  const game = DISCOVER_GAMES[discoverIdx++ % DISCOVER_GAMES.length]
+  try {
+    const query = `query{game(name:"${game.replace(/"/g, '')}"){streams(first:80){edges{node{broadcaster{login}}}}}}`
+    const res = await webFetch('https://gql.twitch.tv/gql', {
+      method: 'POST',
+      headers: { 'Client-Id': CLIENT_ID, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+      signal: AbortSignal.timeout(20_000),
+    })
+    if (!res.ok) return
+    const edges = ((await res.json()) as any)?.data?.game?.streams?.edges ?? []
+    const logins = edges.map((e: any) => e?.node?.broadcaster?.login).filter(Boolean)
+    if (logins.length) {
+      seedRoster('Twitch', logins)
+      console.log(`[twitch] discovered ${logins.length} live "${game}" streamers`)
+    }
+  } catch {
+    /* transient */
+  }
+}
+
 export function startTwitch() {
   seedRoster('Twitch', ROSTER_SEED)
   const loop = async () => {
@@ -84,4 +111,9 @@ export function startTwitch() {
     setTimeout(loop, 6_000) // one channel per 6s — full roster sweep ≈ a few min
   }
   setTimeout(loop, 12_000)
+  // category discovery every 5 min — auto-grows the roster with live casino streamers
+  setTimeout(() => {
+    runTwitchDiscovery()
+    setInterval(runTwitchDiscovery, 300_000)
+  }, 45_000)
 }
