@@ -1,17 +1,25 @@
 import { FastifyInstance } from 'fastify'
 import { db } from './db.ts'
 import { aggregateBrands, type BrandAgg } from './aggregate.ts'
+import { brandKey, brandName, matchCasinoMeta, type CasinoMeta } from './casinometa.ts'
+import { reviewScores, type ReviewScore } from './collectors/reviews.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Phase 2 — data-led SEO pages. We pre-render REAL, indexable HTML for a handful
-// of high-value page types and store it in seo_page, then serve it from Fastify
-// AHEAD of the SPA so search engines and AI answer engines get content + internal
-// links (the SPA is a JS shell crawlers see as near-empty). Pages are rebuilt on a
-// timer from the already-warm aggregate cache, so a request is one PK read.
+// Phase 2 — data-led SEO pages. We pre-render REAL, indexable HTML for high-value
+// page types and store it in seo_page, then serve it from Fastify AHEAD of the SPA
+// so search engines and AI answer engines get content + internal links (the SPA is
+// a JS shell crawlers see as near-empty). Pages are rebuilt on a timer from the
+// already-warm aggregate cache, so a request is one PK read.
+//
+// Page types: /casino/{slug} (on-chain + multi-source ratings, merged), /rankings
+// (leaderboards + index), /chains/{slug}, /reports/daily/{date} (snapshot archive),
+// /methodology/{topic}.
 //
 // Liability: every page presents OBSERVED on-chain activity and ATTRIBUTED
 // third-party ratings (with sources). It never asserts a verdict on any named
 // operator (safe / scam / solvent / legal). The methodology note is on every page.
+// Each casino page must clear a data-sufficiency gate (≥1 real rating or on-chain
+// signal) — no thin, template-only pages.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SITE = 'https://wcoin.casino'
@@ -106,15 +114,18 @@ th,td{text-align:left;padding:11px 14px;font-size:14px;border-bottom:1px solid v
 th{color:var(--dim);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
 tr:last-child td{border-bottom:none}td.n{text-align:right;font-variant-numeric:tabular-nums}
 .pill{display:inline-block;background:#ffffff10;border:1px solid var(--line);border-radius:7px;padding:2px 8px;font-size:12px;color:var(--mut)}
+a.pill{color:var(--mut)}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
 .prose{color:var(--mut);font-size:15px}.prose p{margin:10px 0}
+.ext{font-size:14px}.ext a{word-break:break-all}
+.pager{display:flex;justify-content:space-between;gap:12px;margin:18px 0}
 .note{border-top:1px solid var(--line);margin-top:40px;padding-top:18px;color:var(--dim);font-size:12px;line-height:1.7}
 footer{border-top:1px solid var(--line);margin-top:30px}footer .wrap{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;padding:22px 20px;color:var(--dim);font-size:13px}
 .bar{height:7px;background:#ffffff0d;border-radius:6px;overflow:hidden}.bar>span{display:block;height:100%;background:linear-gradient(90deg,#f5b100,#d98a00)}
 </style></head><body>
 <header class="nav"><div class="wrap">
 <a class="brand" href="/">WCOIN.CASINO</a>
-<nav class="navlinks"><a href="/">Home</a><a href="/daily">Daily report</a><a href="/methodology/attribution">Methodology</a><a class="cta" href="/app">Live dashboard →</a></nav>
+<nav class="navlinks"><a href="/">Home</a><a href="/rankings">Rankings</a><a href="/daily">Daily report</a><a href="/methodology/attribution">Methodology</a><a class="cta" href="/app">Live dashboard →</a></nav>
 </div></header>
 <main class="wrap">
 <div class="crumb">${crumbHtml}</div>
@@ -124,85 +135,200 @@ ${body}
 </main>
 <footer><div class="wrap">
 <span>© 2026 WCOIN.CASINO — the on-chain intelligence layer for iGaming</span>
-<span><a href="/daily">Daily report</a> · <a href="/app">Live data</a> · <a href="/methodology/reserves">Reserves methodology</a></span>
+<span><a href="/rankings">Rankings</a> · <a href="/daily">Daily report</a> · <a href="/app">Live data</a> · <a href="/methodology/reserves">Reserves methodology</a></span>
 </div></footer>
 </body></html>`
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Casino view — one merged record per operator: on-chain brand (if any) +
+// multi-source third-party ratings + directory contact + reference profile.
+// ─────────────────────────────────────────────────────────────────────────────
+interface CasinoView {
+  key: string // brandKey (the join key)
+  name: string // display name
+  website: string | null
+  onchain: BrandAgg | null
+  rs: ReviewScore | null
+  tpRating: number | null
+  tpReviews: number | null
+  meta: CasinoMeta | null
+}
+
+// best-available rating per source across all merged inputs
+function ratingsOf(v: CasinoView) {
+  return {
+    safety: v.rs?.safety ?? v.onchain?.safetyIndex ?? null,
+    tp: v.tpRating ?? v.rs?.trustpilot ?? v.onchain?.trustpilot ?? null,
+    tpN: v.tpReviews ?? null,
+    ag: v.rs?.askgamblers ?? v.onchain?.askgamblers ?? null,
+    ed: v.rs?.editorial ?? v.onchain?.editorial ?? null,
+    complaints: v.rs?.complaints ?? v.onchain?.complaints ?? null,
+    unresolved: v.rs?.unresolved ?? v.onchain?.unresolved ?? null,
+  }
+}
+
+// blended 0–100 from whatever external ratings exist (comparable across operators)
+function blendedTrust(v: CasinoView): number | null {
+  const r = ratingsOf(v)
+  const parts: number[] = []
+  if (r.safety != null) parts.push((r.safety / 10) * 100)
+  if (r.tp != null) parts.push((r.tp / 5) * 100)
+  if (r.ag != null) parts.push((r.ag / 10) * 100)
+  if (r.ed != null) parts.push((r.ed / 5) * 100)
+  if (!parts.length) return v.onchain?.trust ?? null
+  return Math.round(parts.reduce((a, b) => a + b, 0) / parts.length)
+}
+
+// data-sufficiency gate: ≥1 real rating OR an on-chain signal
+function hasSignal(v: CasinoView): boolean {
+  const oc = v.onchain
+  if (oc && (oc.volume7d > 0 || oc.reserves > 0)) return true
+  const r = ratingsOf(v)
+  return r.safety != null || r.tp != null || r.ag != null || r.ed != null
+}
+
+async function buildViews(): Promise<CasinoView[]> {
+  const brands = (await aggregateBrands('casino')).filter((b) => b.volume7d > 0 || b.reserves > 0)
+  const rs = reviewScores() // Map<brandKey, ReviewScore>
+  const dir = db
+    .prepare('SELECT name, website, tp_rating, tp_reviews FROM casino_directory WHERE site_ok=1 OR tp_rating IS NOT NULL')
+    .all() as { name: string; website: string; tp_rating: number | null; tp_reviews: number | null }[]
+
+  const map = new Map<string, CasinoView>()
+  const ensure = (name: string): CasinoView => {
+    const key = brandKey(name)
+    let v = map.get(key)
+    if (!v) {
+      v = { key, name: brandName(name), website: null, onchain: null, rs: rs.get(key) ?? null, tpRating: null, tpReviews: null, meta: matchCasinoMeta(name) }
+      map.set(key, v)
+    }
+    return v
+  }
+  // on-chain brands first (richest, authoritative display name)
+  for (const b of brands) {
+    const v = ensure(b.brand)
+    v.onchain = b
+    v.name = b.brand
+    if (!v.meta) v.meta = b.meta
+  }
+  // directory rows: website + Trustpilot from the category sweep
+  for (const d of dir) {
+    const v = ensure(d.name)
+    if (!v.website && d.website) v.website = d.website
+    if (d.tp_rating != null && v.tpRating == null) {
+      v.tpRating = d.tp_rating
+      v.tpReviews = d.tp_reviews ?? null
+    }
+  }
+  return [...map.values()].filter(hasSignal)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Page builders
 // ─────────────────────────────────────────────────────────────────────────────
 
-function casinoPage(e: BrandAgg, slug: string, related: { slug: string; label: string }[]): { title: string; description: string; html: string } {
+const stat = (k: string, vv: string, cls = '') => `<div class="stat"><div class="k">${esc(k)}</div><div class="v ${cls}">${esc(vv)}</div></div>`
+
+function casinoPage(v: CasinoView, slug: string, related: { slug: string; label: string }[]): { title: string; description: string; html: string } {
   const url = `${SITE}/casino/${slug}`
-  const net = e.net7d ?? 0
-  const title = `${e.brand} — On-Chain Volume, Reserves & Trust Data | WCOIN.CASINO`
-  const description = `On-chain data for ${e.brand}: ${fmtUsd(e.volume7d)} tracked 7-day volume across ${e.byChain?.length || 1} chains, ${fmtUsd(e.reserves)} mapped reserves, and third-party trust ratings. Observed blockchain activity, updated continuously.`
+  const oc = v.onchain
+  const r = ratingsOf(v)
+  const bt = blendedTrust(v)
 
-  const stat = (k: string, v: string, cls = '') => `<div class="stat"><div class="k">${esc(k)}</div><div class="v ${cls}">${esc(v)}</div></div>`
-  const stats =
-    `<div class="grid">` +
-    stat('7d volume', fmtUsd(e.volume7d)) +
-    stat('24h volume', fmtUsd(e.volume24h)) +
-    stat('Net flow (7d)', (net >= 0 ? '+' : '−') + fmtUsd(Math.abs(net)), net >= 0 ? 'mint' : 'rose') +
-    stat('Mapped reserves', fmtUsd(e.reserves), 'mint') +
-    stat('Active counterparties (7d)', fmtNum(e.players)) +
-    stat('Chains', String(e.byChain?.length || 0)) +
-    `</div>`
+  const title = oc
+    ? `${v.name} — On-Chain Volume, Reserves & Trust Data | WCOIN.CASINO`
+    : `${v.name} — Crypto Casino Trust Ratings & Data | WCOIN.CASINO`
+  const description = oc
+    ? `On-chain data for ${v.name}: ${fmtUsd(oc.volume7d)} tracked 7-day volume across ${oc.byChain?.length || 1} chains, ${fmtUsd(oc.reserves)} mapped reserves, and multi-source trust ratings. Observed blockchain activity, updated continuously.`
+    : `Aggregated third-party trust ratings and reference data for ${v.name} — casino.guru, Trustpilot${r.ag != null ? ', AskGamblers' : ''} and more, in one place. Updated continuously.`
 
-  // third-party ratings — ALL attributed, shown only when present
+  // stats grid — on-chain tiles when we track wallets, else rating tiles
+  let stats = ''
+  if (oc) {
+    const net = oc.net7d ?? 0
+    stats =
+      `<div class="grid">` +
+      stat('7d volume', fmtUsd(oc.volume7d)) +
+      stat('24h volume', fmtUsd(oc.volume24h)) +
+      stat('Net flow (7d)', (net >= 0 ? '+' : '−') + fmtUsd(Math.abs(net)), net >= 0 ? 'mint' : 'rose') +
+      stat('Mapped reserves', fmtUsd(oc.reserves), 'mint') +
+      stat('Active counterparties (7d)', fmtNum(oc.players)) +
+      stat('Chains', String(oc.byChain?.length || 0)) +
+      `</div>`
+  } else {
+    const tiles: string[] = []
+    if (bt != null) tiles.push(stat('Blended trust', bt + ' / 100', 'gold'))
+    if (r.tp != null) tiles.push(stat('Trustpilot', r.tp.toFixed(1) + ' / 5'))
+    if (r.safety != null) tiles.push(stat('casino.guru', r.safety.toFixed(1) + ' / 10'))
+    if (r.ag != null) tiles.push(stat('AskGamblers', r.ag.toFixed(1) + ' / 10'))
+    if (r.ed != null) tiles.push(stat('casino.org', r.ed.toFixed(1) + ' / 5'))
+    if (tiles.length) stats = `<div class="grid">${tiles.join('')}</div>`
+  }
+
+  // unified ratings table
   const ratings: string[] = []
-  if (e.safetyIndex != null) ratings.push(`<tr><td>casino.guru Safety Index</td><td class="n">${e.safetyIndex.toFixed(1)} / 10</td></tr>`)
-  if (e.trustpilot != null) ratings.push(`<tr><td>Trustpilot</td><td class="n">${e.trustpilot.toFixed(1)} / 5</td></tr>`)
-  if (e.askgamblers != null) ratings.push(`<tr><td>AskGamblers expert</td><td class="n">${e.askgamblers.toFixed(1)} / 10</td></tr>`)
-  if (e.editorial != null) ratings.push(`<tr><td>casino.org editorial</td><td class="n">${e.editorial.toFixed(1)} / 5</td></tr>`)
-  if (e.complaints != null) ratings.push(`<tr><td>casino.guru complaints (current)</td><td class="n">${fmtNum(e.complaints)}${e.unresolved != null ? ` (${fmtNum(e.unresolved)} unresolved)` : ''}</td></tr>`)
+  if (r.safety != null) ratings.push(`<tr><td>casino.guru Safety Index</td><td class="n">${r.safety.toFixed(1)} / 10</td></tr>`)
+  if (r.tp != null) ratings.push(`<tr><td>Trustpilot${r.tpN ? ` (${fmtNum(r.tpN)} reviews)` : ''}</td><td class="n">${r.tp.toFixed(1)} / 5</td></tr>`)
+  if (r.ag != null) ratings.push(`<tr><td>AskGamblers expert</td><td class="n">${r.ag.toFixed(1)} / 10</td></tr>`)
+  if (r.ed != null) ratings.push(`<tr><td>casino.org editorial</td><td class="n">${r.ed.toFixed(1)} / 5</td></tr>`)
+  if (r.complaints != null) ratings.push(`<tr><td>casino.guru complaints (current)</td><td class="n">${fmtNum(r.complaints)}${r.unresolved != null ? ` (${fmtNum(r.unresolved)} unresolved)` : ''}</td></tr>`)
   const ratingsTable = ratings.length
     ? `<h2>Third-party trust ratings</h2><p class="prose">Independently published by the sources named below — shown here with attribution, not endorsed or verified by us.</p><table><tbody>${ratings.join('')}</tbody></table>`
     : ''
 
-  // chain split
-  const chainRows = (e.byChain ?? [])
-    .slice()
-    .sort((a, b) => b.value - a.value)
-    .map((c) => `<tr><td><span class="pill">${esc(chainName(c.chain))}</span></td><td class="n">${fmtUsd(c.value)}</td></tr>`)
-    .join('')
-  const chainTable = chainRows ? `<h2>On-chain volume by network (7d)</h2><table><thead><tr><th>Network</th><th style="text-align:right">7d volume</th></tr></thead><tbody>${chainRows}</tbody></table>` : ''
+  // on-chain volume by network (only when we track wallets)
+  let chainTable = ''
+  if (oc) {
+    const chainRows = (oc.byChain ?? [])
+      .slice()
+      .sort((a, b) => b.value - a.value)
+      .map((c) => `<tr><td><span class="pill">${esc(chainName(c.chain))}</span></td><td class="n">${fmtUsd(c.value)}</td></tr>`)
+      .join('')
+    chainTable = chainRows ? `<h2>On-chain volume by network (7d)</h2><table><thead><tr><th>Network</th><th style="text-align:right">7d volume</th></tr></thead><tbody>${chainRows}</tbody></table>` : ''
+  }
 
-  // reference profile (license / house edge), if available — factual reference only
-  const meta = e.meta as any
+  // reference (license / house edge / coverage), if available — factual only
+  const meta = v.meta as any
   const refRows: string[] = []
   if (meta?.license) refRows.push(`<tr><td>Stated licence</td><td class="n">${esc(String(meta.license))}</td></tr>`)
   if (meta?.established) refRows.push(`<tr><td>Established</td><td class="n">${esc(String(meta.established))}</td></tr>`)
   if (meta?.houseEdge) refRows.push(`<tr><td>Typical house edge</td><td class="n">${esc(String(meta.houseEdge))}</td></tr>`)
-  if (e.reserveCoverage != null) refRows.push(`<tr><td>Withdrawal-coverage ratio <span class="pill">reserves ÷ 7d outflow</span></td><td class="n">${e.reserveCoverage.toFixed(1)}×</td></tr>`)
+  if (oc?.reserveCoverage != null) refRows.push(`<tr><td>Withdrawal-coverage ratio <span class="pill">reserves ÷ 7d outflow</span></td><td class="n">${oc.reserveCoverage.toFixed(1)}×</td></tr>`)
   const refTable = refRows.length ? `<h2>Reference</h2><table><tbody>${refRows.join('')}</tbody></table>` : ''
 
-  const rel = related.length
-    ? `<h2>Related operators</h2><div class="chips">${related.map((r) => `<a class="pill" href="/casino/${r.slug}">${esc(r.label)}</a>`).join('')}</div>`
+  // outbound website (nofollow — we don't vouch for or pass equity to operators)
+  const website = v.website
+    ? `<p class="ext" style="margin-top:18px">Official website: <a href="${esc(v.website)}" rel="nofollow noopener" target="_blank">${esc(v.website.replace(/^https?:\/\//, ''))}</a></p>`
     : ''
 
-  const body = `
-<p class="sub">Observed on-chain activity and third-party ratings attributed to <strong>${esc(e.brand)}</strong>, across ${e.byChain?.length || 1} blockchain${(e.byChain?.length || 1) === 1 ? '' : 's'}.</p>
-<p class="upd">Updated continuously from indexed on-chain data.</p>
-${stats}
-${chainTable}
-${ratingsTable}
-${refTable}
-${rel}
-<p class="prose" style="margin-top:24px">Explore the full live picture — real-time deposits &amp; withdrawals, whale flow and reserve history — on the <a href="/app/casinos">live casino dashboard</a>, or see the whole market in today's <a href="/daily">daily report</a>.</p>`
+  const rel = related.length
+    ? `<h2>Related operators</h2><div class="chips">${related.map((x) => `<a class="pill" href="/casino/${x.slug}">${esc(x.label)}</a>`).join('')}</div>`
+    : ''
 
-  const jsonLd = [
-    {
-      '@type': 'Dataset',
-      name: `${e.brand} on-chain activity dataset`,
-      description,
-      url,
-      creator: { '@type': 'Organization', name: 'WCOIN.CASINO', url: SITE },
-      isAccessibleForFree: true,
-      variableMeasured: ['7d on-chain volume', 'mapped reserves (USD)', 'net flow', 'active counterparties'],
-    },
-  ]
+  const sub = oc
+    ? `<p class="sub">Observed on-chain activity and third-party ratings attributed to <strong>${esc(v.name)}</strong>, across ${oc.byChain?.length || 1} blockchain${(oc.byChain?.length || 1) === 1 ? '' : 's'}.</p><p class="upd">Updated continuously from indexed on-chain data.</p>`
+    : `<p class="sub">Aggregated third-party trust ratings and reference data for <strong>${esc(v.name)}</strong>, in one place.</p><p class="upd">We don't yet track this operator's on-chain wallets — only attributed third-party signals are shown.</p>`
+
+  const cta = oc
+    ? `<p class="prose" style="margin-top:24px">Explore the full live picture — real-time deposits &amp; withdrawals, whale flow and reserve history — on the <a href="/app/casinos">live casino dashboard</a>, or see the whole market in today's <a href="/daily">daily report</a>.</p>`
+    : `<p class="prose" style="margin-top:24px">Compare operators by on-chain volume and mapped reserves on the <a href="/rankings/volume">rankings</a>, or browse the live <a href="/app/casinos">casino dashboard</a>.</p>`
+
+  const body = `${sub}${stats}${chainTable}${ratingsTable}${refTable}${website}${rel}${cta}`
+
+  const jsonLd = oc
+    ? [
+        {
+          '@type': 'Dataset',
+          name: `${v.name} on-chain activity dataset`,
+          description,
+          url,
+          creator: { '@type': 'Organization', name: 'WCOIN.CASINO', url: SITE },
+          isAccessibleForFree: true,
+          variableMeasured: ['7d on-chain volume', 'mapped reserves (USD)', 'net flow', 'active counterparties'],
+        },
+      ]
+    : []
   return {
     title,
     description,
@@ -214,51 +340,53 @@ ${rel}
       breadcrumb: [
         { name: 'Home', url: SITE + '/' },
         { name: 'Casinos', url: SITE + '/rankings/volume' },
-        { name: e.brand, url },
+        { name: v.name, url },
       ],
-      h1: `${e.brand} — on-chain data`,
+      h1: oc ? `${v.name} — on-chain data` : `${v.name} — trust ratings & data`,
       updated: Date.now(),
       body,
     }),
   }
 }
 
-// rankings: a few curated leaderboards
-const RANKINGS: Record<string, { title: string; blurb: string; metric: (e: BrandAgg) => number; fmt: (e: BrandAgg) => string; col: string; sort: 'desc' }> = {
-  volume: { title: 'Top crypto casinos by on-chain volume (7d)', blurb: 'Crypto casinos ranked by tracked on-chain transaction volume over the last 7 days.', metric: (e) => e.volume7d, fmt: (e) => fmtUsd(e.volume7d), col: '7d volume', sort: 'desc' },
-  reserves: { title: 'Crypto casinos by mapped on-chain reserves', blurb: 'Operators ranked by all-chain reserves mapped from on-chain wallets (proof-of-reserves estimate).', metric: (e) => e.reserves, fmt: (e) => fmtUsd(e.reserves), col: 'Mapped reserves', sort: 'desc' },
-  trust: { title: 'Crypto casinos by third-party trust rating', blurb: 'Operators ordered by a blended score of independently published trust ratings (casino.guru, Trustpilot, AskGamblers).', metric: (e) => e.trust ?? 0, fmt: (e) => (e.trust ? Math.round(e.trust) + ' / 100' : '—'), col: 'Blended trust', sort: 'desc' },
+// ── rankings ──────────────────────────────────────────────────────────────────
+// metric leaderboards run over on-chain brands (quantitative); the trust board
+// runs over the full merged view set (so all rated operators are eligible).
+type MetricCfg = { title: string; blurb: string; metric: (e: BrandAgg) => number; fmt: (e: BrandAgg) => string; col: string }
+const METRICS: Record<string, MetricCfg> = {
+  volume: { title: 'Top crypto casinos by on-chain volume (7d)', blurb: 'Crypto casinos ranked by tracked on-chain transaction volume over the last 7 days.', metric: (e) => e.volume7d, fmt: (e) => fmtUsd(e.volume7d), col: '7d volume' },
+  movers: { title: 'Biggest crypto casinos by 24h on-chain volume', blurb: 'Operators with the most tracked on-chain volume in the last 24 hours.', metric: (e) => e.volume24h, fmt: (e) => fmtUsd(e.volume24h), col: '24h volume' },
+  reserves: { title: 'Crypto casinos by mapped on-chain reserves', blurb: 'Operators ranked by all-chain reserves mapped from on-chain wallets (proof-of-reserves estimate).', metric: (e) => e.reserves, fmt: (e) => fmtUsd(e.reserves), col: 'Mapped reserves' },
+  coverage: { title: 'Crypto casinos by withdrawal-coverage ratio', blurb: 'Mapped reserves divided by 7-day outflow — a descriptive on-chain liquidity indicator (not a solvency rating).', metric: (e) => e.reserveCoverage ?? 0, fmt: (e) => (e.reserveCoverage != null ? e.reserveCoverage.toFixed(1) + '×' : '—'), col: 'Coverage ratio' },
+  netflow: { title: 'Crypto casinos by 7-day net on-chain flow', blurb: 'Operators ranked by net on-chain flow (inflow minus outflow) over the last 7 days.', metric: (e) => e.net7d, fmt: (e) => (e.net7d >= 0 ? '+' : '−') + fmtUsd(Math.abs(e.net7d)), col: 'Net flow 7d' },
+  players: { title: 'Most active crypto casinos by on-chain counterparties', blurb: 'Operators ranked by distinct on-chain counterparties (a proxy for active players) over 7 days.', metric: (e) => e.players, fmt: (e) => fmtNum(e.players), col: 'Counterparties 7d' },
 }
 
-function rankingsPage(key: string, ents: BrandAgg[], slugOf: (e: BrandAgg) => string): { title: string; description: string; html: string } | null {
-  const cfg = RANKINGS[key]
+function metricRankingPage(key: string, brands: BrandAgg[], slugOfBrand: (b: BrandAgg) => string): { title: string; description: string; html: string } | null {
+  const cfg = METRICS[key]
   if (!cfg) return null
   const url = `${SITE}/rankings/${key}`
-  const rows = ents
-    .filter((e) => cfg.metric(e) > 0)
+  const rows = brands
+    .filter((e) => Math.abs(cfg.metric(e)) > 0)
     .sort((a, b) => cfg.metric(b) - cfg.metric(a))
     .slice(0, 50)
   const title = `${cfg.title} | WCOIN.CASINO`
-  const description = `${cfg.blurb} Ranking ${rows.length} operators from live on-chain data and attributed third-party ratings. Free, updated continuously.`
+  const description = `${cfg.blurb} Ranking ${rows.length} operators from live on-chain data. Free, updated continuously.`
   const trows = rows
     .map(
       (e, i) =>
-        `<tr><td class="n" style="text-align:left;color:var(--dim);width:34px">${i + 1}</td><td><a href="/casino/${slugOf(e)}">${esc(e.brand)}</a></td><td class="n">${esc(cfg.fmt(e))}</td><td class="n" style="color:var(--mut)">${fmtUsd(e.volume7d)}</td></tr>`,
+        `<tr><td class="n" style="text-align:left;color:var(--dim);width:34px">${i + 1}</td><td><a href="/casino/${slugOfBrand(e)}">${esc(e.brand)}</a></td><td class="n">${esc(cfg.fmt(e))}</td><td class="n" style="color:var(--mut)">${fmtUsd(e.volume7d)}</td></tr>`,
     )
     .join('')
-  const others = Object.keys(RANKINGS).filter((k) => k !== key)
+  const others = [...Object.keys(METRICS), 'trust'].filter((k) => k !== key)
   const body = `
 <p class="sub">${esc(cfg.blurb)}</p>
-<p class="upd">${rows.length} operators · live on-chain data, refreshed continuously</p>
-<div class="chips">${others.map((k) => `<a class="pill" href="/rankings/${k}">${esc(RANKINGS[k].title.replace(/ \(7d\)/, ''))}</a>`).join('')}</div>
+<p class="upd">${rows.length} operators · live on-chain data, refreshed continuously · <a href="/rankings">all rankings</a></p>
+<div class="chips">${others.map((k) => `<a class="pill" href="/rankings/${k}">${esc(rankingLabel(k))}</a>`).join('')}</div>
 <table><thead><tr><th>#</th><th>Operator</th><th style="text-align:right">${esc(cfg.col)}</th><th style="text-align:right">7d volume</th></tr></thead><tbody>${trows}</tbody></table>
 <p class="prose" style="margin-top:22px">See live deposits, withdrawals and reserve history on the <a href="/app/casinos">interactive dashboard</a>, or the whole-market view in the <a href="/daily">daily report</a>.</p>`
   const jsonLd = [
-    {
-      '@type': 'ItemList',
-      name: cfg.title,
-      itemListElement: rows.map((e, i) => ({ '@type': 'ListItem', position: i + 1, name: e.brand, url: `${SITE}/casino/${slugOf(e)}` })),
-    },
+    { '@type': 'ItemList', name: cfg.title, itemListElement: rows.map((e, i) => ({ '@type': 'ListItem', position: i + 1, name: e.brand, url: `${SITE}/casino/${slugOfBrand(e)}` })) },
   ]
   return {
     title,
@@ -270,7 +398,7 @@ function rankingsPage(key: string, ents: BrandAgg[], slugOf: (e: BrandAgg) => st
       jsonLd,
       breadcrumb: [
         { name: 'Home', url: SITE + '/' },
-        { name: 'Rankings', url: SITE + '/rankings/volume' },
+        { name: 'Rankings', url: SITE + '/rankings' },
         { name: cfg.col, url },
       ],
       h1: cfg.title,
@@ -280,11 +408,94 @@ function rankingsPage(key: string, ents: BrandAgg[], slugOf: (e: BrandAgg) => st
   }
 }
 
-function chainPage(chain: string, ents: BrandAgg[], slugOf: (e: BrandAgg) => string): { title: string; description: string; html: string } {
+function trustRankingPage(views: CasinoView[], slugOfView: (v: CasinoView) => string): { title: string; description: string; html: string } {
+  const url = `${SITE}/rankings/trust`
+  const rows = views
+    .map((v) => ({ v, t: blendedTrust(v) }))
+    .filter((x) => x.t != null)
+    .sort((a, b) => (b.t as number) - (a.t as number))
+    .slice(0, 50)
+  const title = 'Crypto casinos by third-party trust rating | WCOIN.CASINO'
+  const description = `Operators ordered by a blended score of independently published trust ratings (casino.guru, Trustpilot, AskGamblers, casino.org). Ranking ${rows.length} operators, updated continuously.`
+  const trows = rows
+    .map((x, i) => {
+      const r = ratingsOf(x.v)
+      const srcs = [r.safety != null && 'guru', r.tp != null && 'TP', r.ag != null && 'AG', r.ed != null && 'org'].filter(Boolean).join(' · ')
+      return `<tr><td class="n" style="text-align:left;color:var(--dim);width:34px">${i + 1}</td><td><a href="/casino/${slugOfView(x.v)}">${esc(x.v.name)}</a></td><td class="n gold">${x.t} / 100</td><td class="n" style="color:var(--mut)">${esc(srcs)}</td></tr>`
+    })
+    .join('')
+  const others = Object.keys(METRICS)
+  const body = `
+<p class="sub">A blended 0–100 score from independently published ratings — shown with attribution, not our judgement of any operator.</p>
+<p class="upd">${rows.length} operators · <a href="/rankings">all rankings</a> · see <a href="/methodology/trust">how ratings are sourced</a></p>
+<div class="chips">${others.map((k) => `<a class="pill" href="/rankings/${k}">${esc(rankingLabel(k))}</a>`).join('')}</div>
+<table><thead><tr><th>#</th><th>Operator</th><th style="text-align:right">Blended trust</th><th style="text-align:right">Sources</th></tr></thead><tbody>${trows}</tbody></table>
+<p class="prose" style="margin-top:22px">Ratings are produced by third parties; we aggregate and attribute them. Browse the live <a href="/app/sentiment">trust &amp; reserves board</a>.</p>`
+  const jsonLd = [
+    { '@type': 'ItemList', name: 'Crypto casinos by third-party trust rating', itemListElement: rows.map((x, i) => ({ '@type': 'ListItem', position: i + 1, name: x.v.name, url: `${SITE}/casino/${slugOfView(x.v)}` })) },
+  ]
+  return {
+    title,
+    description,
+    html: layout({
+      title,
+      description,
+      canonical: url,
+      jsonLd,
+      breadcrumb: [
+        { name: 'Home', url: SITE + '/' },
+        { name: 'Rankings', url: SITE + '/rankings' },
+        { name: 'Trust', url },
+      ],
+      h1: 'Crypto casinos by third-party trust rating',
+      updated: Date.now(),
+      body,
+    }),
+  }
+}
+
+const rankingLabel = (k: string) =>
+  k === 'trust' ? 'By trust rating' : k === 'volume' ? 'By 7d volume' : k === 'movers' ? 'By 24h volume' : k === 'reserves' ? 'By reserves' : k === 'coverage' ? 'By coverage ratio' : k === 'netflow' ? 'By net flow' : k === 'players' ? 'By active counterparties' : k
+
+function rankingsIndexPage(chains: string[]): { title: string; description: string; html: string } {
+  const url = `${SITE}/rankings`
+  const title = 'Crypto casino rankings — volume, reserves, trust & more | WCOIN.CASINO'
+  const description = 'Browse crypto-casino leaderboards: ranked by on-chain volume, mapped reserves, withdrawal coverage, net flow, active players and blended third-party trust ratings. All from live data.'
+  const keys = ['volume', 'movers', 'reserves', 'coverage', 'netflow', 'players', 'trust']
+  const cards = keys.map((k) => `<li><a href="/rankings/${k}">${esc(rankingLabel(k))}</a></li>`).join('')
+  const chainLinks = chains.map((c) => `<a class="pill" href="/chains/${slugify(c)}">${esc(chainName(c))}</a>`).join('')
+  const body = `
+<p class="sub">Every crypto-casino leaderboard we publish, built from live on-chain data and attributed third-party ratings.</p>
+<h2>Leaderboards</h2>
+<ul class="prose" style="line-height:2">${cards}</ul>
+<h2>By blockchain</h2>
+<p class="prose">Per-network casino volume:</p>
+<div class="chips">${chainLinks}</div>
+<p class="prose" style="margin-top:22px">Or see the whole-market snapshot in the <a href="/daily">daily report</a>.</p>`
+  return {
+    title,
+    description,
+    html: layout({
+      title,
+      description,
+      canonical: url,
+      jsonLd: [],
+      breadcrumb: [
+        { name: 'Home', url: SITE + '/' },
+        { name: 'Rankings', url },
+      ],
+      h1: 'Crypto casino rankings',
+      updated: Date.now(),
+      body,
+    }),
+  }
+}
+
+// ── chains ────────────────────────────────────────────────────────────────────
+function chainPage(chain: string, brands: BrandAgg[], slugOfBrand: (b: BrandAgg) => string): { title: string; description: string; html: string } {
   const name = chainName(chain)
   const url = `${SITE}/chains/${slugify(chain)}`
-  // operators active on this chain, by their volume on it
-  const onChain = ents
+  const onChain = brands
     .map((e) => ({ e, v: (e.byChain ?? []).find((c) => slugify(c.chain) === slugify(chain))?.value ?? 0 }))
     .filter((x) => x.v > 0)
     .sort((a, b) => b.v - a.v)
@@ -296,23 +507,16 @@ function chainPage(chain: string, ents: BrandAgg[], slugOf: (e: BrandAgg) => str
   const trows = onChain
     .map(
       (x, i) =>
-        `<tr><td class="n" style="text-align:left;color:var(--dim);width:34px">${i + 1}</td><td><a href="/casino/${slugOf(x.e)}">${esc(x.e.brand)}</a></td><td class="n">${fmtUsd(x.v)}</td><td style="width:120px"><div class="bar"><span style="width:${Math.max(3, (x.v / max) * 100)}%"></span></div></td></tr>`,
+        `<tr><td class="n" style="text-align:left;color:var(--dim);width:34px">${i + 1}</td><td><a href="/casino/${slugOfBrand(x.e)}">${esc(x.e.brand)}</a></td><td class="n">${fmtUsd(x.v)}</td><td style="width:120px"><div class="bar"><span style="width:${Math.max(3, (x.v / max) * 100)}%"></span></div></td></tr>`,
     )
     .join('')
   const body = `
 <p class="sub">Tracked crypto-casino transaction volume settled on <strong>${esc(name)}</strong>, by operator (7-day window).</p>
-<p class="upd">${onChain.length} operators · ${fmtUsd(total)} total 7d volume</p>
+<p class="upd">${onChain.length} operators · ${fmtUsd(total)} total 7d volume · <a href="/rankings">all rankings</a></p>
 <table><thead><tr><th>#</th><th>Operator</th><th style="text-align:right">7d volume on ${esc(name)}</th><th></th></tr></thead><tbody>${trows}</tbody></table>
 <p class="prose" style="margin-top:22px">This is on-chain settlement volume attributed to casino wallets on ${esc(name)} — see the <a href="/methodology/volume">volume methodology</a> for how it's measured, or the live <a href="/app/blockchain">on-chain feed</a>.</p>`
   const jsonLd = [
-    {
-      '@type': 'Dataset',
-      name: `${name} crypto-casino on-chain volume`,
-      description,
-      url,
-      creator: { '@type': 'Organization', name: 'WCOIN.CASINO', url: SITE },
-      isAccessibleForFree: true,
-    },
+    { '@type': 'Dataset', name: `${name} crypto-casino on-chain volume`, description, url, creator: { '@type': 'Organization', name: 'WCOIN.CASINO', url: SITE }, isAccessibleForFree: true },
   ]
   return {
     title,
@@ -324,10 +528,100 @@ function chainPage(chain: string, ents: BrandAgg[], slugOf: (e: BrandAgg) => str
       jsonLd,
       breadcrumb: [
         { name: 'Home', url: SITE + '/' },
-        { name: 'Chains', url: SITE + '/chains/' + slugify(chain) },
+        { name: 'Chains', url: SITE + '/rankings' },
         { name, url },
       ],
       h1: `${name} crypto casinos`,
+      updated: Date.now(),
+      body,
+    }),
+  }
+}
+
+// ── daily report archive ──────────────────────────────────────────────────────
+function reportPage(snap: any, prev: string | null, next: string | null): { title: string; description: string; html: string } {
+  const date = snap.snapshot_date
+  const url = `${SITE}/reports/daily/${date}`
+  const p = snap.payload || {}
+  const net = snap.net_flow_24h ?? 0
+  const title = `Crypto casino market — ${date} | Daily on-chain report | WCOIN.CASINO`
+  const description = `Crypto-casino market on ${date} (UTC): ${fmtUsd(snap.tracked_volume_24h ?? 0)} tracked 24h on-chain volume across ${snap.active_casinos ?? 0} casinos and ${snap.active_chains ?? 0} chains, ${fmtUsd(snap.reserves_total ?? 0)} mapped reserves.`
+
+  const stats =
+    `<div class="grid">` +
+    stat('24h tracked volume', fmtUsd(snap.tracked_volume_24h ?? 0)) +
+    stat('Net flow (24h)', (net >= 0 ? '+' : '−') + fmtUsd(Math.abs(net)), net >= 0 ? 'mint' : 'rose') +
+    stat('Active casinos', fmtNum(snap.active_casinos ?? 0)) +
+    stat('Chains', String(snap.active_chains ?? 0)) +
+    stat('Live streamers', String(snap.live_streamers ?? 0)) +
+    stat('Tracked reserves', fmtUsd(snap.reserves_total ?? 0), 'mint') +
+    `</div>`
+
+  const movers = (p.topMovers ?? []).slice(0, 8)
+  const moversT = movers.length
+    ? `<h2>Biggest movers (24h)</h2><table><thead><tr><th>Operator</th><th style="text-align:right">24h volume</th><th style="text-align:right">7d volume</th></tr></thead><tbody>${movers
+        .map((m: any) => `<tr><td><a href="/casino/${slugify(m.label)}">${esc(m.label)}</a></td><td class="n">${fmtUsd(m.vol24h)}</td><td class="n" style="color:var(--mut)">${fmtUsd(m.vol7d ?? 0)}</td></tr>`)
+        .join('')}</tbody></table>`
+    : ''
+
+  const chains = (p.chainVolume ?? []).slice(0, 10)
+  const maxC = Math.max(...chains.map((c: any) => c.vol24h || 0), 1)
+  const chainsT = chains.length
+    ? `<h2>Volume by chain (24h)</h2><table><tbody>${chains
+        .map((c: any) => `<tr><td><span class="pill">${esc(chainName(c.chain))}</span></td><td class="n">${fmtUsd(c.vol24h)}</td><td style="width:120px"><div class="bar"><span style="width:${Math.max(3, ((c.vol24h || 0) / maxC) * 100)}%"></span></div></td></tr>`)
+        .join('')}</tbody></table>`
+    : ''
+
+  const whales = (p.whales ?? []).slice(0, 10)
+  const whalesT = whales.length
+    ? `<h2>Whale activity (24h, ≥ $50K)</h2><table><tbody>${whales
+        .map(
+          (w: any) =>
+            `<tr><td>${esc(w.label)}</td><td><span class="pill">${esc(chainName(w.chain))}</span></td><td class="n ${w.direction === 'in' ? 'mint' : 'rose'}">${w.direction === 'in' ? '+' : '−'}${fmtUsd(w.usd)}</td></tr>`,
+        )
+        .join('')}</tbody></table>`
+    : ''
+
+  const reserves = (p.topReserves ?? []).slice(0, 8)
+  const reservesT = reserves.length
+    ? `<h2>All-chain reserves</h2><table><tbody>${reserves
+        .map((r: any) => `<tr><td><a href="/casino/${slugify(r.label)}">${esc(r.label)}</a></td><td class="n mint">${fmtUsd(r.reserves)}</td></tr>`)
+        .join('')}</tbody></table>`
+    : ''
+
+  const pager =
+    prev || next
+      ? `<div class="pager">${prev ? `<a href="/reports/daily/${prev}">← ${esc(prev)}</a>` : '<span></span>'}${next ? `<a href="/reports/daily/${next}">${esc(next)} →</a>` : '<span></span>'}</div>`
+      : ''
+
+  const body = `
+<p class="sub">On-chain snapshot of the crypto-casino market for <strong>${esc(date)} (UTC)</strong> — confidence: ${esc(snap.confidence_level || 'medium')}.</p>
+<p class="upd">Archived daily report · <a href="/daily">today's live report</a></p>
+${pager}
+${stats}
+${moversT}
+${chainsT}
+${whalesT}
+${reservesT}
+${pager}
+<p class="prose" style="margin-top:22px">Numbers are observed on-chain activity for the stated 24-hour window. See the <a href="/methodology/volume">volume</a> and <a href="/methodology/reserves">reserves</a> methodology, or the live <a href="/app">dashboard</a>.</p>`
+  const jsonLd = [
+    { '@type': 'Dataset', name: `Crypto casino market snapshot ${date}`, description, url, temporalCoverage: date, creator: { '@type': 'Organization', name: 'WCOIN.CASINO', url: SITE }, isAccessibleForFree: true },
+  ]
+  return {
+    title,
+    description,
+    html: layout({
+      title,
+      description,
+      canonical: url,
+      jsonLd,
+      breadcrumb: [
+        { name: 'Home', url: SITE + '/' },
+        { name: 'Daily reports', url: SITE + '/daily' },
+        { name: date, url },
+      ],
+      h1: `Crypto casino market — ${date}`,
       updated: Date.now(),
       body,
     }),
@@ -400,75 +694,88 @@ const upsert = db.prepare(
    ON CONFLICT(path) DO UPDATE SET kind=@kind, title=@title, description=@description, html=@html, updated_at=@now`,
 )
 
-const MAX_CASINOS = Number(process.env.SEO_MAX_CASINOS ?? 100)
+const MAX_CASINOS = Number(process.env.SEO_MAX_CASINOS ?? 600)
+const MAX_REPORTS = Number(process.env.SEO_MAX_REPORTS ?? 400)
 
 export async function generateSeoPages(): Promise<void> {
-  // Brand-merged casinos (wallets grouped into one row per real operator, dead
-  // labels pruned) — gives few, clean, high-quality pages instead of per-wallet noise.
-  const all = await aggregateBrands('casino')
-  const ents = all.filter((e) => e.volume7d > 0 || e.reserves > 0)
+  const views = await buildViews()
+  // sort: on-chain operators first (by 7d volume), then rated-only (by review depth)
+  const ranked = views.slice().sort((a, b) => {
+    const av = a.onchain?.volume7d ?? 0
+    const bv = b.onchain?.volume7d ?? 0
+    if (bv !== av) return bv - av
+    return (b.tpReviews ?? 0) - (a.tpReviews ?? 0)
+  })
 
-  // build a stable, collision-free slug map, keyed by brand
-  const slugMap = new Map<string, string>()
+  // stable, collision-free slug map keyed by brandKey
+  const slugByKey = new Map<string, string>()
   const used = new Set<string>()
   let seq = 0
-  for (const e of ents.slice().sort((a, b) => b.volume7d - a.volume7d)) {
-    let s = slugify(e.brand) || `casino-${++seq}`
+  for (const v of ranked) {
+    let s = slugify(v.name) || `casino-${++seq}`
     if (used.has(s)) s = `${s}-${++seq}`
     used.add(s)
-    slugMap.set(e.brand, s)
+    slugByKey.set(v.key, s)
   }
-  const slugOf = (e: BrandAgg) => slugMap.get(e.brand) ?? slugify(e.brand)
+  const slugOfView = (v: CasinoView) => slugByKey.get(v.key) ?? slugify(v.name)
+  const slugOfBrand = (b: BrandAgg) => slugByKey.get(brandKey(b.brand)) ?? slugify(b.brand)
+
+  const onchainBrands = ranked.filter((v) => v.onchain).map((v) => v.onchain!) // for metric rankings / chains
+  const chainSet = new Set<string>()
+  for (const b of onchainBrands) for (const c of b.byChain ?? []) if (c.value > 0) chainSet.add(slugify(c.chain))
+
+  // daily report snapshots (newest first), build prev/next links
+  const snaps = (db.prepare('SELECT * FROM daily_market_snapshot ORDER BY snapshot_date DESC LIMIT ?').all(MAX_REPORTS) as any[]).map((row) => ({
+    ...row,
+    payload: JSON.parse(row.payload_json || '{}'),
+  }))
 
   const now = Date.now()
+  const written = new Set<string>()
   let n = 0
+  const put = (path: string, kind: string, pg: { title: string; description: string; html: string }) => {
+    upsert.run({ path, kind, title: pg.title, description: pg.description, html: pg.html, now })
+    written.add(path)
+    n++
+  }
+
   const writeAll = db.transaction(() => {
-    // casino pages (top N by volume; quality filter already applied)
-    const top = ents.slice().sort((a, b) => b.volume7d - a.volume7d).slice(0, MAX_CASINOS)
-    for (const e of top) {
-      const slug = slugOf(e)
-      const idx = top.findIndex((x) => x.brand === e.brand)
-      // 4 nearest peers by volume as "related" internal links
-      const peers = [top[idx - 2], top[idx - 1], top[idx + 1], top[idx + 2]].filter(Boolean).map((x) => ({ slug: slugOf(x), label: x.brand }))
-      const fallback = top.filter((x) => x.brand !== e.brand).slice(0, 4).map((x) => ({ slug: slugOf(x), label: x.brand }))
-      const pg = casinoPage(e, slug, peers.length ? peers : fallback)
-      upsert.run({ path: `/casino/${slug}`, kind: 'casino', title: pg.title, description: pg.description, html: pg.html, now })
-      n++
+    // casino pages (gated views, capped)
+    const cap = ranked.slice(0, MAX_CASINOS)
+    cap.forEach((v, idx) => {
+      const peers = [cap[idx - 2], cap[idx - 1], cap[idx + 1], cap[idx + 2]].filter(Boolean).map((x) => ({ slug: slugOfView(x), label: x.name }))
+      const fallback = cap.filter((x) => x.key !== v.key).slice(0, 4).map((x) => ({ slug: slugOfView(x), label: x.name }))
+      put(`/casino/${slugOfView(v)}`, 'casino', casinoPage(v, slugOfView(v), peers.length ? peers : fallback))
+    })
+    // rankings: metric leaderboards + trust board + index
+    for (const key of Object.keys(METRICS)) {
+      const pg = metricRankingPage(key, onchainBrands, slugOfBrand)
+      if (pg) put(`/rankings/${key}`, 'rankings', pg)
     }
-    // rankings
-    for (const key of Object.keys(RANKINGS)) {
-      const pg = rankingsPage(key, ents, slugOf)
-      if (pg) {
-        upsert.run({ path: `/rankings/${key}`, kind: 'rankings', title: pg.title, description: pg.description, html: pg.html, now })
-        n++
-      }
-    }
-    // chains — from the chains operators actually transact on
-    const chainSet = new Set<string>()
-    for (const e of ents) for (const c of e.byChain ?? []) if (c.value > 0) chainSet.add(slugify(c.chain))
-    for (const cs of chainSet) {
-      if (!cs) continue
-      const pg = chainPage(cs, ents, slugOf)
-      upsert.run({ path: `/chains/${cs}`, kind: 'chains', title: pg.title, description: pg.description, html: pg.html, now })
-      n++
-    }
+    put('/rankings/trust', 'rankings', trustRankingPage(ranked, slugOfView))
+    put('/rankings', 'rankings', rankingsIndexPage([...chainSet]))
+    // chains
+    for (const cs of chainSet) if (cs) put(`/chains/${cs}`, 'chains', chainPage(cs, onchainBrands, slugOfBrand))
+    // daily report archive (prev = older, next = newer)
+    snaps.forEach((s, i) => {
+      const next = i > 0 ? snaps[i - 1].snapshot_date : null // newer
+      const prev = i < snaps.length - 1 ? snaps[i + 1].snapshot_date : null // older
+      put(`/reports/daily/${s.snapshot_date}`, 'report', reportPage(s, prev, next))
+    })
     // methodology
-    for (const topic of Object.keys(METHODOLOGY)) {
-      const pg = methodologyPage(topic)!
-      upsert.run({ path: `/methodology/${topic}`, kind: 'methodology', title: pg.title, description: pg.description, html: pg.html, now })
-      n++
-    }
+    for (const topic of Object.keys(METHODOLOGY)) put(`/methodology/${topic}`, 'methodology', methodologyPage(topic)!)
   })
   writeAll()
-  // prune casino pages that dropped out of the set (stale slugs)
-  const keep = new Set<string>([...slugMap.values()].slice(0, MAX_CASINOS).map((s) => `/casino/${s}`))
-  const stale = (db.prepare("SELECT path FROM seo_page WHERE kind='casino'").all() as { path: string }[]).filter((r) => !keep.has(r.path))
+
+  // GC: drop any stored page not regenerated this run (stale casino slugs, etc.)
+  const stale = (db.prepare('SELECT path FROM seo_page').all() as { path: string }[]).filter((r) => !written.has(r.path))
   if (stale.length) {
     const del = db.prepare('DELETE FROM seo_page WHERE path=?')
     db.transaction(() => stale.forEach((r) => del.run(r.path)))()
   }
-  console.log(`[seo] rebuilt ${n} pages (${slugMap.size} casinos mapped, ${stale.length} pruned)`)
+  console.log(`[seo] rebuilt ${n} pages (${cap_count(ranked)} casinos, ${snaps.length} reports, ${stale.length} pruned)`)
 }
+const cap_count = (ranked: CasinoView[]) => Math.min(ranked.length, MAX_CASINOS)
 
 function getPage(path: string): { html: string } | null {
   return db.prepare('SELECT html FROM seo_page WHERE path=?').get(path) as { html: string } | null
@@ -487,10 +794,11 @@ function buildSitemap(): string {
     { loc: '/app/blockchain', freq: 'hourly', pr: '0.6' },
   ]
   const pages = db.prepare('SELECT path, kind FROM seo_page ORDER BY kind, path').all() as { path: string; kind: string }[]
-  const pr = (k: string) => (k === 'rankings' ? '0.8' : k === 'chains' ? '0.7' : k === 'methodology' ? '0.5' : '0.6')
+  const pr = (k: string) => (k === 'rankings' ? '0.8' : k === 'chains' ? '0.7' : k === 'report' ? '0.6' : k === 'methodology' ? '0.5' : '0.6')
+  const cf = (k: string) => (k === 'methodology' || k === 'report' ? 'monthly' : 'daily')
   const urls = [
     ...core.map((c) => `<url><loc>${SITE}${c.loc}</loc><changefreq>${c.freq}</changefreq><priority>${c.pr}</priority></url>`),
-    ...pages.map((p) => `<url><loc>${SITE}${p.path}</loc><changefreq>${p.kind === 'methodology' ? 'monthly' : 'daily'}</changefreq><priority>${pr(p.kind)}</priority></url>`),
+    ...pages.map((p) => `<url><loc>${SITE}${p.path}</loc><changefreq>${cf(p.kind)}</changefreq><priority>${pr(p.kind)}</priority></url>`),
   ]
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join('\n')}\n</urlset>\n`
 }
@@ -498,10 +806,9 @@ function buildSitemap(): string {
 const HTML_CACHE = 'public, max-age=600, stale-while-revalidate=86400'
 
 export function registerSeo(app: FastifyInstance) {
-  const serve = (kind: string, build?: (slug: string) => string | null) => async (req: any, reply: any) => {
+  const serve = (kind: string) => async (req: any, reply: any) => {
     const page = getPage(req.url.split('?')[0])
     if (page) return reply.type('text/html; charset=utf-8').header('Cache-Control', HTML_CACHE).send(page.html)
-    // not generated (yet / unknown slug): clean 404, noindex, link home
     return reply
       .code(404)
       .type('text/html; charset=utf-8')
@@ -509,8 +816,10 @@ export function registerSeo(app: FastifyInstance) {
       .send(`<!doctype html><meta charset="utf-8"><meta name="robots" content="noindex"><title>Not found — WCOIN.CASINO</title><body style="background:#0a0a0f;color:#e8e8ee;font:16px/1.6 system-ui;text-align:center;padding:80px"><h1 style="color:#f5b100">404</h1><p>This ${esc(kind)} page isn't available.</p><p><a style="color:#f5b100" href="/">← WCOIN.CASINO home</a></p></body>`)
   }
   app.get('/casino/:slug', serve('casino'))
+  app.get('/rankings', serve('rankings'))
   app.get('/rankings/:slug', serve('rankings'))
   app.get('/chains/:slug', serve('chains'))
+  app.get('/reports/daily/:date', serve('report'))
   app.get('/methodology/:topic', serve('methodology'))
 
   // Dynamic child sitemap with every generated SEO page (+ core URLs). We use a
