@@ -12,6 +12,7 @@ import { newsEnabled } from './collectors/news.ts'
 import { telegramSubs } from './collectors/telegram.ts'
 import { brandKey } from './casinometa.ts'
 import { userFromRequest } from './auth.ts'
+import { readWorkerEnabled } from './readpool.ts'
 import { config } from './config.ts'
 
 export async function registerApi(app: FastifyInstance) {
@@ -42,6 +43,7 @@ export async function registerApi(app: FastifyInstance) {
       historyDays: oldest ? (Date.now() - oldest) / 86_400_000 : 0,
       backfillPct,
       twitch: twitchEnabled(),
+      readWorker: readWorkerEnabled(), // is the read-offload worker thread active?
       time: Date.now(),
     }
   })
