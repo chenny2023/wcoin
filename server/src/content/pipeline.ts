@@ -1,8 +1,9 @@
 import { db } from '../db.ts'
-import { webFetch } from '../net.ts'
+import { latestMarketSnapshot } from '../snapshot.ts'
 import { buildPrompt } from './prompts.ts'
 import { qaCheck } from './qa.ts'
-import { generateContent, generateImage, openrouterEnabled } from './openrouter.ts'
+import { generateContent, openrouterEnabled } from './openrouter.ts'
+import { renderRankingCard, type CardData } from './card.ts'
 import { postTweet, postThread, uploadMedia, xEnabled } from './xclient.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13,8 +14,6 @@ import { postTweet, postThread, uploadMedia, xEnabled } from './xclient.ts'
 
 const env = process.env
 const utcDay = () => new Date().toISOString().slice(0, 10)
-const IMAGE_STYLE =
-  'dark crypto data dashboard, cyan and blue-green accents, premium intelligence report style, clean typography, no gambling promotion, no slot machines, no chips, no "play now", no bonus'
 
 const logUpsert = db.prepare(`
   INSERT INTO content_log(date, content_type, platform, status, risk_level, model, generated_json, qa_json, published_url, skipped_reason, error, created_at)
@@ -39,16 +38,33 @@ function alreadyPublished(type: string): boolean {
   return r?.status === 'published'
 }
 
-async function imageBytes(ref: string): Promise<Buffer | null> {
-  try {
-    if (ref.startsWith('http')) {
-      const res = await webFetch(ref, { signal: AbortSignal.timeout(60_000) })
-      return res.ok ? Buffer.from(await res.arrayBuffer()) : null
-    }
-    return Buffer.from(ref, 'base64') // b64_json
-  } catch {
-    return null
+// Build the ranking-card data from the SNAPSHOT (exact figures), with optional
+// title/subtitle from the QA-checked model output. Numbers are never AI-rendered.
+function snapshotCardData(title?: string, subtitle?: string): CardData | null {
+  const snap = latestMarketSnapshot()
+  if (!snap || snap.error) return null
+  const movers = (snap.payload?.topMovers ?? []).slice(0, 6)
+  if (!movers.length) return null
+  const fmtUsd = (n: number) => {
+    const a = Math.abs(n || 0)
+    if (a >= 1e9) return '$' + (n / 1e9).toFixed(2) + 'B'
+    if (a >= 1e6) return '$' + (n / 1e6).toFixed(1) + 'M'
+    if (a >= 1e3) return '$' + (n / 1e3).toFixed(1) + 'K'
+    return '$' + Math.round(n || 0)
   }
+  return {
+    title: title || 'Top Verified Crypto Casino Flows',
+    subtitle: subtitle || `24h on-chain volume · ${snap.snapshot_date}`,
+    rows: movers.map((m: any, i: number) => ({ rank: i + 1, brand: m.label, value: fmtUsd(m.vol24h) })),
+    footer: 'No paid rankings — public, verifiable data',
+    date: snap.snapshot_date,
+  }
+}
+
+// render the current ranking card to PNG (for the gated preview endpoint)
+export async function previewRankingCard(): Promise<Buffer | null> {
+  const d = snapshotCardData()
+  return d ? renderRankingCard(d) : null
 }
 
 // Generate + QA one content item. Publishes when publish=true AND X is configured.
@@ -88,10 +104,10 @@ export async function runContent(contentType: string, publish: boolean): Promise
         url = (await postThread(tweets)).rootUrl
       } else if (contentType === 'top_ranking_image_post') {
         let mediaIds: string[] | undefined
-        const img = await generateImage(`${gen.data.image?.title ?? 'Top verified crypto casino flows'} — ${IMAGE_STYLE}`, '1:1')
-        if (img) {
-          const bytes = await imageBytes(img)
-          if (bytes) mediaIds = [await uploadMedia(bytes)]
+        const cd = snapshotCardData(gen.data.image?.title, gen.data.image?.subtitle)
+        if (cd) {
+          const png = await renderRankingCard(cd) // exact snapshot data, branded
+          if (png) mediaIds = [await uploadMedia(png, 'image/png')]
         }
         url = (await postTweet(String(gen.data.post_text), { mediaIds })).url
       } else {

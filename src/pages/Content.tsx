@@ -78,6 +78,7 @@ function Preview({ res }: { res: ContentPreview }) {
 export default function Content() {
   const [type, setType] = useState<string>('daily_market_thread')
   const [res, setRes] = useState<ContentPreview | null>(null)
+  const [cardUrl, setCardUrl] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const { data: logData } = usePoll(api.contentLog, 20_000)
 
@@ -85,8 +86,16 @@ export default function Content() {
     setType(t)
     setBusy(true)
     setRes(null)
+    setCardUrl(null)
     try {
       setRes(await api.contentPreview(t))
+      if (t === 'top_ranking_image_post') {
+        try {
+          setCardUrl(await api.contentCardImage())
+        } catch {
+          /* card optional */
+        }
+      }
     } catch (e) {
       setRes({ status: 'error', error: String((e as Error).message) })
     } finally {
@@ -117,7 +126,21 @@ export default function Content() {
             {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} Generate preview
           </button>
         </div>
-        {busy ? <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}</div> : res ? <Preview res={res} /> : <p className="text-sm text-white/40">Click a card or “Generate preview” to run Grok + QA on the latest snapshot. It costs OpenRouter tokens and never posts to X.</p>}
+        {busy ? (
+          <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
+        ) : res ? (
+          <div className="space-y-4">
+            <Preview res={res} />
+            {cardUrl && (
+              <div>
+                <div className="mb-1.5 text-[12px] text-white/45">Attached image card (rendered from exact snapshot data):</div>
+                <img src={cardUrl} alt="ranking card" className="w-full max-w-[420px] rounded-xl border border-white/10" />
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-white/40">Click a card or “Generate preview” to run Grok + QA on the latest snapshot. It costs OpenRouter tokens and never posts to X.</p>
+        )}
       </Card>
 
       <Card className="mt-4 p-5">

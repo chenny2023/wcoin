@@ -435,6 +435,11 @@ export const api = {
   // automated X content pipeline — dry-run preview (generate + QA, never posts) + run log
   contentPreview: (type: string) => getJson<ContentPreview>(`/content/preview?type=${encodeURIComponent(type)}`),
   contentLog: () => getJson<{ items: ContentLogRow[] }>('/content/log'),
+  contentCardImage: async (): Promise<string> => {
+    const res = await fetch(`${BASE}/content/card-preview.png`, { headers: authHeaders() })
+    if (!res.ok) throw new Error('card unavailable')
+    return URL.createObjectURL(await res.blob())
+  },
   entitySeries: (id: number, days = 30) =>
     getJson<{ chains: string[]; series: ({ t: number } & Record<string, number>)[] }>(`/entity/${id}/series?days=${days}`),
   entityFlow: (id: number, days = 30) =>

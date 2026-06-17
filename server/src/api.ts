@@ -4,7 +4,7 @@ import { bus, TransferEvent } from './bus.ts'
 import { aggregateEntities, aggregateBrands, maintainedPlayers } from './aggregate.ts'
 import { runDataQualityChecks, lastDataQuality } from './dataquality.ts'
 import { brandHistory } from './brandstore.ts'
-import { previewContent } from './content/pipeline.ts'
+import { previewContent, previewRankingCard } from './content/pipeline.ts'
 import { reserveSeries } from './reservehistory.ts'
 import { twitchEnabled } from './collectors/twitch.ts'
 import { redditEnabled } from './collectors/reddit.ts'
@@ -978,6 +978,13 @@ export async function registerApi(app: FastifyInstance) {
   app.get('/api/content/log', async (req, reply) => {
     if (!userFromRequest(req)) return reply.code(401).send({ error: 'login required' })
     return { items: db.prepare('SELECT date, content_type, status, risk_level, model, published_url, skipped_reason, error, created_at FROM content_log ORDER BY created_at DESC LIMIT 100').all() }
+  })
+  // rendered ranking card PNG (exact snapshot data, branded) — eyeball before publishing
+  app.get('/api/content/card-preview.png', async (req, reply) => {
+    if (!userFromRequest(req)) return reply.code(401).send({ error: 'login required' })
+    const png = await previewRankingCard()
+    if (!png) return reply.code(503).send({ error: 'no snapshot or renderer unavailable' })
+    return reply.header('Content-Type', 'image/png').header('Cache-Control', 'no-store').send(png)
   })
 
   // ── alerts: user-defined rules + fired events ────────────────────────────────

@@ -5,8 +5,9 @@ FROM node:20-bookworm-slim
 WORKDIR /app
 
 # build deps for better-sqlite3's native addon (node-gyp fallback) + curl for litestream
+# + fonts/fontconfig so server-rendered SVG cards (sharp) have real glyphs, not blanks
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends python3 make g++ ca-certificates curl \
+  && apt-get install -y --no-install-recommends python3 make g++ ca-certificates curl fonts-dejavu-core fontconfig \
   && rm -rf /var/lib/apt/lists/*
 
 # litestream — continuous SQLite backup → R2 (no-op unless BACKUP_R2_* env is set)
