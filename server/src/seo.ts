@@ -258,7 +258,13 @@ async function buildViews(): Promise<CasinoView[]> {
 
 const stat = (k: string, vv: string, cls = '') => `<div class="stat"><div class="k">${esc(k)}</div><div class="v ${cls}">${esc(vv)}</div></div>`
 
-function casinoPage(v: CasinoView, slug: string, related: { slug: string; label: string }[], noindex = false): { title: string; description: string; html: string } {
+function casinoPage(
+  v: CasinoView,
+  slug: string,
+  related: { slug: string; label: string }[],
+  noindex = false,
+  xlinks: { compares?: { slug: string; label: string }[]; bestChains?: { slug: string; label: string }[] } = {},
+): { title: string; description: string; html: string } {
   const url = `${SITE}/casino/${slug}`
   const oc = v.onchain
   const r = ratingsOf(v)
@@ -333,6 +339,14 @@ function casinoPage(v: CasinoView, slug: string, related: { slug: string; label:
   const rel = related.length
     ? `<h2>Related operators</h2><div class="chips">${related.map((x) => `<a class="pill" href="/casino/${x.slug}">${esc(x.label)}</a>`).join('')}</div>`
     : ''
+  // internal links to the high-intent comparison + chain-best pages this operator
+  // appears in — deepens the page and strengthens crawl/relevance signals.
+  const compareLinks = xlinks.compares?.length
+    ? `<h2>Compare ${esc(v.name)}</h2><div class="chips">${xlinks.compares.map((c) => `<a class="pill" href="/compare/${c.slug}">${esc(c.label)}</a>`).join('')}</div>`
+    : ''
+  const chainBestLinks = xlinks.bestChains?.length
+    ? `<h2>Ranked among the best on</h2><div class="chips">${xlinks.bestChains.map((c) => `<a class="pill" href="/rankings/best-on-${c.slug}">Best on ${esc(c.label)}</a>`).join('')}</div>`
+    : ''
 
   const conf = dataConfidence(v)
   const confPill = `<span class="pill">data confidence: ${conf}</span>`
@@ -355,7 +369,7 @@ function casinoPage(v: CasinoView, slug: string, related: { slug: string; label:
   const suspectNote = oc?.volumeSuspect
     ? `<p class="prose" style="margin:0 0 4px;padding:9px 13px;background:#ffb02014;border:1px solid #ffb02033;border-radius:10px;font-size:13px;color:#e8c98a">⚠ Volume note: ${esc(v.name)}'s observed on-chain volume is anomalously concentrated (very high value per counterparty), a pattern consistent with wash trading or internal transfers rather than real player activity. We exclude it from volume rankings; read the volume figure with caution.</p>`
     : ''
-  const body = `${limitedNote}${suspectNote}${sub}${trustLine}${stats}${chainTable}${ratingsTable}${refTable}${website}${rel}${cta}`
+  const body = `${limitedNote}${suspectNote}${sub}${trustLine}${stats}${chainTable}${ratingsTable}${refTable}${website}${rel}${compareLinks}${chainBestLinks}${cta}`
 
   const jsonLd = oc
     ? [
@@ -387,6 +401,121 @@ function casinoPage(v: CasinoView, slug: string, related: { slug: string; label:
       updated: Date.now(),
       body,
       noindex,
+    }),
+  }
+}
+
+// ── head-to-head comparison ("X vs Y") — high search-intent, data-led ─────────
+// Only generated for pairs where BOTH operators have ≥medium-confidence data, so a
+// comparison is never thin. Neutral framing: facts side by side; only the blended
+// trust (our recommended metric) is marked, never volume (wash-tradeable).
+function comparePage(a: CasinoView, b: CasinoView, slugA: string, slugB: string): { title: string; description: string; html: string } {
+  const path = `/compare/${slugA}-vs-${slugB}`
+  const url = SITE + path
+  const oa = a.onchain
+  const ob = b.onchain
+  const bta = blendedTrust(a)
+  const btb = blendedTrust(b)
+  const ra = ratingsOf(a)
+  const rb = ratingsOf(b)
+  const tpA = (ra.tpN ?? 0) >= MIN_TP_REVIEWS ? ra.tp : null
+  const tpB = (rb.tpN ?? 0) >= MIN_TP_REVIEWS ? rb.tp : null
+
+  const title = `${a.name} vs ${b.name} — Crypto Casino Comparison | WCOIN.CASINO`
+  const description = `${a.name} vs ${b.name}: a side-by-side, data-led comparison of independent trust ratings, on-chain volume and mapped reserves. Neutral and updated continuously.`
+
+  // a comparison row; `mark` highlights the stronger side ONLY when explicitly asked
+  // (we mark blended trust, never volume — volume is easily inflated by wash trading).
+  const row = (label: string, av: number | null, bv: number | null, fmt: (n: number) => string, mark = false) => {
+    const aS = av == null ? '—' : fmt(av)
+    const bS = bv == null ? '—' : fmt(bv)
+    let aCls = ''
+    let bCls = ''
+    if (mark && av != null && bv != null && av !== bv) (av > bv ? (aCls = 'mint') : (bCls = 'mint'))
+    return `<tr><td>${esc(label)}</td><td class="n ${aCls}">${aS}</td><td class="n ${bCls}">${bS}</td></tr>`
+  }
+  const rows =
+    row('Blended trust (0–100)', bta?.score ?? null, btb?.score ?? null, (n) => `${n}`, true) +
+    row('casino.guru Safety (/10)', ra.safety, rb.safety, (n) => n.toFixed(1)) +
+    row('AskGamblers expert (/10)', ra.ag, rb.ag, (n) => n.toFixed(1)) +
+    row('Trustpilot (/5)', tpA, tpB, (n) => n.toFixed(1)) +
+    row('7d on-chain volume', oa?.volume7d ?? null, ob?.volume7d ?? null, fmtUsd) +
+    row('Mapped reserves', oa?.reserves ?? null, ob?.reserves ?? null, fmtUsd) +
+    row('Active counterparties (7d)', oa?.players ?? null, ob?.players ?? null, fmtNum) +
+    row('Chains tracked', oa?.byChain?.length ?? null, ob?.byChain?.length ?? null, (n) => `${n}`)
+
+  const verdict =
+    bta && btb && bta.score !== btb.score
+      ? `On our recommended metric — a blend of independent third-party trust ratings — <strong>${esc(bta.score > btb.score ? a.name : b.name)}</strong> currently scores higher (${Math.max(bta.score, btb.score)} vs ${Math.min(bta.score, btb.score)} / 100). On-chain volume differences are shown for context only and are <em>not</em> a quality signal — volume is easily inflated by wash trading.`
+      : `Both operators are compared on independent third-party trust ratings (our recommended metric) and observed on-chain activity. On-chain volume is shown for context only — it is easily inflated and is not a quality signal.`
+
+  const body =
+    `<p class="sub">A neutral, data-led comparison of <strong>${esc(a.name)}</strong> and <strong>${esc(b.name)}</strong> — independent trust ratings, observed on-chain volume and mapped reserves, side by side.</p>` +
+    `<p class="upd">Updated continuously from indexed on-chain data and third-party ratings.</p>` +
+    `<table><thead><tr><th>Metric</th><th style="text-align:right">${esc(a.name)}</th><th style="text-align:right">${esc(b.name)}</th></tr></thead><tbody>${rows}</tbody></table>` +
+    `<p class="prose" style="margin-top:14px">${verdict}</p>` +
+    `<h2>Full profiles</h2><div class="chips"><a class="pill" href="/casino/${slugA}">${esc(a.name)} data →</a><a class="pill" href="/casino/${slugB}">${esc(b.name)} data →</a></div>` +
+    `<p class="prose" style="margin-top:18px">See the full <a href="/rankings/trust">trust ranking</a> (our recommended ordering — not volume), or how the blended score is built in <a href="/methodology/trust">the methodology</a>.</p>`
+
+  return {
+    title,
+    description,
+    html: layout({
+      title,
+      description,
+      canonical: url,
+      jsonLd: [],
+      breadcrumb: [
+        { name: 'Home', url: SITE + '/' },
+        { name: 'Rankings', url: SITE + '/rankings' },
+        { name: `${a.name} vs ${b.name}`, url },
+      ],
+      h1: `${a.name} vs ${b.name}`,
+      updated: Date.now(),
+      body,
+    }),
+  }
+}
+
+// ── "best crypto casinos on {chain}" — trust-ranked, per network ───────────────
+// Distinct from /chains/{chain} (which is volume-by-network): this is an editorial,
+// TRUST-ranked shortlist of the operators actually settling on that chain.
+function bestOnChainPage(chain: string, entries: { v: CasinoView; slug: string }[]): { title: string; description: string; html: string } {
+  const cn = chainName(chain)
+  const cslug = slugify(chain)
+  const path = `/rankings/best-on-${cslug}`
+  const url = SITE + path
+  const title = `Best Crypto Casinos on ${cn} — Ranked by Independent Trust | WCOIN.CASINO`
+  const description = `The most independently-trusted crypto casinos settling on ${cn}, ranked by a blend of third-party trust ratings (not volume). On-chain volume and reserves shown for context. Updated continuously.`
+  const rows = entries
+    .map((x, i) => {
+      const bt = blendedTrust(x.v)
+      const oc = x.v.onchain
+      const onVol = oc?.byChain?.find((c) => slugify(c.chain) === cslug)?.value ?? 0
+      return `<tr><td class="n">${i + 1}</td><td><a href="/casino/${x.slug}">${esc(x.v.name)}</a></td><td class="n gold">${bt ? `${bt.score} / 100` : '—'}</td><td class="n">${fmtUsd(onVol)}</td><td class="n">${oc ? fmtUsd(oc.reserves) : '—'}</td></tr>`
+    })
+    .join('')
+  const body =
+    `<p class="sub">Crypto casinos with tracked settlement on <strong>${esc(cn)}</strong>, ranked by our blended independent-trust score — <em>not</em> by volume, which is easily inflated.</p>` +
+    `<p class="upd">${entries.length} operators with ≥medium-confidence data · updated continuously.</p>` +
+    `<table><thead><tr><th>#</th><th>Operator</th><th style="text-align:right">Blended trust</th><th style="text-align:right">7d vol · ${esc(cn)}</th><th style="text-align:right">Reserves</th></tr></thead><tbody>${rows}</tbody></table>` +
+    `<p class="prose" style="margin-top:16px">See total volume settled on this network in <a href="/chains/${cslug}">the ${esc(cn)} activity page</a>, the overall <a href="/rankings/trust">trust ranking</a>, or <a href="/methodology/trust">how trust is scored</a>.</p>`
+  return {
+    title,
+    description,
+    html: layout({
+      title,
+      description,
+      canonical: url,
+      jsonLd: [],
+      breadcrumb: [
+        { name: 'Home', url: SITE + '/' },
+        { name: 'Rankings', url: SITE + '/rankings' },
+        { name: `Best on ${cn}`, url },
+      ],
+      h1: `Best crypto casinos on ${cn}`,
+      updated: Date.now(),
+      body,
     }),
   }
 }
@@ -894,16 +1023,55 @@ export async function generateSeoPages(): Promise<void> {
     written.add(path)
   }
 
+  // ── high-intent expansion: comparison ("X vs Y") + best-on-chain pages ───────
+  // Quality-gated: built only from operators with ≥medium-confidence data, so a new
+  // page is never thin. Comparison = every pair among the top-K strongest operators;
+  // best-on-chain = a trust-ranked shortlist per network that has ≥3 such operators.
+  const cap = ranked.slice(0, MAX_CASINOS)
+  const pushMap = (m: Map<string, { slug: string; label: string }[]>, k: string, val: { slug: string; label: string }) => {
+    const a = m.get(k)
+    if (a) a.push(val)
+    else m.set(k, [val])
+  }
+  const COMPARE_TOP_K = Number(process.env.SEO_COMPARE_TOP_K ?? 9)
+  const strong = cap.filter((v) => dataConfidence(v) !== 'low')
+  const qScore = (v: CasinoView) => (blendedTrust(v)?.score ?? 0) * 1e12 + (v.onchain?.volume7d ?? 0)
+  const topK = strong.slice().sort((a, b) => qScore(b) - qScore(a)).slice(0, COMPARE_TOP_K)
+  const comparePairs: { a: CasinoView; b: CasinoView; slugA: string; slugB: string }[] = []
+  const comparesByKey = new Map<string, { slug: string; label: string }[]>()
+  for (let i = 0; i < topK.length; i++)
+    for (let j = i + 1; j < topK.length; j++) {
+      const x = topK[i]
+      const y = topK[j]
+      const [slugA, slugB] = [slugOfView(x), slugOfView(y)].sort() // canonical: one page per pair
+      const a = slugOfView(x) === slugA ? x : y
+      const b = a === x ? y : x
+      comparePairs.push({ a, b, slugA, slugB })
+      pushMap(comparesByKey, x.key, { slug: `${slugA}-vs-${slugB}`, label: `vs ${y.name}` })
+      pushMap(comparesByKey, y.key, { slug: `${slugA}-vs-${slugB}`, label: `vs ${x.name}` })
+    }
+  const chainBestGroups: { chain: string; entries: { v: CasinoView; slug: string }[] }[] = []
+  const bestChainsByKey = new Map<string, { slug: string; label: string }[]>()
+  for (const cs of chainSet) {
+    const entries = strong
+      .filter((v) => (v.onchain?.byChain ?? []).some((c) => slugify(c.chain) === cs && c.value > 0))
+      .sort((a, b) => (blendedTrust(b)?.score ?? 0) - (blendedTrust(a)?.score ?? 0) || (b.onchain?.volume7d ?? 0) - (a.onchain?.volume7d ?? 0))
+      .map((v) => ({ v, slug: slugOfView(v) }))
+    if (entries.length >= 3) {
+      chainBestGroups.push({ chain: cs, entries })
+      for (const e of entries) pushMap(bestChainsByKey, e.v.key, { slug: cs, label: chainName(cs) })
+    }
+  }
+
   // ALL verified brands get a profile (10-year build: noindex thin ones, never
   // delete). Low-confidence pages are limited_public_noindex + queued to enrich.
-  const cap = ranked.slice(0, MAX_CASINOS)
   for (let idx = 0; idx < cap.length; idx++) {
     const v = cap[idx]
     const peers = [cap[idx - 2], cap[idx - 1], cap[idx + 1], cap[idx + 2]].filter(Boolean).map((x) => ({ slug: slugOfView(x), label: x.name }))
     const fallback = cap.filter((x) => x.key !== v.key).slice(0, 4).map((x) => ({ slug: slugOfView(x), label: x.name }))
     const lc = lifecycleOf(v)
     const noindex = lc === 'limited_public_noindex'
-    add(`/casino/${slugOfView(v)}`, 'casino', casinoPage(v, slugOfView(v), peers.length ? peers : fallback, noindex), lc)
+    add(`/casino/${slugOfView(v)}`, 'casino', casinoPage(v, slugOfView(v), peers.length ? peers : fallback, noindex, { compares: comparesByKey.get(v.key), bestChains: bestChainsByKey.get(v.key) }), lc)
     if (noindex) {
       const missing = [!v.onchain && 'onchain', !(v.onchain && v.onchain.reserves > 0) && 'reserves', trustSources(v).length < 2 && 'trust-sources']
         .filter(Boolean)
@@ -923,6 +1091,15 @@ export async function generateSeoPages(): Promise<void> {
   await yieldLoop()
   // chains
   for (const cs of chainSet) if (cs) add(`/chains/${cs}`, 'chains', chainPage(cs, onchainBrands, slugOfBrand))
+  await yieldLoop()
+  // high-intent comparison pages ("X vs Y") — top-K strongest operators, all pairs
+  for (let i = 0; i < comparePairs.length; i++) {
+    const p = comparePairs[i]
+    add(`/compare/${p.slugA}-vs-${p.slugB}`, 'compare', comparePage(p.a, p.b, p.slugA, p.slugB))
+    if (i % 25 === 24) await yieldLoop()
+  }
+  // best-on-chain shortlists (trust-ranked) — featured_core (high-value evergreen)
+  for (const g of chainBestGroups) add(`/rankings/best-on-${g.chain}`, 'rankings', bestOnChainPage(g.chain, g.entries), 'featured_core')
   await yieldLoop()
   // daily report archive (prev = older, next = newer)
   snaps.forEach((s, i) => {
@@ -1021,6 +1198,7 @@ export function registerSeo(app: FastifyInstance) {
       .send(`<!doctype html><meta charset="utf-8"><meta name="robots" content="noindex"><title>Not found — WCOIN.CASINO</title><body style="background:#0a0a0f;color:#e8e8ee;font:16px/1.6 system-ui;text-align:center;padding:80px"><h1 style="color:#f5b100">404</h1><p>This ${esc(kind)} page isn't available.</p><p><a style="color:#f5b100" href="/">← WCOIN.CASINO home</a></p></body>`)
   }
   app.get('/casino/:slug', serve('casino'))
+  app.get('/compare/:slug', serve('compare'))
   app.get('/rankings', serve('rankings'))
   app.get('/rankings/:slug', serve('rankings'))
   app.get('/chains/:slug', serve('chains'))
