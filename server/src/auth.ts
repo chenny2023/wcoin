@@ -50,20 +50,59 @@ function issueSession(userId: number): string {
   return token
 }
 
-// Find an existing account by email or create one (passwordless — no hash).
-// The first account ever created becomes the admin. The count-then-insert runs
-// inside a transaction so the "first user → admin" decision is atomic.
+// Admin is PINNED to a specific email allowlist — NOT "the first account created"
+// (which is fragile: a DB reset or someone signing up first would hand admin to the
+// wrong person). Override with ADMIN_EMAILS (comma-separated); defaults to the owner.
+const ADMIN_EMAILS = new Set(
+  (process.env.ADMIN_EMAILS ?? 'chennywang@live.com')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
+)
+export function isAdminEmail(email: string | null | undefined): boolean {
+  return !!email && ADMIN_EMAILS.has(email.toLowerCase())
+}
+
+// One-time reconciliation at boot: make the allowlisted owner(s) admin and demote
+// any account that is 'admin' but isn't allowlisted (e.g. a legacy first-account
+// admin). Keeps the DB in sync with the email allowlist as the single source of truth.
+export function reconcileAdmins(): void {
+  let promoted = 0
+  let demoted = 0
+  for (const email of ADMIN_EMAILS) {
+    const r = db.prepare("UPDATE users SET role='admin' WHERE lower(email)=? AND role!='admin'").run(email)
+    promoted += r.changes
+  }
+  const admins = db.prepare("SELECT id, email FROM users WHERE role='admin'").all() as { id: number; email: string }[]
+  for (const a of admins)
+    if (!isAdminEmail(a.email)) {
+      db.prepare("UPDATE users SET role='casino' WHERE id=?").run(a.id)
+      demoted++
+    }
+  if (promoted || demoted) console.log(`[auth] admin reconciled — promoted ${promoted}, demoted ${demoted} (allowlist: ${[...ADMIN_EMAILS].join(', ')})`)
+}
+
+// Find an existing account by email or create one (passwordless — no hash). The
+// correct role (admin iff allowlisted) is RE-ASSERTED on every login, so the owner
+// is promoted and any stray admin is demoted automatically. Runs in a transaction.
 const findOrCreateTx = db.transaction((email: string): AuthUser => {
+  const want = isAdminEmail(email) ? 'admin' : 'casino'
   const existing = db.prepare('SELECT id, email, role FROM users WHERE email = ?').get(email) as
     | AuthUser
     | undefined
-  if (existing) return existing
-  const isFirst = (db.prepare('SELECT COUNT(*) n FROM users').get() as any).n === 0
-  const role = isFirst ? 'admin' : 'casino'
+  if (existing) {
+    // only touch the role for admin-related changes — never clobber a non-admin
+    // role like 'streamer' just because the default is 'casino'.
+    if (existing.role !== want && (want === 'admin' || existing.role === 'admin')) {
+      db.prepare('UPDATE users SET role = ? WHERE id = ?').run(want, existing.id)
+      return { ...existing, role: want }
+    }
+    return existing
+  }
   const info = db
     .prepare('INSERT INTO users(email, pass_hash, salt, role, created_at) VALUES(?, ?, ?, ?, ?)')
-    .run(email, '', '', role, Date.now())
-  return { id: Number(info.lastInsertRowid), email, role }
+    .run(email, '', '', want, Date.now())
+  return { id: Number(info.lastInsertRowid), email, role: want }
 })
 
 function findOrCreateUser(email: string): AuthUser {

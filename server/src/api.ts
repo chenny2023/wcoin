@@ -15,7 +15,7 @@ import { getProfile } from './streamerprofiles.ts'
 import { newsEnabled } from './collectors/news.ts'
 import { telegramSubs } from './collectors/telegram.ts'
 import { brandKey } from './casinometa.ts'
-import { userFromRequest } from './auth.ts'
+import { userFromRequest, isAdminEmail } from './auth.ts'
 import { readWorkerEnabled, workerGet, workerAll } from './readpool.ts'
 import { latestMarketSnapshot } from './snapshot.ts'
 import { config } from './config.ts'
@@ -962,7 +962,9 @@ export async function registerApi(app: FastifyInstance) {
       reply.code(401).send({ error: 'login required' })
       return null
     }
-    if (u.role !== 'admin') {
+    // belt-and-suspenders: require BOTH the admin role AND an allowlisted email, so a
+    // stray DB role can never grant admin to a non-owner account.
+    if (u.role !== 'admin' || !isAdminEmail(u.email)) {
       reply.code(403).send({ error: 'admin only' })
       return null
     }

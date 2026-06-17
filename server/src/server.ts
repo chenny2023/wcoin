@@ -11,7 +11,7 @@ import { registerRateLimit } from './ratelimit.ts'
 import { startReadWorker } from './readpool.ts'
 import { seedWatchlist } from './watchlist.ts'
 import { registerApi } from './api.ts'
-import { registerAuth } from './auth.ts'
+import { registerAuth, reconcileAdmins } from './auth.ts'
 import { registerSubscribe } from './subscribe.ts'
 import { startDigest, registerDigest } from './digest.ts'
 import { startEvm } from './collectors/evm.ts'
@@ -78,6 +78,7 @@ async function main() {
   })
   registerRateLimit(app) // per-IP API rate limiting (defense-in-depth behind CF)
   await registerAuth(app)
+  reconcileAdmins() // pin admin to the email allowlist (promote owner, demote strays)
   await registerApi(app)
   registerSubscribe(app) // email digest subscription (double opt-in)
   registerDigest(app) // admin digest preview + test send
