@@ -84,8 +84,36 @@
         ]
       }
     </script>
+
+    <!-- Brand boot loader: a flipping WCOIN gold coin (coin + casino = WCOIN) over the
+         brand glow. Paints instantly from inline CSS, before the JS bundle loads;
+         main.tsx fades + removes it on mount. CSS failsafe hides it after 8s if JS stalls. -->
+    <style id="wc-loader-style">
+      #wc-loader{position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:#06060b;background-image:radial-gradient(820px 560px at 50% 32%,rgba(245,177,0,.12),transparent 60%),radial-gradient(700px 520px at 50% 122%,rgba(139,61,240,.12),transparent 60%);font-family:'Space Grotesk',ui-sans-serif,system-ui,sans-serif;transition:opacity .55s ease,visibility .55s ease;animation:wc-failsafe 0s linear 8s forwards}
+      #wc-loader.wc-done{opacity:0;visibility:hidden;pointer-events:none}
+      @keyframes wc-failsafe{to{opacity:0;visibility:hidden;pointer-events:none}}
+      #wc-loader .wc-coin{width:92px;height:92px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 33% 27%,#ffe98f,#f5b100 52%,#9c6b00);box-shadow:0 0 0 2px rgba(245,177,0,.55),0 0 44px rgba(245,177,0,.42),inset 0 4px 12px rgba(255,255,255,.45),inset 0 -7px 15px rgba(0,0,0,.35);animation:wc-flip 1.6s cubic-bezier(.55,.08,.3,1) infinite}
+      #wc-loader .wc-coin b{font-weight:800;font-size:42px;color:#3a2700;line-height:1;text-shadow:0 1px 0 rgba(255,255,255,.4)}
+      @keyframes wc-flip{0%{transform:perspective(440px) rotateY(0)}100%{transform:perspective(440px) rotateY(1080deg)}}
+      #wc-loader .wc-word{font-weight:700;font-size:23px;letter-spacing:.07em;color:#fff}
+      #wc-loader .wc-word i{font-style:normal;background:linear-gradient(95deg,#ffe27a,#f5b100 55%,#d99400);-webkit-background-clip:text;background-clip:text;color:transparent}
+      #wc-loader .wc-tag{font-family:Inter,ui-sans-serif,system-ui;font-size:12.5px;letter-spacing:.02em;color:#8b90a4}
+      #wc-loader .wc-bar{width:190px;height:4px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden;position:relative}
+      #wc-loader .wc-bar::before{content:'';position:absolute;top:0;left:0;height:100%;width:42%;border-radius:99px;background:linear-gradient(90deg,transparent,#f5b100,#ffe27a,#f5b100,transparent);animation:wc-sweep 1.15s ease-in-out infinite}
+      @keyframes wc-sweep{0%{transform:translateX(-130%)}100%{transform:translateX(360%)}}
+      @keyframes wc-pulse{50%{opacity:.5}}
+      @media (prefers-reduced-motion:reduce){#wc-loader .wc-coin{animation:wc-pulse 1.5s ease-in-out infinite}#wc-loader .wc-bar::before{animation:none;width:100%}}
+    </style>
   </head>
   <body>
+    <!-- Brand boot loader (removed by main.tsx once the app mounts) -->
+    <div id="wc-loader" aria-hidden="true">
+      <div class="wc-coin"><b>W</b></div>
+      <div class="wc-word">WCOIN<i>.CASINO</i></div>
+      <div class="wc-tag">Loading on-chain intelligence…</div>
+      <div class="wc-bar"></div>
+    </div>
+
     <!-- Crawler / no-JS fallback: replaced by the app on mount. Gives search
          engines and AI answer engines real, indexable content + internal links. -->
     <div id="root">
