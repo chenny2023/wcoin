@@ -951,9 +951,27 @@ export async function registerApi(app: FastifyInstance) {
     return { ok: true }
   })
 
-  // data-quality report (gated) — last run from the SEO regen cycle, or run on demand
+  // ADMIN-ONLY gate. These endpoints expose internal ops (data-quality, enrichment)
+  // and the X content pipeline — including publishing to the brand's own X account
+  // and spending OpenRouter credits. The site has free passwordless signup, so plain
+  // login is NOT enough: only the admin (the first account ever created) may touch
+  // these. Returns the user on success, or sends 401/403 and returns null.
+  const requireAdmin = (req: any, reply: any) => {
+    const u = userFromRequest(req)
+    if (!u) {
+      reply.code(401).send({ error: 'login required' })
+      return null
+    }
+    if (u.role !== 'admin') {
+      reply.code(403).send({ error: 'admin only' })
+      return null
+    }
+    return u
+  }
+
+  // data-quality report (admin) — last run from the SEO regen cycle, or run on demand
   app.get('/api/diag/dataquality', async (req, reply) => {
-    if (!userFromRequest(req)) return reply.code(401).send({ error: 'login required' })
+    if (!requireAdmin(req, reply)) return
     const run = (req.query as { run?: string })?.run === '1'
     const data = run ? { at: Date.now(), results: await runDataQualityChecks() } : lastDataQuality()
     if (!data) return { at: 0, results: [], note: 'no run yet — append ?run=1 to force' }
@@ -964,7 +982,7 @@ export async function registerApi(app: FastifyInstance) {
   // enrichment queue (gated) — low-confidence brands kept as noindex pages, awaiting
   // on-chain/reserve/trust enrichment before promotion to indexable.
   app.get('/api/diag/enrichment', async (req, reply) => {
-    if (!userFromRequest(req)) return reply.code(401).send({ error: 'login required' })
+    if (!requireAdmin(req, reply)) return
     const rows = db.prepare("SELECT brand_key, label, slug, confidence, missing, status, updated_at FROM enrichment_queue WHERE status!='promoted' ORDER BY updated_at DESC LIMIT 500").all()
     return { count: rows.length, items: rows }
   })
@@ -972,17 +990,17 @@ export async function registerApi(app: FastifyInstance) {
   // automated content pipeline (gated): dry-run preview (generate + QA, never posts)
   // + recent run log. Lets you verify Grok output + QA before enabling auto-publish.
   app.get('/api/content/preview', async (req, reply) => {
-    if (!userFromRequest(req)) return reply.code(401).send({ error: 'login required' })
+    if (!requireAdmin(req, reply)) return
     const type = (req.query as { type?: string })?.type ?? 'daily_market_thread'
     return previewContent(type)
   })
   app.get('/api/content/log', async (req, reply) => {
-    if (!userFromRequest(req)) return reply.code(401).send({ error: 'login required' })
+    if (!requireAdmin(req, reply)) return
     return { items: db.prepare('SELECT date, content_type, status, risk_level, model, published_url, skipped_reason, error, created_at FROM content_log ORDER BY created_at DESC LIMIT 100').all() }
   })
   // rendered ranking card PNG (exact snapshot data, branded) — eyeball before publishing
   app.get('/api/content/card-preview.png', async (req, reply) => {
-    if (!userFromRequest(req)) return reply.code(401).send({ error: 'login required' })
+    if (!requireAdmin(req, reply)) return
     const png = await previewRankingCard()
     if (!png) return reply.code(503).send({ error: 'no snapshot or renderer unavailable' })
     return reply.header('Content-Type', 'image/png').header('Cache-Control', 'no-store').send(png)
@@ -993,7 +1011,7 @@ export async function registerApi(app: FastifyInstance) {
   // we never hang the request. Poll /api/content/log for the result + published_url.
   const PUBLISHABLE = new Set(['top_ranking_image_post', 'daily_market_thread', 'rotating_signal_post'])
   app.post('/api/content/publish', async (req, reply) => {
-    if (!userFromRequest(req)) return reply.code(401).send({ error: 'login required' })
+    if (!requireAdmin(req, reply)) return
     const type = (req.body as { type?: string })?.type ?? 'top_ranking_image_post'
     if (!PUBLISHABLE.has(type)) return reply.code(400).send({ error: 'invalid content type' })
     if (!xEnabled()) return reply.code(503).send({ error: 'X keys not configured — cannot publish' })

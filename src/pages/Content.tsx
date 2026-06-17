@@ -82,6 +82,7 @@ export default function Content() {
   const [busy, setBusy] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [publishNote, setPublishNote] = useState<string | null>(null)
+  const { data: me } = usePoll(api.me, 120_000)
   const { data: logData } = usePoll(api.contentLog, 20_000)
 
   async function publish() {
@@ -118,6 +119,17 @@ export default function Content() {
       setBusy(false)
     }
   }
+
+  // Admin-only surface: it can publish to the brand's X account and spend OpenRouter
+  // credits. The server enforces this (403); this guard just keeps the UI clean for a
+  // non-admin who reaches the route directly. (Render the page while role is unknown.)
+  if (me && me.user.role !== 'admin')
+    return (
+      <div className="fade-up">
+        <PageHead title="Social Content" subtitle="Restricted area" right={<Sparkles size={18} className="text-gold-400" />} />
+        <Card className="p-6 text-sm text-white/60">This area is restricted to the site admin.</Card>
+      </div>
+    )
 
   return (
     <div className="fade-up">

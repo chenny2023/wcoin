@@ -188,7 +188,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         </div>
 
         <nav className="px-3 py-2">
-          {NAV.map((item) => (
+          {NAV.filter((item) => item.to !== '/app/content' || user?.role === 'admin').map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
