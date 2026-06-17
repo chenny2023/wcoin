@@ -1,5 +1,6 @@
 import { TrendingUp, Boxes, ExternalLink, Layers } from 'lucide-react'
 import { Card, PageHead, Skeleton } from '../components/ui'
+import { Reveal, CountUp, LiveValue } from '../components/motion'
 import { api, usePoll } from '../data/api'
 import { fmtUsd, fmtNum } from '../data/format'
 
@@ -20,34 +21,34 @@ export default function Markets() {
         subtitle="The transparent side of iGaming — prediction markets and on-chain betting protocols, live from the chain"
       />
 
-      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Card className="p-5">
+      <Reveal as="div" className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Card spotlight className="p-5">
           <div className="text-[12px] uppercase tracking-wider text-white/45">Prediction Mkt TVL</div>
           <div className="mt-1 flex items-center gap-2 font-display text-2xl font-bold">
             <Boxes size={18} className="text-mint-400" />
-            {proto ? fmtUsd(proto.totalTvl) : '—'}
+            {proto ? <LiveValue value={proto.totalTvl} format={fmtUsd} /> : '—'}
           </div>
         </Card>
-        <Card className="p-5">
+        <Card spotlight className="p-5">
           <div className="text-[12px] uppercase tracking-wider text-white/45">On-chain Protocols</div>
-          <div className="mt-1 font-display text-2xl font-bold tabular-nums">{proto?.count ?? '—'}</div>
+          <div className="mt-1 font-display text-2xl font-bold tabular-nums">{proto ? <CountUp value={proto.count} /> : '—'}</div>
         </Card>
-        <Card className="p-5">
+        <Card spotlight className="p-5">
           <div className="text-[12px] uppercase tracking-wider text-white/45">Polymarket · top vol</div>
           <div className="mt-1 flex items-center gap-2 font-display text-2xl font-bold">
             <TrendingUp size={18} className="text-violet-400" />
-            {pm ? fmtUsd(pm.totalVolume) : '—'}
+            {pm ? <LiveValue value={pm.totalVolume} format={fmtUsd} /> : '—'}
           </div>
         </Card>
-        <Card className="p-5">
+        <Card spotlight className="p-5">
           <div className="text-[12px] uppercase tracking-wider text-white/45">Live markets</div>
-          <div className="mt-1 font-display text-2xl font-bold tabular-nums">{pm?.count ?? '—'}</div>
+          <div className="mt-1 font-display text-2xl font-bold tabular-nums">{pm ? <CountUp value={pm.count} /> : '—'}</div>
         </Card>
-      </div>
+      </Reveal>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <Reveal as="div" delay={80} className="grid gap-4 lg:grid-cols-2">
         {/* Top prediction markets */}
-        <Card className="overflow-hidden">
+        <Card spotlight className="overflow-hidden">
           <div className="flex items-center gap-2 border-b border-white/8 px-4 py-3">
             <TrendingUp size={16} className="text-violet-400" />
             <h3 className="font-display text-base font-bold">Top Prediction Markets</h3>
@@ -85,7 +86,7 @@ export default function Markets() {
         </Card>
 
         {/* On-chain protocols by TVL */}
-        <Card className="overflow-hidden">
+        <Card spotlight className="overflow-hidden">
           <div className="flex items-center gap-2 border-b border-white/8 px-4 py-3">
             <Layers size={16} className="text-mint-400" />
             <h3 className="font-display text-base font-bold">On-Chain Protocols</h3>
@@ -130,7 +131,7 @@ export default function Markets() {
             </div>
           )}
         </Card>
-      </div>
+      </Reveal>
 
       <p className="mt-3 text-[12px] text-white/35">
         Prediction-market odds & volume from Polymarket; on-chain protocol TVL from DefiLlama. Everything here is fully

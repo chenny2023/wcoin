@@ -9,6 +9,7 @@ import {
   YAxis,
 } from 'recharts'
 import { Card, PageHead, StatCard, Bubble, Skeleton } from '../components/ui'
+import { Reveal } from '../components/motion'
 import { api, usePoll } from '../data/api'
 import { fmtUsd, fmtNum } from '../data/format'
 import { Users, Layers, Crown, Activity } from 'lucide-react'
@@ -49,15 +50,15 @@ export default function Players() {
         subtitle="Counterparty segmentation & transaction-size distribution from real on-chain flow"
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Casino Counterparties" value={fmtNum(stats?.casino?.uniquePlayers ?? stats?.uniquePlayers ?? 0)} icon={<Users size={18} />} accent="violet" />
-        <StatCard label="Casino Transfers" value={fmtNum(stats?.casino?.totalTransfers ?? stats?.totalTransfers ?? 0)} icon={<Activity size={18} />} accent="mint" />
-        <StatCard label="Whale Share of Volume" value={`${whaleShare.toFixed(0)}%`} icon={<Crown size={18} />} accent="gold" />
-        <StatCard label="Avg Transfer Size" value={fmtUsd(avgTx)} icon={<Layers size={18} />} accent="gold" />
-      </div>
+      <Reveal as="div" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard label="Casino Counterparties" value={fmtNum(stats?.casino?.uniquePlayers ?? stats?.uniquePlayers ?? 0)} raw={stats?.casino?.uniquePlayers ?? stats?.uniquePlayers ?? 0} format={fmtNum} icon={<Users size={18} />} accent="violet" />
+        <StatCard label="Casino Transfers" value={fmtNum(stats?.casino?.totalTransfers ?? stats?.totalTransfers ?? 0)} raw={stats?.casino?.totalTransfers ?? stats?.totalTransfers ?? 0} format={fmtNum} icon={<Activity size={18} />} accent="mint" />
+        <StatCard label="Whale Share of Volume" value={`${whaleShare.toFixed(0)}%`} raw={whaleShare} format={(n) => `${n.toFixed(0)}%`} icon={<Crown size={18} />} accent="gold" />
+        <StatCard label="Avg Transfer Size" value={fmtUsd(avgTx)} raw={avgTx} format={fmtUsd} icon={<Layers size={18} />} accent="gold" />
+      </Reveal>
 
-      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <Card className="p-5 xl:col-span-1">
+      <Reveal as="div" className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Card spotlight className="p-5 xl:col-span-1">
           <h3 className="font-display text-lg font-semibold">Segments by Transfer Size</h3>
           <p className="mb-4 text-sm text-white/45">Real counterparties bucketed by USD value</p>
           <div className="space-y-3">
@@ -83,7 +84,7 @@ export default function Players() {
           </div>
         </Card>
 
-        <Card className="p-5 xl:col-span-2">
+        <Card spotlight className="p-5 xl:col-span-2">
           <h3 className="font-display text-lg font-semibold">Volume by Segment</h3>
           <p className="mb-3 text-sm text-white/45">Where settlement value concentrates</p>
           <div className="h-72">
@@ -106,9 +107,10 @@ export default function Players() {
             )}
           </div>
         </Card>
-      </div>
+      </Reveal>
 
-      <Card className="mt-4 p-5">
+      <Reveal as="div" className="mt-4">
+      <Card spotlight className="p-5">
         <h3 className="font-display text-lg font-semibold">Entities by Distinct Counterparties</h3>
         <p className="mb-4 text-sm text-white/45">A real on-chain proxy for active depositor reach</p>
         <div className="space-y-2.5">
@@ -128,6 +130,7 @@ export default function Players() {
           })}
         </div>
       </Card>
+      </Reveal>
     </div>
   )
 }

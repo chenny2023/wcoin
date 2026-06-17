@@ -13,7 +13,8 @@ import {
 } from 'recharts'
 import { Activity, Building2, Wallet, Users, ArrowDownRight, ArrowUpRight, Radio } from 'lucide-react'
 import { Card, PageHead, StatCard, Bubble, ChainPill, Delta, CategoryBadge, EmptyState, Skeleton } from '../components/ui'
-import { api, usePoll, useLiveFeed, useCountUp } from '../data/api'
+import { Reveal, LiveValue } from '../components/motion'
+import { api, usePoll, useLiveFeed } from '../data/api'
 import { fmtUsd, fmtNum, timeAgo, CHAIN_COLOR } from '../data/format'
 
 function ChartTip({ active, payload, label }: any) {
@@ -43,7 +44,7 @@ export default function Overview() {
   // iGaming-only headline figures (exchanges/whales excluded); fall back to the
   // whole-market totals if an older server hasn't sent the casino breakdown yet
   const cs = stats?.casino
-  const animTotal = useCountUp(cs?.totalVolume ?? stats?.totalVolume ?? 0)
+  const intStr = (n: number) => String(Math.round(n))
   const chainSplit = ((cs?.chainSplit ?? stats?.chainSplit) ?? []).map((c) => ({ ...c, color: CHAIN_COLOR[c.chain] ?? '#888' }))
   const totalChain = chainSplit.reduce((s, c) => s + c.value, 0) || 1
   // verified, brand-merged casinos only — exclude unattributed + anomalous-volume (wash/internal)
@@ -67,14 +68,14 @@ export default function Overview() {
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Casino Volume" value={fmtUsd(animTotal)} accent="gold" icon={<Activity size={18} />} />
-        <StatCard label="Casino Reserves" value={fmtUsd(cs?.reserves ?? stats?.reserves ?? 0)} accent="violet" icon={<Wallet size={18} />} />
-        <StatCard label="Active Counterparties" value={fmtNum(cs?.uniquePlayers ?? stats?.uniquePlayers ?? 0)} accent="mint" icon={<Users size={18} />} />
-        <StatCard label="Casinos Tracked" value={String(cs?.entities ?? stats?.entities ?? 0)} accent="gold" icon={<Building2 size={18} />} />
+        <Reveal delay={0}><StatCard label="Casino Volume" value={fmtUsd(cs?.totalVolume ?? stats?.totalVolume ?? 0)} raw={cs?.totalVolume ?? stats?.totalVolume ?? 0} format={fmtUsd} accent="gold" icon={<Activity size={18} />} /></Reveal>
+        <Reveal delay={60}><StatCard label="Casino Reserves" value={fmtUsd(cs?.reserves ?? stats?.reserves ?? 0)} raw={cs?.reserves ?? stats?.reserves ?? 0} format={fmtUsd} accent="violet" icon={<Wallet size={18} />} /></Reveal>
+        <Reveal delay={120}><StatCard label="Active Counterparties" value={fmtNum(cs?.uniquePlayers ?? stats?.uniquePlayers ?? 0)} raw={cs?.uniquePlayers ?? stats?.uniquePlayers ?? 0} format={fmtNum} accent="mint" icon={<Users size={18} />} /></Reveal>
+        <Reveal delay={180}><StatCard label="Casinos Tracked" value={String(cs?.entities ?? stats?.entities ?? 0)} raw={cs?.entities ?? stats?.entities ?? 0} format={intStr} accent="gold" icon={<Building2 size={18} />} /></Reveal>
       </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <Card className="p-5 xl:col-span-2">
+      <Reveal as="div" className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Card spotlight className="p-5 xl:col-span-2">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h3 className="font-display text-lg font-semibold">On-chain Flow</h3>
@@ -128,7 +129,7 @@ export default function Overview() {
           </div>
         </Card>
 
-        <Card className="p-5">
+        <Card spotlight className="p-5">
           <div className="flex items-center justify-between">
             <h3 className="font-display text-lg font-semibold">Volume by Chain</h3>
             {chainSplit.length > 0 && (
@@ -165,10 +166,10 @@ export default function Overview() {
             ))}
           </div>
         </Card>
-      </div>
+      </Reveal>
 
-      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="p-5">
+      <Reveal as="div" className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Card spotlight className="p-5">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="font-display text-lg font-semibold">Live Transfers</h3>
             <span className="live-dot h-2 w-2 rounded-full bg-mint-400" />
@@ -193,7 +194,7 @@ export default function Overview() {
           </div>
         </Card>
 
-        <Card className="p-5">
+        <Card spotlight className="p-5">
           <h3 className="mb-3 font-display text-lg font-semibold">Top Casinos · Volume</h3>
           <div className="space-y-2.5">
             {!brands && <Skeleton className="h-40 w-full" />}
@@ -217,7 +218,7 @@ export default function Overview() {
           </div>
         </Card>
 
-        <Card className="p-5">
+        <Card spotlight className="p-5">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="font-display text-lg font-semibold">Streamers Live</h3>
             <Radio size={16} className="text-white/30" />
@@ -245,7 +246,7 @@ export default function Overview() {
                     <div className="truncate text-[11px] text-white/40">{s.title}</div>
                   </div>
                   <div className="text-right text-sm font-semibold tabular-nums text-mint-400">
-                    {fmtNum(s.viewers)}
+                    <LiveValue value={s.viewers} format={fmtNum} />
                     <div className="text-[10px] font-normal text-white/40">viewers</div>
                   </div>
                 </div>
@@ -253,7 +254,7 @@ export default function Overview() {
             </div>
           )}
         </Card>
-      </div>
+      </Reveal>
     </div>
   )
 }

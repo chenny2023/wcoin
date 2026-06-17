@@ -62,7 +62,7 @@ export default function Alerts() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* rule builder */}
-        <Card className="p-5">
+        <Card spotlight className="p-5">
           <h3 className="mb-3 font-display text-lg font-semibold">New rule</h3>
           <form onSubmit={create} className="space-y-3">
             <div>
@@ -116,7 +116,7 @@ export default function Alerts() {
 
         {/* active rules + event feed */}
         <div className="space-y-4 lg:col-span-2">
-          <Card className="p-5">
+          <Card spotlight className="p-5">
             <h3 className="mb-3 font-display text-lg font-semibold">Active rules</h3>
             {!rules ? <Skeleton className="h-16 w-full" /> : rules.length === 0 ? (
               <p className="text-sm text-white/40">No rules yet — create one to start watching.</p>
@@ -138,7 +138,7 @@ export default function Alerts() {
             )}
           </Card>
 
-          <Card className="p-5">
+          <Card spotlight className="p-5">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="font-display text-lg font-semibold">Triggered alerts</h3>
               <span className="live-dot h-2 w-2 rounded-full bg-mint-400" />

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ArrowDownRight, ArrowUpRight, Boxes, Filter, ExternalLink } from 'lucide-react'
 import { Card, PageHead, ChainPill, LiveBadge, Bubble, EmptyState } from '../components/ui'
+import { Reveal, CountUp, LiveValue } from '../components/motion'
 import { api, usePoll, useLiveFeed } from '../data/api'
 import { fmtUsd, timeAgo, shortHash, CHAIN_COLOR } from '../data/format'
 
@@ -59,31 +60,31 @@ export default function Blockchain() {
         right={<LiveBadge />}
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Card className="p-4">
+      <Reveal as="div" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Card spotlight className="p-4">
           <div className="text-[12px] uppercase tracking-wider text-white/45">Net Flow · live 60</div>
           <div className={`mt-1 font-display text-2xl font-bold ${inflow >= outflow ? 'text-mint-400' : 'text-rose-400'}`}>
-            {inflow >= outflow ? '+' : '−'}{fmtUsd(Math.abs(inflow - outflow))}
+            {inflow >= outflow ? '+' : '−'}<LiveValue value={Math.abs(inflow - outflow)} format={fmtUsd} />
           </div>
         </Card>
-        <Card className="p-4">
+        <Card spotlight className="p-4">
           <div className="text-[12px] uppercase tracking-wider text-white/45">Inflow</div>
-          <div className="mt-1 font-display text-2xl font-bold text-mint-400">{fmtUsd(inflow)}</div>
+          <div className="mt-1 font-display text-2xl font-bold text-mint-400"><LiveValue value={inflow} format={fmtUsd} /></div>
         </Card>
-        <Card className="p-4">
+        <Card spotlight className="p-4">
           <div className="text-[12px] uppercase tracking-wider text-white/45">Outflow</div>
-          <div className="mt-1 font-display text-2xl font-bold text-gold-400">{fmtUsd(outflow)}</div>
+          <div className="mt-1 font-display text-2xl font-bold text-gold-400"><LiveValue value={outflow} format={fmtUsd} /></div>
         </Card>
-        <Card className="p-4">
+        <Card spotlight className="p-4">
           <div className="text-[12px] uppercase tracking-wider text-white/45">Chains Mapped</div>
           <div className="mt-1 flex items-center gap-2 font-display text-2xl font-bold">
-            <Boxes size={20} className="text-violet-400" /> {chainCount || 9}
+            <Boxes size={20} className="text-violet-400" /> <CountUp value={chainCount || 9} />
           </div>
         </Card>
-      </div>
+      </Reveal>
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <Card className="p-5 xl:col-span-2">
+        <Card spotlight className="p-5 xl:col-span-2">
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <Filter size={15} className="text-white/40" />
             {CHAINS.map((c) => (

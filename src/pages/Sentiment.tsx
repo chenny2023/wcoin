@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ThumbsUp, ThumbsDown, ShieldCheck, MessageSquare, Landmark, ExternalLink } from 'lucide-react'
 import { Card, PageHead, Bubble, TrustBadge, Delta, ChainPill, CategoryBadge, Skeleton } from '../components/ui'
+import { Reveal, CountUp } from '../components/motion'
 import { api, usePoll, getToken } from '../data/api'
 import { fmtUsd, fmtNum } from '../data/format'
 
@@ -38,27 +39,27 @@ export default function Sentiment() {
         subtitle="On-chain trust signals blended with real community votes and social mentions"
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Card className="p-5">
+      <Reveal as="div" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Card spotlight className="p-5">
           <div className="text-[12px] uppercase tracking-wider text-white/45">Avg Trust Score</div>
-          <div className="mt-1 font-display text-3xl font-bold text-gradient-gold">{avg}</div>
+          <div className="mt-1 font-display text-3xl font-bold text-gradient-gold"><CountUp value={avg} /></div>
         </Card>
-        <Card className="p-5">
+        <Card spotlight className="p-5">
           <div className="text-[12px] uppercase tracking-wider text-white/45">Top Rated</div>
           <div className="mt-1 truncate font-display text-xl font-bold">{top?.label ?? '—'}</div>
           {top && <div className="mt-1"><TrustBadge score={top.trust} /></div>}
         </Card>
-        <Card className="p-5">
+        <Card spotlight className="p-5">
           <div className="text-[12px] uppercase tracking-wider text-white/45">On-chain Reserves</div>
           <div className="mt-1 flex items-center gap-2 font-display text-2xl font-bold">
-            <ShieldCheck size={20} className="text-mint-400" />{fmtUsd(totalReserves)}
+            <ShieldCheck size={20} className="text-mint-400" /><CountUp value={totalReserves} format={fmtUsd} />
           </div>
         </Card>
-        <Card className="p-5">
+        <Card spotlight className="p-5">
           <div className="text-[12px] uppercase tracking-wider text-white/45">Mentions · 7d</div>
           <div className="mt-1 flex items-center gap-2 font-display text-2xl font-bold">
             <MessageSquare size={20} className="text-violet-400" />
-            {fmtNum(totalMentions)}
+            <CountUp value={totalMentions} format={fmtNum} />
           </div>
           {data?.mentionsBySource && (
             <div className="mt-1.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[11px] text-white/40">
@@ -68,7 +69,7 @@ export default function Sentiment() {
             </div>
           )}
         </Card>
-      </div>
+      </Reveal>
 
       {!loggedIn && (
         <div className="mt-3 rounded-xl border border-gold-500/25 bg-gold-500/8 px-4 py-2.5 text-[13px] text-gold-400">
@@ -76,7 +77,7 @@ export default function Sentiment() {
         </div>
       )}
 
-      <Card className="mt-4 overflow-hidden">
+      <Card spotlight className="mt-4 overflow-hidden">
         {loading ? (
           <div className="space-y-2 p-4">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
         ) : (
@@ -192,7 +193,7 @@ export default function Sentiment() {
 
       {/* All-chain proof-of-reserves via Arkham — broad roster coverage across every chain */}
       {ark && ark.casinos.length > 0 && (
-        <Card className="mt-4 p-5">
+        <Card spotlight className="mt-4 p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Landmark size={18} className="text-mint-400" />
@@ -200,7 +201,7 @@ export default function Sentiment() {
               <span className="rounded-md bg-white/8 px-1.5 py-0.5 text-[11px] font-medium text-white/50">via Arkham</span>
             </div>
             <div className="text-[13px] text-white/55">
-              <span className="font-display text-xl font-bold text-gradient-gold">{fmtUsd(ark.totalUsd)}</span>
+              <span className="font-display text-xl font-bold text-gradient-gold"><CountUp value={ark.totalUsd} format={fmtUsd} /></span>
               <span className="ml-1.5">across {ark.count} casinos · every chain</span>
               {ark.totalVolume7d > 0 && (
                 <span className="ml-1.5 text-white/40">· <span className="font-semibold text-violet-300">{fmtUsd(ark.totalVolume7d)}</span> 7d volume</span>

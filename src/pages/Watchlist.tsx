@@ -61,7 +61,7 @@ export default function Watchlist() {
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           {/* Add box */}
-          <Card className="p-5 lg:col-span-1">
+          <Card spotlight className="p-5 lg:col-span-1">
             <div className="mb-3 flex items-center gap-2">
               <Plus size={18} className="text-gold-400" />
               <h3 className="font-display text-lg font-semibold">Follow a casino</h3>
@@ -98,7 +98,7 @@ export default function Watchlist() {
           </Card>
 
           {/* Followed list */}
-          <Card className="p-5 lg:col-span-2">
+          <Card spotlight className="p-5 lg:col-span-2">
             <h3 className="mb-3 font-display text-lg font-semibold">Following ({items.length})</h3>
             {loading && !data ? (
               <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}</div>

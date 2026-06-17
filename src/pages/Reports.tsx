@@ -3,6 +3,7 @@ import { FileBarChart, Download, Clock, CheckCircle2, Loader2 } from 'lucide-rea
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { Card, PageHead } from '../components/ui'
+import { Reveal } from '../components/motion'
 import { api } from '../data/api'
 
 type Format = 'csv' | 'json' | 'pdf'
@@ -135,12 +136,12 @@ export default function Reports() {
         }
       />
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <Reveal as="div" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {TEMPLATES.map((t) => {
           const isBusy = busy === t.key
           const count = done[t.key]
           return (
-            <Card key={t.key} hover className="flex flex-col p-5">
+            <Card key={t.key} spotlight hover className="flex flex-col p-5">
               <div className="flex items-start gap-3">
                 <div className="grid h-11 w-11 place-items-center rounded-xl bg-violet-500/15 text-violet-300"><FileBarChart size={20} /></div>
                 <div className="flex-1">
@@ -159,7 +160,7 @@ export default function Reports() {
             </Card>
           )
         })}
-      </div>
+      </Reveal>
 
     </div>
   )

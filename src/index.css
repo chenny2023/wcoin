@@ -156,3 +156,110 @@ body::before {
 .fade-up {
   animation: fade-up 0.4s ease both;
 }
+
+/* ── Scroll-reveal: sections rise + fade as they enter the viewport ──────────── */
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.7s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+  will-change: opacity, transform;
+}
+.reveal.in {
+  opacity: 1;
+  transform: none;
+}
+
+/* ── Cursor spotlight: a soft glow tracks the pointer across a card ──────────── */
+.spotlight {
+  position: relative;
+}
+.spotlight::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  pointer-events: none;
+  background: radial-gradient(360px circle at var(--mx, 50%) var(--my, 50%), rgba(245, 177, 0, 0.14), transparent 62%);
+}
+.spotlight:hover::before {
+  opacity: 1;
+}
+
+/* ── Shimmer: a light sweep over loading placeholders ───────────────────────── */
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+.shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent);
+  animation: shimmer 1.5s infinite;
+}
+
+/* ── Directional value flash: green on a rise, red on a drop ─────────────────── */
+@keyframes flash-up {
+  from { background-color: rgba(46, 230, 166, 0.18); }
+  to { background-color: transparent; }
+}
+@keyframes flash-down {
+  from { background-color: rgba(255, 92, 122, 0.18); }
+  to { background-color: transparent; }
+}
+.flash-up { animation: flash-up 1.5s ease-out; }
+.flash-down { animation: flash-down 1.5s ease-out; }
+
+/* ── Living background: the ambient glow drifts slowly ──────────────────────── */
+@keyframes aurora-drift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-2.5%, 2%, 0) scale(1.06); }
+}
+body::before {
+  animation: aurora-drift 26s ease-in-out infinite;
+}
+
+/* ── Chart reveal: line/area charts draw in left→right; bars grow up ─────────── */
+@keyframes wipe-x {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+.wipe-x { animation: wipe-x 1.1s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@keyframes grow-y {
+  from { transform: scaleY(0); opacity: 0.3; }
+  to { transform: scaleY(1); opacity: 1; }
+}
+.grow-y { transform-origin: bottom; animation: grow-y 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+
+/* ── Magnetic-ish primary buttons: a light sheen sweeps on hover ─────────────── */
+@keyframes sheen {
+  to { transform: translateX(220%) skewX(-18deg); }
+}
+.sheen-hover { position: relative; overflow: hidden; }
+.sheen-hover::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40%;
+  height: 100%;
+  transform: translateX(-220%) skewX(-18deg);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  pointer-events: none;
+}
+.sheen-hover:hover::after { animation: sheen 0.8s ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .spotlight::before, .shimmer::after { animation: none; }
+  .flash-up, .flash-down { animation: none; }
+  .wipe-x, .grow-y { animation: none; }
+  .sheen-hover::after { display: none; }
+  body::before { animation: none; }
+}

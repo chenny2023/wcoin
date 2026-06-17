@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Search, Users, Radio, ExternalLink, Plus, Loader2, X, Send, MessageCircle, Youtube, Instagram, Twitter } from 'lucide-react'
 import { Card, PageHead, Bubble, EmptyState, Skeleton } from '../components/ui'
+import { Reveal, CountUp, LiveValue } from '../components/motion'
 import { api, usePoll, getToken, StreamerRow } from '../data/api'
 import { fmtNum } from '../data/format'
 
@@ -84,7 +85,7 @@ function StreamerCard({ s, onOpen }: { s: StreamerRow; onOpen: () => void }) {
         <div className="relative h-36 w-full overflow-hidden bg-ink-800">
           <img src={s.thumbnail} alt={s.handle} className="h-full w-full object-cover" loading="lazy" />
           <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-md bg-rose-500/90 px-1.5 py-0.5 text-[11px] font-bold text-white">● LIVE</span>
-          <span className="absolute right-2 top-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-semibold text-white">{fmtNum(s.viewers)} 👁</span>
+          <span className="absolute right-2 top-2 inline-flex items-center gap-0.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-semibold text-white"><LiveValue value={s.viewers} format={fmtNum} /> 👁</span>
         </div>
       ) : (
         <div className="relative grid h-24 w-full place-items-center bg-ink-800">
@@ -103,7 +104,7 @@ function StreamerCard({ s, onOpen }: { s: StreamerRow; onOpen: () => void }) {
         {s.title && <p className="mt-2 line-clamp-2 text-[12px] text-white/45">{s.title}</p>}
         <div className="mt-2 flex items-center justify-between text-[12px]">
           <span className="text-white/40">{fmtNum(s.followers)} followers</span>
-          {s.live === 1 && <span className="font-semibold text-mint-400">{fmtNum(s.viewers)} viewers</span>}
+          {s.live === 1 && <span className="font-semibold text-mint-400"><LiveValue value={s.viewers} format={fmtNum} /> viewers</span>}
         </div>
         <div className="mt-2 flex items-center justify-between border-t border-white/6 pt-2 text-[12px]">
           <span className="text-white/40">Affiliation</span>
@@ -165,24 +166,24 @@ export default function Streamers() {
         }
       />
 
-      <div className="grid grid-cols-3 gap-3">
-        <Card className="p-4">
+      <Reveal as="div" className="grid grid-cols-3 gap-3">
+        <Card spotlight className="p-4">
           <div className="text-[12px] uppercase tracking-wider text-white/45">Live Now</div>
-          <div className="mt-1 font-display text-2xl font-bold text-rose-400">{live.length}</div>
+          <div className="mt-1 font-display text-2xl font-bold text-rose-400"><CountUp value={live.length} /></div>
         </Card>
-        <Card className="p-4">
+        <Card spotlight className="p-4">
           <div className="text-[12px] uppercase tracking-wider text-white/45">Combined Viewers</div>
-          <div className="mt-1 flex items-center gap-2 font-display text-2xl font-bold"><Users size={18} className="text-mint-400" />{fmtNum(totalViewers)}</div>
+          <div className="mt-1 flex items-center gap-2 font-display text-2xl font-bold"><Users size={18} className="text-mint-400" /><LiveValue value={totalViewers} format={fmtNum} /></div>
         </Card>
-        <Card className="p-4">
+        <Card spotlight className="p-4">
           <div className="text-[12px] uppercase tracking-wider text-white/45">Roster Tracked</div>
-          <div className="mt-1 flex items-center gap-2 font-display text-2xl font-bold"><Radio size={18} className="text-violet-400" />{data?.roster ?? 0}</div>
+          <div className="mt-1 flex items-center gap-2 font-display text-2xl font-bold"><Radio size={18} className="text-violet-400" /><CountUp value={data?.roster ?? 0} /></div>
         </Card>
-      </div>
+      </Reveal>
 
       {/* sponsorship graph — which casino each streamer reps, by combined reach */}
       {spon && spon.sponsorships.length > 0 && (
-        <Card className="mt-4 p-5">
+        <Card spotlight className="mt-4 p-5">
           <div className="mb-3 flex items-center gap-2">
             <Users size={18} className="text-gold-400" />
             <h3 className="font-display text-lg font-bold">Sponsorship Graph</h3>
@@ -232,9 +233,9 @@ export default function Streamers() {
         ) : all.length === 0 ? (
           <Card className="p-8"><EmptyState icon={<Radio size={34} />} title="Roster is warming up" hint="The Kick collector polls one channel every 8 seconds — first data lands within a minute of boot." /></Card>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <Reveal as="div" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {all.map((s) => <StreamerCard key={s.id} s={s} onOpen={() => setSelected({ platform: s.platform, slug: s.id.includes(':') ? s.id.split(':')[1] : s.handle })} />)}
-          </div>
+          </Reveal>
         )}
       </div>
       <p className="mt-3 text-[12px] text-white/35">

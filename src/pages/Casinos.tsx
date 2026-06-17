@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Search, SlidersHorizontal, Wallet, ExternalLink, ChevronDown, ShieldCheck, ShieldAlert, Calendar, Percent, Coins, Star, Award, AlertTriangle, MessageSquare } from 'lucide-react'
 import { Card, PageHead, Bubble, TrustBadge, Delta, CategoryBadge, ChainPill, Skeleton } from '../components/ui'
+import { Reveal } from '../components/motion'
 import { api, usePoll, Entity } from '../data/api'
 import { fmtUsd, fmtNum, shortHash, CHAIN_COLOR } from '../data/format'
 
@@ -228,11 +229,11 @@ function MoneyFlow({ id }: { id: number }) {
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 260 }}>
       {/* inflow links */}
       {inLinks.map((l, i) => (
-        <path key={'il' + i} d={path(SRCX + 8, l.s.mid, ENTX, l.ey + l.eh / 2)} stroke={IN} strokeOpacity={0.28} strokeWidth={Math.max(1, l.eh)} fill="none" />
+        <path key={'il' + i} className="wipe-x" d={path(SRCX + 8, l.s.mid, ENTX, l.ey + l.eh / 2)} stroke={IN} strokeOpacity={0.28} strokeWidth={Math.max(1, l.eh)} fill="none" />
       ))}
       {/* outflow links */}
       {outLinks.map((l, i) => (
-        <path key={'ol' + i} d={path(ENTX + 8, l.ey + l.eh / 2, SNKX, l.s.mid)} stroke={OUT} strokeOpacity={0.28} strokeWidth={Math.max(1, l.eh)} fill="none" />
+        <path key={'ol' + i} className="wipe-x" d={path(ENTX + 8, l.ey + l.eh / 2, SNKX, l.s.mid)} stroke={OUT} strokeOpacity={0.28} strokeWidth={Math.max(1, l.eh)} fill="none" />
       ))}
       {/* source nodes */}
       {src.map((s, i) => (
@@ -434,7 +435,8 @@ export default function Casinos() {
         ))}
       </div>
 
-      <Card className="overflow-hidden">
+      <Reveal as="div">
+      <Card spotlight className="overflow-hidden">
         {loading ? (
           <div className="space-y-2 p-4">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
         ) : (
@@ -641,6 +643,7 @@ export default function Casinos() {
           </div>
         )}
       </Card>
+      </Reveal>
       <p className="mt-3 text-[12px] text-white/35">
         Showing real on-chain entities from your watchlist. Add competitor casino deposit/hot-wallet
         addresses on the <a href="/app/watchlist" className="text-gold-400 hover:underline">Watchlist</a> to make this leaderboard yours.

@@ -2,6 +2,7 @@ import { useState, FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowRight, ArrowDownRight, ArrowUpRight, ShieldCheck, TrendingUp } from 'lucide-react'
 import { Logo, Card, ChainPill } from '../components/ui'
+import { CountUp } from '../components/motion'
 import { api, usePoll } from '../data/api'
 import { fmtUsd, fmtNum } from '../data/format'
 
@@ -71,15 +72,17 @@ function SubscribeBox() {
 function StatGrid({ data }: { data: any }) {
   const net = data.net_flow_24h ?? 0
   const rc = data.reserve_change_7d
-  const cells = [
-    { label: '24h Tracked Volume', value: fmtUsd(data.tracked_volume_24h ?? 0) },
-    { label: 'Net Flow (24h)', value: (net >= 0 ? '+' : '−') + fmtUsd(Math.abs(net)), tone: net >= 0 ? 'text-mint-400' : 'text-rose-400' },
-    { label: 'Active Casinos', value: fmtNum(data.active_casinos ?? 0) },
+  const cells: { label: string; value: string; raw?: number; fmt?: (n: number) => string; tone?: string; sub?: string }[] = [
+    { label: '24h Tracked Volume', value: fmtUsd(data.tracked_volume_24h ?? 0), raw: data.tracked_volume_24h ?? 0, fmt: fmtUsd },
+    { label: 'Net Flow (24h)', value: (net >= 0 ? '+' : '−') + fmtUsd(Math.abs(net)), raw: Math.abs(net), fmt: (n) => (net >= 0 ? '+' : '−') + fmtUsd(n), tone: net >= 0 ? 'text-mint-400' : 'text-rose-400' },
+    { label: 'Active Casinos', value: fmtNum(data.active_casinos ?? 0), raw: data.active_casinos ?? 0, fmt: fmtNum },
     { label: 'Chains', value: String(data.active_chains ?? 0) },
     { label: 'Live Streamers', value: String(data.live_streamers ?? 0) },
     {
       label: 'Tracked Reserves',
       value: fmtUsd(data.reserves_total ?? 0),
+      raw: data.reserves_total ?? 0,
+      fmt: fmtUsd,
       sub: rc != null ? `${rc >= 0 ? '+' : ''}${(rc * 100).toFixed(1)}% 7d` : undefined,
     },
   ]
@@ -88,7 +91,9 @@ function StatGrid({ data }: { data: any }) {
       {cells.map((c) => (
         <Card key={c.label} className="p-4">
           <div className="text-[11px] uppercase tracking-wider text-white/40">{c.label}</div>
-          <div className={`mt-1.5 font-display text-xl font-bold tabular-nums ${c.tone ?? ''}`}>{c.value}</div>
+          <div className={`mt-1.5 font-display text-xl font-bold tabular-nums ${c.tone ?? ''}`}>
+            {c.raw != null && c.fmt ? <CountUp value={c.raw} format={c.fmt} /> : c.value}
+          </div>
           {c.sub && <div className="mt-0.5 text-[11px] text-white/40">{c.sub}</div>}
         </Card>
       ))}
@@ -99,7 +104,7 @@ function StatGrid({ data }: { data: any }) {
 function MoversTable({ rows }: { rows: any[] }) {
   if (!rows?.length) return null
   return (
-    <Card className="overflow-hidden p-0">
+    <Card spotlight className="overflow-hidden p-0">
       <div className="flex items-center gap-2 border-b border-white/8 px-5 py-3.5">
         <TrendingUp size={16} className="text-gold-400" />
         <h3 className="font-display text-base font-semibold">Biggest movers — 24h volume</h3>
@@ -266,7 +271,7 @@ export default function Daily() {
             )}
 
             {/* Subscribe CTA */}
-            <Card className="ring-gold flex flex-col items-center gap-4 p-8 text-center">
+            <Card spotlight className="ring-gold flex flex-col items-center gap-4 p-8 text-center">
               <h2 className="font-display text-2xl font-bold">
                 Get this report <span className="text-gradient-gold">every morning</span>
               </h2>

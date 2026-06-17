@@ -14,6 +14,7 @@ import {
   Globe,
 } from 'lucide-react'
 import { Logo, Card, ChainPill, LiveBadge } from '../components/ui'
+import { Reveal, CountUp, SpotlightCard } from '../components/motion'
 import { api, usePoll, useLiveFeed, useCountUp } from '../data/api'
 import { fmtUsd, fmtNum } from '../data/format'
 
@@ -54,31 +55,36 @@ function Ticker() {
 function CoverageBoard() {
   const { data: c } = usePoll(api.coverage, 30_000)
   const fmtBig = (n: number) => (n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(0)}M` : `$${(n / 1e3).toFixed(0)}K`)
-  const tiles = [
-    { label: 'Casinos catalogued', value: c ? fmtNum(c.casinos) : '—', sub: c ? `${fmtNum(c.sitesLive)} verified live` : '' },
-    { label: 'All-chain reserves', value: c ? fmtBig(c.reservesUsd) : '—', sub: c ? `${c.reservesCount} casinos` : '' },
-    { label: 'Chains indexed', value: c ? `${c.chains}` : '—', sub: 'ETH · Tron · BTC · SOL…' },
-    { label: 'Prediction markets', value: c ? fmtNum(c.predictionMarkets) : '—', sub: c ? `${fmtBig(c.predictionVolume)} vol` : '' },
-    { label: 'On-chain protocols', value: c ? fmtNum(c.protocols) : '—', sub: c ? `${fmtBig(c.protocolTvl)} TVL` : '' },
-    { label: 'Social mentions', value: c ? fmtNum(c.mentions) : '—', sub: '8 sources' },
-    { label: 'Streamers tracked', value: c ? fmtNum(c.streamers) : '—', sub: 'Kick · Twitch · YouTube' },
-    { label: 'Trust-rated', value: c ? fmtNum(c.trustpilotRated) : '—', sub: 'Trustpilot + guru + AG' },
+  const intFmt = (n: number) => `${Math.round(n)}`
+  const tiles: { label: string; num?: number; format: (n: number) => string; sub: string }[] = [
+    { label: 'Casinos catalogued', num: c?.casinos, format: fmtNum, sub: c ? `${fmtNum(c.sitesLive)} verified live` : '' },
+    { label: 'All-chain reserves', num: c?.reservesUsd, format: fmtBig, sub: c ? `${c.reservesCount} casinos` : '' },
+    { label: 'Chains indexed', num: c?.chains, format: intFmt, sub: 'ETH · Tron · BTC · SOL…' },
+    { label: 'Prediction markets', num: c?.predictionMarkets, format: fmtNum, sub: c ? `${fmtBig(c.predictionVolume)} vol` : '' },
+    { label: 'On-chain protocols', num: c?.protocols, format: fmtNum, sub: c ? `${fmtBig(c.protocolTvl)} TVL` : '' },
+    { label: 'Social mentions', num: c?.mentions, format: fmtNum, sub: '8 sources' },
+    { label: 'Streamers tracked', num: c?.streamers, format: fmtNum, sub: 'Kick · Twitch · YouTube' },
+    { label: 'Trust-rated', num: c?.trustpilotRated, format: fmtNum, sub: 'Trustpilot + guru + AG' },
   ]
   return (
     <section className="mx-auto max-w-7xl px-5 py-14">
-      <div className="mx-auto mb-8 max-w-2xl text-center">
+      <Reveal className="mx-auto mb-8 max-w-2xl text-center">
         <h2 className="font-display text-2xl font-bold tracking-tight sm:text-3xl">
           The web's <span className="text-gradient-gold">most complete</span> iGaming dataset
         </h2>
         <p className="mt-2 text-sm text-white/55">On-chain truth + reviews + social — one layer, fully verifiable.</p>
-      </div>
+      </Reveal>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {tiles.map((t) => (
-          <Card key={t.label} className="p-5 text-center">
-            <div className="font-display text-2xl font-bold tabular-nums text-gradient-gold sm:text-3xl">{t.value}</div>
-            <div className="mt-1 text-[13px] font-medium text-white/75">{t.label}</div>
-            {t.sub && <div className="mt-0.5 text-[11px] text-white/40">{t.sub}</div>}
-          </Card>
+        {tiles.map((t, i) => (
+          <Reveal key={t.label} delay={i * 55}>
+            <SpotlightCard className="h-full p-5 text-center">
+              <div className="font-display text-2xl font-bold text-gradient-gold sm:text-3xl">
+                {t.num == null ? '—' : <CountUp value={t.num} format={t.format} />}
+              </div>
+              <div className="mt-1 text-[13px] font-medium text-white/75">{t.label}</div>
+              {t.sub && <div className="mt-0.5 text-[11px] text-white/40">{t.sub}</div>}
+            </SpotlightCard>
+          </Reveal>
         ))}
       </div>
     </section>
@@ -335,17 +341,19 @@ export default function Landing() {
           <p className="mt-3 text-white/55">One platform. Every signal. Updated in real time.</p>
         </div>
         <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {FEATURES.map((f) => (
-            <Card key={f.title} hover className="p-6">
-              <div
-                className="grid h-11 w-11 place-items-center rounded-xl"
-                style={{ background: `${f.accent}1f`, color: f.accent }}
-              >
-                <f.icon size={21} />
-              </div>
-              <h3 className="mt-4 font-display text-lg font-semibold">{f.title}</h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-white/50">{f.desc}</p>
-            </Card>
+          {FEATURES.map((f, i) => (
+            <Reveal key={f.title} delay={(i % 3) * 70}>
+              <SpotlightCard className="h-full p-6">
+                <div
+                  className="grid h-11 w-11 place-items-center rounded-xl"
+                  style={{ background: `${f.accent}1f`, color: f.accent }}
+                >
+                  <f.icon size={21} />
+                </div>
+                <h3 className="mt-4 font-display text-lg font-semibold">{f.title}</h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-white/50">{f.desc}</p>
+              </SpotlightCard>
+            </Reveal>
           ))}
         </div>
       </section>

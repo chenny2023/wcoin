@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Search, Download, ExternalLink, Check, X as XIcon, Loader2, Star } from 'lucide-react'
 import { Card, PageHead, Skeleton } from '../components/ui'
+import { CountUp } from '../components/motion'
 import { api, usePoll, downloadDirectoryCsv } from '../data/api'
 
 const FILTERS: { k: string; label: string }[] = [
@@ -64,7 +65,7 @@ export default function Directory() {
         ].map(([label, v]) => (
           <Card key={label as string} className="px-4 py-3">
             <div className="text-[11px] uppercase tracking-wider text-white/40">{label as string}</div>
-            <div className="mt-0.5 text-xl font-bold tabular-nums">{v == null ? '—' : (v as number).toLocaleString()}</div>
+            <div className="mt-0.5 text-xl font-bold tabular-nums">{v == null ? '—' : <CountUp value={v as number} format={(n) => Math.round(n).toLocaleString()} />}</div>
           </Card>
         ))}
       </div>
@@ -85,7 +86,7 @@ export default function Directory() {
         </div>
       </div>
 
-      <Card className="overflow-hidden">
+      <Card spotlight className="overflow-hidden">
         {loading && !data ? (
           <div className="space-y-2 p-4">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
         ) : (

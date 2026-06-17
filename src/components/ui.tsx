@@ -1,6 +1,7 @@
-import { ReactNode, HTMLAttributes } from 'react'
+import { ReactNode, HTMLAttributes, MouseEvent } from 'react'
 import { ArrowDownRight, ArrowUpRight } from 'lucide-react'
 import { CHAIN_COLOR } from '../data/format'
+import { CountUp } from './motion'
 
 // ── Brand mark ────────────────────────────────────────────────────────────────
 export function Logo({ size = 30, withText = true }: { size?: number; withText?: boolean }) {
@@ -37,14 +38,27 @@ export function Card({
   children,
   className = '',
   hover = false,
+  spotlight = false,
   ...rest
 }: {
   children: ReactNode
   className?: string
   hover?: boolean
+  spotlight?: boolean
 } & HTMLAttributes<HTMLDivElement>) {
+  // spotlight: a soft glow follows the cursor across the card (CSS reads --mx/--my)
+  const onMove = spotlight
+    ? (e: MouseEvent<HTMLDivElement>) => {
+        const el = e.currentTarget
+        const r = el.getBoundingClientRect()
+        el.style.setProperty('--mx', `${e.clientX - r.left}px`)
+        el.style.setProperty('--my', `${e.clientY - r.top}px`)
+      }
+    : undefined
   return (
-    <div className={`glass ${hover ? 'glass-hover' : ''} rounded-2xl ${className}`} {...rest}>{children}</div>
+    <div onMouseMove={onMove} className={`glass ${hover ? 'glass-hover' : ''} ${spotlight ? 'spotlight' : ''} rounded-2xl ${className}`} {...rest}>
+      {children}
+    </div>
   )
 }
 
@@ -52,12 +66,17 @@ export function Card({
 export function StatCard({
   label,
   value,
+  raw,
+  format,
   delta,
   icon,
   accent = 'gold',
 }: {
   label: string
   value: string
+  // pass raw + format to animate the number rolling up when it enters view
+  raw?: number
+  format?: (n: number) => string
   delta?: number
   icon?: ReactNode
   accent?: 'gold' | 'violet' | 'mint'
@@ -69,12 +88,14 @@ export function StatCard({
         ? 'from-violet-500/20'
         : 'from-mint-400/20'
   return (
-    <Card hover className="p-4 sm:p-5 relative overflow-hidden">
+    <Card hover spotlight className="p-4 sm:p-5 relative overflow-hidden">
       <div className={`absolute -top-10 -right-10 h-28 w-28 rounded-full bg-gradient-to-br ${ring} to-transparent blur-2xl`} />
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[12px] uppercase tracking-wider text-white/45">{label}</div>
-          <div className="mt-1.5 font-display text-2xl font-bold">{value}</div>
+          <div className="mt-1.5 font-display text-2xl font-bold">
+            {raw != null && format ? <CountUp value={raw} format={format} /> : value}
+          </div>
         </div>
         {icon && (
           <div className="grid h-9 w-9 place-items-center rounded-lg bg-white/5 text-gold-400">
@@ -187,7 +208,7 @@ export function LiveBadge() {
 }
 
 export function Skeleton({ className = '' }: { className?: string }) {
-  return <div className={`animate-pulse rounded-lg bg-white/6 ${className}`} />
+  return <div className={`shimmer rounded-lg bg-white/6 ${className}`} />
 }
 
 export function EmptyState({ title, hint, icon }: { title: string; hint?: string; icon?: ReactNode }) {
