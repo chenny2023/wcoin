@@ -38,8 +38,12 @@ export const VOLUME_SUSPECT_KEYS = new Set<string>([brandKey('Rain.gg')])
 const SUSPECT_VOL_FLOOR = Number(process.env.SUSPECT_VOL_FLOOR ?? 50_000_000) // only scrutinise large volume
 const SUSPECT_VOL_PER_CP = Number(process.env.SUSPECT_VOL_PER_CP ?? 50_000) // real casinos are well under this
 
-export function isVolumeSuspect(label: string, volume7d: number, players: number): boolean {
+// `warm` = the background players count has completed its first full pass and is
+// reliable. Before that, `players` is ~0 for everyone, which would false-flag every
+// large casino — so the heuristic stays OFF until warm (the config list still fires).
+export function isVolumeSuspect(label: string, volume7d: number, players: number, warm: boolean): boolean {
   if (VOLUME_SUSPECT_KEYS.has(brandKey(label))) return true
+  if (!warm) return false
   if (volume7d < SUSPECT_VOL_FLOOR) return false
   return volume7d / Math.max(players, 1) > SUSPECT_VOL_PER_CP
 }

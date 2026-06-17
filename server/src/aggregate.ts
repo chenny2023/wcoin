@@ -98,6 +98,9 @@ export function maintainedPlayers(): { all: number; casino: number } {
 }
 
 let maintaining = false
+// true once the background players count has finished its first full pass — until
+// then `players` is unreliable (~0), so volume-suspect heuristics must stay off.
+let playersPassComplete = false
 export async function startStatsMaintenance(): Promise<void> {
   if (maintaining) return
   maintaining = true
@@ -126,6 +129,7 @@ export async function startStatsMaintenance(): Promise<void> {
         }
         await yield_() // hand the event loop back between every address
       }
+      playersPassComplete = true // every entity now has a real counterparty count
       // a full pass completed — persist the rolled-up headline so a fresh deploy
       // serves last-known players instantly (the in-memory map starts empty)
       try {
@@ -377,7 +381,7 @@ async function computeBrands(): Promise<BrandAgg[]> {
     const edV = members.map((e) => e.editorial).find((s) => s != null) ?? null
     const ratingCount = [safetyV, tpV, agV, edV].filter((v) => v != null).length
     const attributed = !isUnattributed(bName) && !isUnattributed(head.label)
-    const volumeSuspect = attributed && isVolumeSuspect(bName, vol7, sum((e) => e.players))
+    const volumeSuspect = attributed && isVolumeSuspect(bName, vol7, sum((e) => e.players), playersPassComplete)
     const confidence: 'high' | 'medium' | 'low' = !attributed
       ? 'low'
       : metaV || ratingCount >= 2 || (vol7 > 0 && brReserves > 0)
