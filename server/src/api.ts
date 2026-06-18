@@ -454,6 +454,32 @@ export async function registerApi(app: FastifyInstance) {
     return reply.header('Content-Type', 'image/png').header('Cache-Control', 'public, max-age=3600').send(png)
   })
 
+  // public — community submissions: attribution evidence (for unattributed flow) or a
+  // correction request for a tracked brand. Stored for ADMIN review; never auto-applied.
+  app.post('/api/submit', async (req, reply) => {
+    const b = (req.body ?? {}) as { type?: string; brand?: string; email?: string; message?: string; evidenceUrl?: string }
+    if (b.type !== 'attribution' && b.type !== 'correction') return reply.code(400).send({ error: 'invalid type' })
+    const message = String(b.message ?? '').trim()
+    if (message.length < 5 || message.length > 4000) return reply.code(400).send({ error: 'message must be 5–4000 characters' })
+    const email = String(b.email ?? '').trim().slice(0, 200)
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return reply.code(400).send({ error: 'invalid email' })
+    // light anti-spam: cap stored submissions from the same email in the last hour
+    if (email) {
+      const recent = (db.prepare('SELECT COUNT(*) n FROM submission WHERE email=? AND created_at>?').get(email, Date.now() - 3600_000) as any).n
+      if (recent >= 10) return reply.code(429).send({ error: 'too many submissions — try again later' })
+    }
+    db.prepare('INSERT INTO submission(type, brand, email, message, evidence_url, status, created_at) VALUES(?,?,?,?,?,?,?)').run(
+      b.type,
+      String(b.brand ?? '').trim().slice(0, 120) || null,
+      email || null,
+      message.slice(0, 4000),
+      String(b.evidenceUrl ?? '').trim().slice(0, 500) || null,
+      'new',
+      Date.now(),
+    )
+    return { ok: true }
+  })
+
   // public — global search across tracked casinos, directory, streamers, wallets
   app.get('/api/search', async (req) => {
     const term = ((req.query as { q?: string }).q ?? '').trim()
@@ -1017,6 +1043,13 @@ export async function registerApi(app: FastifyInstance) {
   app.get('/api/diag/enrichment', async (req, reply) => {
     if (!requireAdmin(req, reply)) return
     const rows = db.prepare("SELECT brand_key, label, slug, confidence, missing, status, updated_at FROM enrichment_queue WHERE status!='promoted' ORDER BY updated_at DESC LIMIT 500").all()
+    return { count: rows.length, items: rows }
+  })
+
+  // community submissions (admin) — attribution evidence + correction requests to review
+  app.get('/api/diag/submissions', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const rows = db.prepare('SELECT id, type, brand, email, message, evidence_url, status, created_at FROM submission ORDER BY created_at DESC LIMIT 200').all()
     return { count: rows.length, items: rows }
   })
 

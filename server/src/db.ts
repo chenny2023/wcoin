@@ -496,6 +496,19 @@ CREATE TABLE IF NOT EXISTS data_quality_issue (
   updated_at        INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_dq_date ON data_quality_issue(date, issue_type);
+
+-- Community submissions: attribution evidence for unattributed flow, or a correction
+-- request for a tracked brand. Public POST → admin review (never auto-applied).
+CREATE TABLE IF NOT EXISTS submission (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  type         TEXT NOT NULL,                 -- attribution | correction
+  brand        TEXT,
+  email        TEXT,
+  message      TEXT NOT NULL,
+  evidence_url TEXT,
+  status       TEXT NOT NULL DEFAULT 'new',   -- new | reviewed | actioned | dismissed
+  created_at   INTEGER NOT NULL
+);
 `)
 
 // additive migrations for DBs created before these columns existed

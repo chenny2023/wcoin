@@ -352,6 +352,63 @@ function ShareBar({ date }: { date?: string }) {
   )
 }
 
+// Community submissions — attribution evidence / correction requests (admin-reviewed).
+function SubmitForm() {
+  const [type, setType] = useState<'attribution' | 'correction'>('correction')
+  const [brand, setBrand] = useState('')
+  const [message, setMessage] = useState('')
+  const [email, setEmail] = useState('')
+  const [evidenceUrl, setEvidenceUrl] = useState('')
+  const [state, setState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
+  const [err, setErr] = useState('')
+  const fld = 'w-full rounded-lg border border-white/12 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/35 focus:border-gold-500/50 focus:outline-none'
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (message.trim().length < 5) return setErr('Please add a few words of detail.')
+    setState('sending')
+    setErr('')
+    try {
+      const r = await api.submit({ type, brand: brand.trim() || undefined, email: email.trim() || undefined, message: message.trim(), evidenceUrl: evidenceUrl.trim() || undefined })
+      if (r.ok) setState('sent')
+      else (setState('error'), setErr(r.error || 'Failed — try again.'))
+    } catch (e2) {
+      setState('error')
+      setErr(String((e2 as Error).message))
+    }
+  }
+  if (state === 'sent')
+    return (
+      <Card className="p-5 text-sm text-mint-300">
+        ✓ Thanks — your {type === 'attribution' ? 'attribution evidence' : 'correction'} was received. We review every submission manually; nothing is auto-applied.
+      </Card>
+    )
+  return (
+    <Card className="p-5">
+      <h3 className="mb-1 font-display text-base font-semibold">Submit attribution evidence or a correction</h3>
+      <p className="mb-3 text-[12px] text-white/45">Help improve the data. Submissions are reviewed manually and never auto-applied.</p>
+      <form onSubmit={submit} className="space-y-2.5">
+        <div className="flex w-max gap-1 rounded-lg border border-white/8 bg-white/4 p-0.5">
+          {(['correction', 'attribution'] as const).map((k) => (
+            <button key={k} type="button" onClick={() => setType(k)} className={`rounded-md px-3 py-1 text-[12px] font-semibold transition ${type === k ? 'bg-gold-500/15 text-gold-400' : 'text-white/45 hover:text-white'}`}>
+              {k === 'correction' ? 'Correction' : 'Attribution evidence'}
+            </button>
+          ))}
+        </div>
+        <input value={brand} onChange={(e) => setBrand(e.target.value)} placeholder={type === 'attribution' ? 'Wallet / cluster / operator (optional)' : 'Brand this is about (optional)'} className={fld} />
+        <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3} placeholder={type === 'attribution' ? 'Which wallet(s) belong to which operator, and how you know…' : 'What is incorrect, and what it should be…'} className={fld} />
+        <input value={evidenceUrl} onChange={(e) => setEvidenceUrl(e.target.value)} placeholder="Evidence link (optional)" className={fld} />
+        <div className="flex flex-wrap items-center gap-2">
+          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Email for follow-up (optional)" className={`${fld} min-w-[180px] flex-1`} />
+          <button disabled={state === 'sending'} className="whitespace-nowrap rounded-lg bg-gradient-to-r from-gold-400 to-gold-600 px-4 py-2 text-sm font-semibold text-ink-950 hover:brightness-110 disabled:opacity-60">
+            {state === 'sending' ? 'Sending…' : 'Submit'}
+          </button>
+        </div>
+        {err && <p className="text-[12px] text-rose-300">{err}</p>}
+      </form>
+    </Card>
+  )
+}
+
 function CoverageNotes() {
   const notes = [
     'Verified flow includes only mapped casino brands with medium or higher confidence.',
@@ -555,6 +612,9 @@ export default function Daily() {
                 </p>
               </Card>
             )}
+
+            {/* Community submissions */}
+            <SubmitForm />
 
             {/* Share / Download */}
             <ShareBar date={data.snapshot_date} />

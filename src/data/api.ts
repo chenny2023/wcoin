@@ -442,6 +442,8 @@ export const api = {
   },
   contentPublish: (type: string) =>
     sendJson<{ started?: boolean; type?: string; note?: string; error?: string }>('/content/publish', 'POST', { type }),
+  submit: (body: { type: 'attribution' | 'correction'; brand?: string; email?: string; message: string; evidenceUrl?: string }) =>
+    sendJson<{ ok?: boolean; error?: string }>('/submit', 'POST', body),
   entitySeries: (id: number, days = 30) =>
     getJson<{ chains: string[]; series: ({ t: number } & Record<string, number>)[] }>(`/entity/${id}/series?days=${days}`),
   entityFlow: (id: number, days = 30) =>
