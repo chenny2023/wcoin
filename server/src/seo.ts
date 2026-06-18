@@ -4,6 +4,7 @@ import { aggregateBrands, type BrandAgg } from './aggregate.ts'
 import { runDataQualityChecks } from './dataquality.ts'
 import { brandKey, brandName, matchCasinoMeta, type CasinoMeta } from './casinometa.ts'
 import { reviewScores, type ReviewScore } from './collectors/reviews.ts'
+import { reserveSeries } from './reservehistory.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 2 — data-led SEO pages. We pre-render REAL, indexable HTML for high-value
@@ -259,6 +260,30 @@ async function buildViews(): Promise<CasinoView[]> {
 
 const stat = (k: string, vv: string, cls = '') => `<div class="stat"><div class="k">${esc(k)}</div><div class="v ${cls}">${esc(vv)}</div></div>`
 
+// reserve COVERAGE level — qualitative band (mirrors the snapshot logic), never a raw %
+function coverageLevelOf(oc: BrandAgg | null): 'high' | 'medium' | 'partial' | 'under_review' | 'unknown' {
+  if (!oc || !(oc.reserves > 0)) return 'unknown'
+  if (oc.volumeSuspect) return 'under_review'
+  if (oc.reserveCoverage != null && oc.reserveCoverage > 200) return 'under_review'
+  if (oc.confidence === 'high') return 'high'
+  if (oc.confidence === 'medium') return 'medium'
+  return 'partial'
+}
+const COVERAGE_LABEL: Record<string, string> = { high: 'High', medium: 'Medium', partial: 'Partial', under_review: 'Under review', unknown: 'Unknown' }
+
+// tiny inline SVG sparkline of a numeric series (reserves over time) — no JS, crawl-safe
+function sparkline(values: number[], w = 220, h = 44): string {
+  const v = values.filter((x) => Number.isFinite(x))
+  if (v.length < 2) return ''
+  const min = Math.min(...v)
+  const max = Math.max(...v)
+  const span = max - min || 1
+  const pts = v.map((x, i) => `${((i / (v.length - 1)) * w).toFixed(1)},${(h - 4 - ((x - min) / span) * (h - 8)).toFixed(1)}`).join(' ')
+  const up = v[v.length - 1] >= v[0]
+  const col = up ? '#2ee6a6' : '#ff6b8a'
+  return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" preserveAspectRatio="none" style="display:block"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>`
+}
+
 function casinoPage(
   v: CasinoView,
   slug: string,
@@ -270,13 +295,15 @@ function casinoPage(
   const oc = v.onchain
   const r = ratingsOf(v)
   const bt = blendedTrust(v)
+  const cov = coverageLevelOf(oc)
 
+  // intent-tuned for the questions players actually search ("X reserves / is X legit / safe")
   const title = oc
-    ? `${v.name} — On-Chain Volume, Reserves & Trust Data | WCOIN.CASINO`
-    : `${v.name} — Crypto Casino Trust Ratings & Data | WCOIN.CASINO`
+    ? `${v.name} — On-Chain Reserves, Solvency & Trust Data | WCOIN.CASINO`
+    : `${v.name} — Crypto Casino Trust Ratings & Reserves Data | WCOIN.CASINO`
   const description = oc
-    ? `On-chain data for ${v.name}: ${fmtUsd(oc.volume7d)} tracked 7-day volume across ${oc.byChain?.length || 1} chains, ${fmtUsd(oc.reserves)} mapped reserves, and multi-source trust ratings. Observed blockchain activity, updated continuously.`
-    : `Aggregated third-party trust ratings and reference data for ${v.name} — casino.guru, Trustpilot${r.ag != null ? ', AskGamblers' : ''} and more, in one place. Updated continuously.`
+    ? `Is ${v.name} solvent and active? On-chain data: ${fmtUsd(oc.reserves)} tracked all-chain reserves (${COVERAGE_LABEL[cov]} coverage), ${fmtUsd(oc.volume7d)} 7-day volume across ${oc.byChain?.length || 1} chains, and multi-source trust ratings — independently verifiable, updated continuously.`
+    : `Trust ratings and reference data for ${v.name} — casino.guru, Trustpilot${r.ag != null ? ', AskGamblers' : ''} and more, in one place. Updated continuously.`
 
   // stats grid — on-chain tiles when we track wallets, else rating tiles
   let stats = ''
@@ -370,21 +397,53 @@ function casinoPage(
   const suspectNote = oc?.volumeSuspect
     ? `<p class="prose" style="margin:0 0 4px;padding:9px 13px;background:#ffb02014;border:1px solid #ffb02033;border-radius:10px;font-size:13px;color:#e8c98a">⚠ Volume note: ${esc(v.name)}'s observed on-chain volume is anomalously concentrated (very high value per counterparty), a pattern consistent with wash trading or internal transfers rather than real player activity. We exclude it from volume rankings; read the volume figure with caution.</p>`
     : ''
-  const body = `${limitedNote}${suspectNote}${sub}${trustLine}${stats}${chainTable}${ratingsTable}${refTable}${website}${rel}${compareLinks}${chainBestLinks}${cta}`
+  // ── solvency & activity — the heart of what a player wants to know ──────────────
+  let solvency = ''
+  if (oc && oc.reserves > 0) {
+    const series = reserveSeries(v.name, 60) // newest-first
+    const chrono = series.slice().reverse() // oldest → newest for the sparkline
+    const spark = chrono.length >= 2 ? sparkline(chrono.map((s) => s.reserves)) : ''
+    const oldest = chrono.length ? chrono[0].reserves : null
+    const newest = chrono.length ? chrono[chrono.length - 1].reserves : oc.reserves
+    const trendPct = oldest && oldest > 0 ? (newest - oldest) / oldest : null
+    const net = oc.net7d ?? 0
+    solvency =
+      `<h2>On-chain solvency &amp; activity</h2>` +
+      `<div class="grid">${stat('Tracked reserves', fmtUsd(oc.reserves), 'mint')}${stat('Reserve coverage', COVERAGE_LABEL[cov])}${stat('Net flow (7d)', (net >= 0 ? '+' : '−') + fmtUsd(Math.abs(net)), net >= 0 ? 'mint' : 'rose')}</div>` +
+      (spark
+        ? `<div style="margin:14px 0"><div class="prose" style="font-size:13px;margin-bottom:6px">Tracked reserves trend · last ${chrono.length} days${trendPct != null ? ` · <strong class="${trendPct >= 0 ? 'mint' : 'rose'}">${trendPct >= 0 ? '+' : ''}${(trendPct * 100).toFixed(1)}%</strong>` : ''}</div>${spark}</div>`
+        : '') +
+      `<p class="prose" style="font-size:13px">Reserves are an all-chain best-effort estimate from mapped wallets; coverage is partial by brand and shown as a level, not a percentage. This is observed wallet data — <em>not</em> a statement on solvency, safety or legality. <a href="/methodology/proof-of-reserves">How reserves are tracked →</a></p>`
+  }
 
-  const jsonLd = oc
-    ? [
-        {
-          '@type': 'Dataset',
-          name: `${v.name} on-chain activity dataset`,
-          description,
-          url,
-          creator: { '@type': 'Organization', name: 'WCOIN.CASINO', url: SITE },
-          isAccessibleForFree: true,
-          variableMeasured: ['7d on-chain volume', 'mapped reserves (USD)', 'net flow', 'active counterparties'],
-        },
-      ]
-    : []
+  // ── FAQ — answers the exact questions players search, neutrally (+ FAQPage schema) ─
+  const faqs: { q: string; a: string }[] = []
+  if (oc) {
+    faqs.push({ q: `What are ${v.name}'s on-chain reserves?`, a: `WCOIN tracks approximately ${fmtUsd(oc.reserves)} in all-chain reserves mapped to ${v.name}, with ${COVERAGE_LABEL[cov].toLowerCase()} coverage. Reserves are a best-effort estimate from mapped wallets and may be partial by brand.` })
+    faqs.push({ q: `Is ${v.name} active on-chain?`, a: `${v.name} has ${fmtUsd(oc.volume7d)} of tracked on-chain volume over the last 7 days across ${oc.byChain?.length || 1} chain${(oc.byChain?.length || 1) === 1 ? '' : 's'}, with ${fmtNum(oc.players)} active counterparties.` })
+    faqs.push({ q: `Is ${v.name} legit or safe to use?`, a: `WCOIN is an independent on-chain data site and does not rate operators as legit, safe or unsafe. We surface verifiable signals — on-chain reserves, tracked volume and independent third-party ratings${bt ? ` (blended trust ${bt.score}/100 from ${bt.sources} sources)` : ''} — so you can assess for yourself. Always do your own research.` })
+    faqs.push({ q: `How is ${v.name}'s data verified?`, a: `Figures come from on-chain transfers attributed to wallets associated with ${v.name}, plus published third-party ratings shown with their source. Attribution carries inherent uncertainty; see our methodology.` })
+  }
+  const faqHtml = faqs.length ? `<h2>Frequently asked questions</h2>${faqs.map((f) => `<div style="margin:10px 0"><p style="font-weight:600;margin:0 0 2px">${esc(f.q)}</p><p class="prose" style="margin:0;font-size:14px">${esc(f.a)}</p></div>`).join('')}` : ''
+
+  const body = `${limitedNote}${suspectNote}${sub}${trustLine}${stats}${solvency}${chainTable}${ratingsTable}${refTable}${website}${rel}${compareLinks}${chainBestLinks}${faqHtml}${cta}`
+
+  const jsonLd: object[] = [
+    ...(oc
+      ? [
+          {
+            '@type': 'Dataset',
+            name: `${v.name} on-chain activity dataset`,
+            description,
+            url,
+            creator: { '@type': 'Organization', name: 'WCOIN.CASINO', url: SITE },
+            isAccessibleForFree: true,
+            variableMeasured: ['all-chain tracked reserves (USD)', '7d on-chain volume', 'net flow', 'active counterparties'],
+          },
+        ]
+      : []),
+    ...(faqs.length ? [{ '@type': 'FAQPage', mainEntity: faqs.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a } })) }] : []),
+  ]
   return {
     title,
     description,
