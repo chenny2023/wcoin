@@ -40,7 +40,7 @@ export const PANEL_HTML = `<!doctype html>
 <script>
 const TOKEN_KEY='wcoin_token'
 let token=localStorage.getItem(TOKEN_KEY)||''
-let tab='signals', products=[], filters={product:'',kind:'',platform:'',minIntent:'0',sort:'ts'}
+let tab='signals', products=[], filters={product:'',kind:'',platform:'',minIntent:'0',sort:'ts',q:''}
 const $=s=>document.querySelector(s)
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600)}
 async function api(path,opts={}){
@@ -65,7 +65,7 @@ function loginView(step){
 function shell(inner){
   return '<header><h1>社媒情报</h1><span class="mut">竞品 / 用户需求 / 推荐机会</span>'+
    '<div class="tabs">'+
-   ['signals|信号','drafts|草稿队列'].map(t=>{const[k,n]=t.split('|');return '<button class="tab '+(tab===k?'on':'')+'" onclick="go(\\''+k+'\\')">'+n+'</button>'}).join('')+
+   ['signals|信号','drafts|草稿队列','custom|自定义采集'].map(t=>{const[k,n]=t.split('|');return '<button class="tab '+(tab===k?'on':'')+'" onclick="go(\\''+k+'\\')">'+n+'</button>'}).join('')+
    '<button class="btn" onclick="runNow()">手动采集一轮</button>'+
    '<button class="btn" onclick="logout()">退出</button></div></header><main>'+inner+'</main>'
 }
@@ -76,7 +76,7 @@ async function runNow(){await api('/api/internal/social/run',{method:'POST'});to
 async function render(loginStep){
   if(!token){loginView(loginStep);return}
   if(!products.length){try{const p=await api('/api/internal/social/products');products=p.products||[]}catch(e){return}}
-  if(tab==='signals')await renderSignals();else await renderDrafts()
+  if(tab==='signals')await renderSignals();else if(tab==='drafts')await renderDrafts();else await renderCustom()
 }
 
 function filterBar(){
@@ -87,13 +87,14 @@ function filterBar(){
    '<select id="f-platform" onchange="setF()">'+['|全部平台','reddit|Reddit','x|X','threads|Threads'].map(o=>{const[v,l]=o.split('|');return opt(v,l,filters.platform)}).join('')+'</select>'+
    '<select id="f-intent" onchange="setF()">'+['0|意图≥0','0.3|意图≥0.3','0.5|意图≥0.5','0.7|意图≥0.7'].map(o=>{const[v,l]=o.split('|');return opt(v,l,filters.minIntent)}).join('')+'</select>'+
    '<select id="f-sort" onchange="setF()">'+['ts|最新优先','intent|意图优先'].map(o=>{const[v,l]=o.split('|');return opt(v,l,filters.sort)}).join('')+'</select>'+
+   '<input id="f-q" placeholder="关键词搜索…" value="'+esc(filters.q)+'" onkeydown="if(event.key===\\'Enter\\')setF()" style="min-width:160px">'+
    '</div>'
 }
-function setF(){filters={product:$('#f-product').value,kind:$('#f-kind').value,platform:$('#f-platform').value,minIntent:$('#f-intent').value,sort:$('#f-sort').value};renderSignals()}
+function setF(){filters={product:$('#f-product').value,kind:$('#f-kind').value,platform:$('#f-platform').value,minIntent:$('#f-intent').value,sort:$('#f-sort').value,q:$('#f-q').value.trim()};renderSignals()}
 
 async function renderSignals(){
   const st=await api('/api/internal/social/stats')
-  const qs=new URLSearchParams({product:filters.product,kind:filters.kind,platform:filters.platform,minIntent:filters.minIntent,sort:filters.sort,limit:'80'}).toString()
+  const qs=new URLSearchParams({product:filters.product,kind:filters.kind,platform:filters.platform,minIntent:filters.minIntent,sort:filters.sort,q:filters.q,limit:'80'}).toString()
   const {signals}=await api('/api/internal/social/signals?'+qs)
   const stats='<div class="stats"><div class="stat"><div class="mut">总信号</div><b>'+st.total+'</b></div>'+
     '<div class="stat"><div class="mut">近24h</div><b>'+st.collected24h+'</b></div>'+
@@ -137,6 +138,51 @@ async function renderDrafts(){
 }
 function copyDraft(id){const t=$('#dft-'+id);t.select();navigator.clipboard.writeText(t.value);toast('已复制')}
 async function setDraft(id,status){const draft=$('#dft-'+id).value;await api('/api/internal/social/draft/'+id+'/status',{method:'POST',body:JSON.stringify({status,draft})});toast('已'+({posted:'标记发布',approved:'通过',dismissed:'弃用'}[status]));renderDrafts()}
+
+// ── 自定义采集：为公司其他产品手动输入需求(关键词/账号)去抓 Reddit/X ──────────
+async function renderCustom(){
+  const {items}=await api('/api/internal/social/custom')
+  const opt=(v,l,sel)=>'<option value="'+v+'"'+(sel===v?' selected':'')+'>'+l+'</option>'
+  const form='<div class="card">'+
+    '<div class="row" style="flex-wrap:wrap;gap:8px">'+
+      '<input id="c-query" placeholder="关键词 或 X账号(如 hiring tool / @某账号)" style="min-width:280px;flex:1">'+
+      '<select id="c-platform">'+opt('reddit','Reddit','reddit')+opt('x','X','')+'</select>'+
+      '<select id="c-kind">'+['demand|需求/机会','competitor|竞品','brand|品牌'].map(o=>{const[v,l]=o.split('|');return opt(v,l,'demand')}).join('')+'</select>'+
+      '<input id="c-product" placeholder="产品标签(如 wonix/hirecx)" style="width:160px">'+
+    '</div>'+
+    '<div class="row" style="margin-top:8px;flex-wrap:wrap;gap:8px">'+
+      '<input id="c-subs" placeholder="限定 subreddit(逗号分隔，仅 Reddit，可留空)" style="min-width:280px;flex:1">'+
+      '<button class="btn" onclick="runCustom(false)">立即采集一次</button>'+
+      '<button class="btn good" onclick="runCustom(true)">保存并定时采集</button>'+
+    '</div>'+
+    '<div class="mut" style="font-size:12px;margin-top:6px">「立即」只跑一次不保存；「保存」后会随主调度定时轮询，结果进入"信号"页(按产品标签过滤)。</div></div>'
+  const rows=items.length?items.map(c=>{
+    const last=c.last_run_ts?new Date(c.last_run_ts).toLocaleString():'—'
+    return '<div class="card"><div class="row"><span class="pill '+esc(c.kind)+'">'+esc(c.kind)+'</span>'+
+      '<span class="pill">'+esc(c.platform)+'</span><span class="pill">'+esc(c.product)+'</span>'+
+      '<span class="pill '+(c.active?'good':'')+'">'+(c.active?'启用中':'已停用')+'</span>'+
+      '<span class="mut" style="margin-left:auto;font-size:12px">上次: '+esc(last)+'</span></div>'+
+      '<div class="title">'+esc(c.query)+(c.subreddits?' <span class="mut">@ '+esc(c.subreddits)+'</span>':'')+'</div>'+
+      '<div class="row" style="margin-top:8px">'+
+        '<button class="btn sm" onclick="runSavedCustom('+c.id+')">立即重跑</button>'+
+        '<button class="btn sm" onclick="toggleCustom('+c.id+')">'+(c.active?'停用':'启用')+'</button>'+
+        '<button class="btn sm bad" style="margin-left:auto" onclick="delCustom('+c.id+')">删除</button></div></div>'
+  }).join(''):'<div class="empty">还没有保存的自定义采集需求。</div>'
+  $('#app').innerHTML=shell('<p class="mut">为公司其他产品自定义采集需求：输入关键词或 X 账号 → Reddit/X 抓取 → 结果进"信号"页。</p>'+form+'<h3 class="mut" style="margin:14px 0 8px">已保存需求</h3>'+rows)
+}
+async function runCustom(save){
+  const query=$('#c-query').value.trim()
+  if(query.length<2){toast('请输入至少 2 个字符的查询');return}
+  const body={query,platform:$('#c-platform').value,kind:$('#c-kind').value,product:$('#c-product').value.trim(),subreddits:$('#c-subs').value.trim(),save}
+  toast('采集中…')
+  const r=await api('/api/internal/social/custom',{method:'POST',body:JSON.stringify(body)})
+  if(r.error)toast('出错: '+r.error)
+  else toast('新增 '+(r.added||0)+' 条'+(save?'，已保存':''))
+  if(save)renderCustom()
+}
+async function runSavedCustom(id){toast('采集中…');const r=await api('/api/internal/social/custom/'+id+'/run',{method:'POST'});toast(r.error?('出错: '+r.error):('新增 '+(r.added||0)+' 条'));renderCustom()}
+async function toggleCustom(id){await api('/api/internal/social/custom/'+id+'/toggle',{method:'POST'});renderCustom()}
+async function delCustom(id){if(!confirm('删除该自定义需求？'))return;await api('/api/internal/social/custom/'+id,{method:'DELETE'});renderCustom()}
 
 render()
 </script>

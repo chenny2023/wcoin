@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { db } from '../db.ts'
 import { userFromRequest, isAdminEmail } from '../auth.ts'
 import { generateDraft } from './drafts.ts'
-import { runSocialIntelOnce } from './socialintel.ts'
+import { runSocialIntelOnce, runCustomQuery } from './socialintel.ts'
 import { PRODUCTS } from './products.ts'
 import { PANEL_HTML } from './panel.ts'
 
@@ -44,7 +44,45 @@ export function registerSocialIntel(app: FastifyInstance): void {
     return { byProduct, pendingDrafts: pending, collected24h: last24, total }
   })
 
-  // 信号列表（可按产品/类别/平台/最小意图分/状态过滤）
+  // 分析概览：跨平台/产品/类别的聚合，供「概览」页可视化
+  app.get('/api/internal/social/analytics', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const q = req.query as Record<string, string>
+    const days = Math.min(30, Math.max(1, Number(q.days) || 7))
+    const since = Date.now() - days * 86_400_000
+    const sinceClause = 'collected_ts > ?'
+    const byPlatform = db.prepare(`SELECT platform, COUNT(*) n FROM social_intel WHERE ${sinceClause} GROUP BY platform ORDER BY n DESC`).all(since)
+    const byKind = db.prepare(`SELECT kind, COUNT(*) n FROM social_intel WHERE ${sinceClause} GROUP BY kind ORDER BY n DESC`).all(since)
+    const byProduct = db.prepare(`SELECT product, COUNT(*) n, AVG(sentiment) avg_sent, AVG(intent) avg_intent FROM social_intel WHERE ${sinceClause} GROUP BY product ORDER BY n DESC`).all(since)
+    // 情绪三档分布
+    const sentiment = db.prepare(`
+      SELECT SUM(CASE WHEN sentiment > 0.15 THEN 1 ELSE 0 END) pos,
+             SUM(CASE WHEN sentiment < -0.15 THEN 1 ELSE 0 END) neg,
+             SUM(CASE WHEN sentiment >= -0.15 AND sentiment <= 0.15 THEN 1 ELSE 0 END) neu
+      FROM social_intel WHERE ${sinceClause}`).get(since)
+    // 高意图需求关键词排行（机会词）
+    const topDemand = db.prepare(`
+      SELECT query, COUNT(*) n, AVG(intent) avg_intent, AVG(sentiment) avg_sent
+      FROM social_intel WHERE ${sinceClause} AND kind='demand'
+      GROUP BY query ORDER BY avg_intent DESC, n DESC LIMIT 15`).all(since)
+    // 竞品讨论热度（按命中关键词）
+    const topCompetitor = db.prepare(`
+      SELECT query, COUNT(*) n, AVG(sentiment) avg_sent
+      FROM social_intel WHERE ${sinceClause} AND kind='competitor'
+      GROUP BY query ORDER BY n DESC LIMIT 15`).all(since)
+    // 按天趋势
+    const trend = db.prepare(`
+      SELECT strftime('%Y-%m-%d', collected_ts/1000, 'unixepoch') d, COUNT(*) n
+      FROM social_intel WHERE ${sinceClause} GROUP BY d ORDER BY d`).all(since)
+    // 最高意图的待处理机会贴
+    const topOpportunities = db.prepare(`
+      SELECT id, product, platform, query, title, url, intent, sentiment, ts
+      FROM social_intel WHERE ${sinceClause} AND kind='demand' AND status='new'
+      ORDER BY intent DESC, ts DESC LIMIT 10`).all(since)
+    return { days, byPlatform, byKind, byProduct, sentiment, topDemand, topCompetitor, trend, topOpportunities }
+  })
+
+  // 信号列表（可按产品/类别/平台/最小意图分/状态/关键词过滤）
   app.get('/api/internal/social/signals', async (req, reply) => {
     if (!requireAdmin(req, reply)) return
     const q = req.query as Record<string, string>
@@ -55,6 +93,7 @@ export function registerSocialIntel(app: FastifyInstance): void {
     if (q.platform) { where.push('platform = ?'); params.push(q.platform) }
     if (q.status) { where.push('status = ?'); params.push(q.status) }
     if (q.minIntent) { where.push('intent >= ?'); params.push(Number(q.minIntent)) }
+    if (q.q && q.q.trim()) { where.push('(title LIKE ? OR body LIKE ? OR author LIKE ?)'); const w = `%${q.q.trim()}%`; params.push(w, w, w) }
     const limit = Math.min(200, Number(q.limit) || 60)
     const sort = q.sort === 'intent' ? 'intent DESC, ts DESC' : 'ts DESC'
     const rows = db
@@ -118,6 +157,82 @@ export function registerSocialIntel(app: FastifyInstance): void {
     if (!requireAdmin(req, reply)) return
     void runSocialIntelOnce()
     return { ok: true, message: '已触发一轮采集（异步）' }
+  })
+
+  // ── 自定义采集需求 ───────────────────────────────────────────────────────
+  // 立即采集一条自定义查询；save=true 时同时保存为可定时轮询的需求。
+  app.post('/api/internal/social/custom', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const b = (req.body || {}) as {
+      label?: string; product?: string; platform?: string; kind?: string
+      query?: string; subreddits?: string; save?: boolean
+    }
+    const query = String(b.query || '').trim()
+    if (query.length < 2) return reply.code(400).send({ error: 'query 至少 2 个字符' })
+    const platform = b.platform === 'x' ? 'x' : 'reddit'
+    const kind = ['brand', 'competitor', 'demand'].includes(String(b.kind)) ? String(b.kind) : 'demand'
+    const product = (String(b.product || 'custom').trim() || 'custom').slice(0, 40)
+    const subreddits = String(b.subreddits || '').split(',').map((s) => s.trim()).filter(Boolean)
+
+    let savedId: number | undefined
+    if (b.save) {
+      const info = db
+        .prepare(
+          `INSERT INTO social_custom_query(label, product, platform, kind, query, subreddits, active, created_ts)
+           VALUES(?,?,?,?,?,?,1,?)`,
+        )
+        .run(String(b.label || query).slice(0, 120), product, platform, kind, query, subreddits.join(','), Date.now())
+      savedId = Number(info.lastInsertRowid)
+    }
+    let added = 0
+    let error: string | undefined
+    try {
+      added = await runCustomQuery({ product, platform, kind, query, subreddits })
+    } catch (e) {
+      error = (e as Error).message
+    }
+    if (savedId) db.prepare('UPDATE social_custom_query SET last_run_ts=? WHERE id=?').run(Date.now(), savedId)
+    return { ok: !error, added, savedId, error }
+  })
+
+  // 已保存的自定义需求列表
+  app.get('/api/internal/social/custom', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const items = db.prepare('SELECT * FROM social_custom_query ORDER BY created_ts DESC LIMIT 200').all()
+    return { items }
+  })
+
+  // 启用/停用一条已保存需求
+  app.post('/api/internal/social/custom/:id/toggle', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const id = Number((req.params as any).id)
+    db.prepare('UPDATE social_custom_query SET active = CASE active WHEN 1 THEN 0 ELSE 1 END WHERE id=?').run(id)
+    return { ok: true }
+  })
+
+  // 立即重跑一条已保存需求
+  app.post('/api/internal/social/custom/:id/run', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const id = Number((req.params as any).id)
+    const row = db.prepare('SELECT * FROM social_custom_query WHERE id=?').get(id) as any
+    if (!row) return reply.code(404).send({ error: 'not found' })
+    let added = 0
+    let error: string | undefined
+    try {
+      added = await runCustomQuery({
+        product: row.product, platform: row.platform, kind: row.kind,
+        query: row.query, subreddits: String(row.subreddits || '').split(',').map((s: string) => s.trim()).filter(Boolean),
+      })
+    } catch (e) { error = (e as Error).message }
+    db.prepare('UPDATE social_custom_query SET last_run_ts=? WHERE id=?').run(Date.now(), id)
+    return { ok: !error, added, error }
+  })
+
+  // 删除一条已保存需求
+  app.delete('/api/internal/social/custom/:id', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    db.prepare('DELETE FROM social_custom_query WHERE id=?').run(Number((req.params as any).id))
+    return { ok: true }
   })
 
   console.log('[social-intel] internal panel registered at /internal/social')

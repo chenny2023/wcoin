@@ -54,6 +54,21 @@ CREATE TABLE IF NOT EXISTS social_drafts (
 );
 CREATE INDEX IF NOT EXISTS idx_sd_sig ON social_drafts(signal_id);
 CREATE INDEX IF NOT EXISTS idx_sd_status ON social_drafts(status, created_ts DESC);
+
+-- 自定义采集需求：面板里临时填写的查询(关键词/账号)，可即时跑一次，也可保存后随
+-- 调度定时跑。active=1 的会被 buildJobs() 纳入轮询。product 仅作标签(可填任意自有产品)。
+CREATE TABLE IF NOT EXISTS social_custom_query (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  label       TEXT,
+  product     TEXT NOT NULL DEFAULT 'custom',
+  platform    TEXT NOT NULL DEFAULT 'reddit',  -- reddit | x
+  kind        TEXT NOT NULL DEFAULT 'demand',  -- brand | competitor | demand
+  query       TEXT NOT NULL,
+  subreddits  TEXT,                            -- csv（仅 reddit）
+  active      INTEGER NOT NULL DEFAULT 1,
+  last_run_ts INTEGER,
+  created_ts  INTEGER NOT NULL
+);
 `)
 
 const insertSignal = db.prepare(`
@@ -187,7 +202,43 @@ function buildJobs(): Job[] {
     for (const h of p.x.competitorHandles) jobs.push({ product: p.key, platform: 'x', kind: 'competitor', query: h })
     for (const h of p.x.ownHandles) jobs.push({ product: p.key, platform: 'x', kind: 'brand', query: h })
   }
+  // 已保存且启用的「自定义采集需求」——随同主调度一起轮询
+  for (const c of activeCustomQueries()) jobs.push(c)
   return jobs
+}
+
+// ── 自定义采集需求（面板手填）────────────────────────────────────────────────
+type CustomKind = 'brand' | 'competitor' | 'demand'
+const KINDS: CustomKind[] = ['brand', 'competitor', 'demand']
+
+/** 把一行 social_custom_query 规范化为一个 Job（X 平台只支持 brand/competitor）。 */
+function customRowToJob(r: { product: string; platform: string; kind: string; query: string; subreddits: string | null }): Job {
+  const product = (r.product || 'custom').slice(0, 40)
+  const kind = (KINDS.includes(r.kind as CustomKind) ? r.kind : 'demand') as CustomKind
+  if (r.platform === 'x') return { product, platform: 'x', kind: kind === 'demand' ? 'competitor' : kind, query: r.query }
+  const subreddits = (r.subreddits || '').split(',').map((s) => s.trim()).filter(Boolean)
+  return { product, platform: 'reddit', kind, query: r.query, subreddits }
+}
+
+function activeCustomQueries(): Job[] {
+  const rows = db
+    .prepare('SELECT product, platform, kind, query, subreddits FROM social_custom_query WHERE active = 1')
+    .all() as any[]
+  return rows.map(customRowToJob)
+}
+
+/** 即时跑一条自定义需求（不一定已保存），返回新增信号数。 */
+export async function runCustomQuery(input: {
+  product?: string; platform?: string; kind?: string; query: string; subreddits?: string[]
+}): Promise<number> {
+  const job = customRowToJob({
+    product: input.product || 'custom',
+    platform: input.platform === 'x' ? 'x' : 'reddit',
+    kind: input.kind || 'demand',
+    query: input.query,
+    subreddits: (input.subreddits || []).join(','),
+  })
+  return job.platform === 'reddit' ? runRedditJob(job) : runXJob(job)
 }
 
 let jobs: Job[] = []
