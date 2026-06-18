@@ -112,14 +112,16 @@ function StatGrid({ data }: { data: any }) {
     },
   ]
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+    <div className="grid grid-cols-2 items-stretch gap-3 sm:grid-cols-3 lg:grid-cols-6">
       {cells.map((c) => (
-        <Card key={c.label} spotlight className="p-4">
-          <div className="text-[11px] uppercase tracking-wider text-white/40">
+        // flex column + value pushed to the bottom (mt-auto) so every metric sits on the
+        // same baseline regardless of whether its label wraps to one or two lines.
+        <Card key={c.label} spotlight className="flex h-full flex-col p-4">
+          <div className="text-[11px] uppercase leading-tight tracking-wider text-white/40">
             {c.label}
             {c.tip && <Tip text={c.tip} />}
           </div>
-          <div className={`mt-1.5 font-display text-xl font-bold tabular-nums ${c.tone ?? ''}`}>
+          <div className={`mt-auto pt-2 font-display text-xl font-bold tabular-nums ${c.tone ?? ''}`}>
             {c.raw != null && c.fmt ? <CountUp value={c.raw} format={c.fmt} /> : c.value}
           </div>
           {c.sub && <div className="mt-0.5 text-[11px] text-white/40">{c.sub}</div>}
