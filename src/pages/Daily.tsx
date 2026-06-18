@@ -324,6 +324,34 @@ function NotableSignals({ signals }: { signals: string[] }) {
   )
 }
 
+// Share / Download module (growth) — copy link, download the branded share card,
+// share to X (web intent — visitor's own account), view methodology.
+function ShareBar({ date }: { date?: string }) {
+  const [copied, setCopied] = useState(false)
+  const pageUrl = 'https://wcoin.casino/daily'
+  const imgUrl = `/api/share/daily.png${date ? `?date=${encodeURIComponent(date)}` : ''}`
+  const xUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent('Crypto Casino Market — Daily: verified on-chain volume, reserves & whale activity.')}&url=${encodeURIComponent(pageUrl)}`
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(pageUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    } catch {
+      /* clipboard blocked */
+    }
+  }
+  const cls = 'inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[13px] font-medium text-white/75 hover:bg-white/10'
+  return (
+    <Card className="flex flex-wrap items-center gap-2 p-4">
+      <span className="mr-1 text-[13px] font-medium text-white/55">Share this report</span>
+      <button onClick={copy} className={cls}>{copied ? 'Copied ✓' : 'Copy link'}</button>
+      <a href={imgUrl} download={`wcoin-daily-${date || 'today'}.png`} className={cls}>Download card</a>
+      <a href={xUrl} target="_blank" rel="noreferrer" className={cls}>Share to X</a>
+      <a href="/methodology/data-confidence" className={cls}>Methodology</a>
+    </Card>
+  )
+}
+
 function CoverageNotes() {
   const notes = [
     'Verified flow includes only mapped casino brands with medium or higher confidence.',
@@ -527,6 +555,9 @@ export default function Daily() {
                 </p>
               </Card>
             )}
+
+            {/* Share / Download */}
+            <ShareBar date={data.snapshot_date} />
 
             {/* Subscribe CTA */}
             <Card spotlight className="ring-gold flex flex-col items-center gap-4 p-8 text-center">

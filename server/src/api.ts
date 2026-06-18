@@ -5,6 +5,7 @@ import { aggregateEntities, aggregateBrands, maintainedPlayers } from './aggrega
 import { runDataQualityChecks, lastDataQuality } from './dataquality.ts'
 import { brandHistory } from './brandstore.ts'
 import { previewContent, previewRankingCard, runContent } from './content/pipeline.ts'
+import { renderDailyShareCard } from './content/card.ts'
 import { xEnabled } from './content/xclient.ts'
 import { reserveSeries } from './reservehistory.ts'
 import { twitchEnabled } from './collectors/twitch.ts'
@@ -422,6 +423,36 @@ export async function registerApi(app: FastifyInstance) {
   // 1.0 content layer: precomputed daily market snapshot (homepage + email source).
   // Reads the snapshot table, never raw transfers — instant, no compute on request.
   app.get('/api/snapshot/market', async () => latestMarketSnapshot() ?? { error: 'no snapshot yet' })
+
+  // public — branded daily share / OG card (1200×630 PNG) with the day's verified
+  // headline figures. ?date=YYYY-MM-DD for an archived report; default = latest.
+  app.get('/api/share/daily.png', async (req, reply) => {
+    const date = (req.query as { date?: string })?.date
+    const row = (date && /^\d{4}-\d{2}-\d{2}$/.test(date)
+      ? db.prepare('SELECT * FROM daily_market_snapshot WHERE snapshot_date=?').get(date)
+      : db.prepare('SELECT * FROM daily_market_snapshot ORDER BY snapshot_date DESC LIMIT 1').get()) as any
+    if (!row) return reply.code(404).send({ error: 'no snapshot' })
+    let payload: any = {}
+    try {
+      payload = JSON.parse(row.payload_json || '{}')
+    } catch {
+      payload = {}
+    }
+    const f = (n: number) => {
+      const a = Math.abs(n || 0)
+      return a >= 1e9 ? '$' + (n / 1e9).toFixed(2) + 'B' : a >= 1e6 ? '$' + (n / 1e6).toFixed(1) + 'M' : a >= 1e3 ? '$' + (n / 1e3).toFixed(1) + 'K' : '$' + Math.round(n || 0)
+    }
+    const net = row.net_flow_24h ?? 0
+    const stats = [
+      { label: '24h Verified Volume', value: f(row.tracked_volume_24h ?? 0) },
+      { label: 'Net Flow 24h', value: (net >= 0 ? '+' : '−') + f(Math.abs(net)) },
+      { label: 'Active Brands', value: String(row.active_casinos ?? 0) },
+      { label: 'Tracked Reserves', value: f(row.reserves_total ?? 0) },
+    ]
+    const png = await renderDailyShareCard({ date: row.snapshot_date, stats, topChain: payload.concentration?.topChain ?? undefined })
+    if (!png) return reply.code(503).send({ error: 'renderer unavailable' })
+    return reply.header('Content-Type', 'image/png').header('Cache-Control', 'public, max-age=3600').send(png)
+  })
 
   // public — global search across tracked casinos, directory, streamers, wallets
   app.get('/api/search', async (req) => {

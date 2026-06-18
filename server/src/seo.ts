@@ -68,8 +68,9 @@ function layout(opts: {
   updated: number
   body: string
   noindex?: boolean
+  ogImage?: string
 }): string {
-  const { title, description, canonical, jsonLd = [], breadcrumb, h1, updated, body, noindex } = opts
+  const { title, description, canonical, jsonLd = [], breadcrumb, h1, updated, body, noindex, ogImage } = opts
   const crumbLd = {
     '@type': 'BreadcrumbList',
     itemListElement: breadcrumb.map((b, i) => ({ '@type': 'ListItem', position: i + 1, name: b.name, item: b.url })),
@@ -87,8 +88,8 @@ function layout(opts: {
 <meta name="theme-color" content="#0a0a0f">
 <meta property="og:type" content="website"><meta property="og:site_name" content="WCOIN.CASINO">
 <meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}">
-<meta property="og:url" content="${esc(canonical)}"><meta property="og:image" content="${SITE}/og.svg">
-<meta name="twitter:card" content="summary_large_image">
+<meta property="og:url" content="${esc(canonical)}"><meta property="og:image" content="${esc(ogImage || SITE + '/og.svg')}">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${esc(ogImage || SITE + '/og.svg')}">
 <script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@graph': graph })}</script>
 <style>
 :root{--bg:#0a0a0f;--card:#13131b;--line:#ffffff14;--fg:#e8e8ee;--mut:#9aa0b4;--dim:#6b6b78;--gold:#f5b100;--mint:#2ee6a6;--rose:#ff6b8a}
@@ -855,6 +856,7 @@ ${pager}
       h1: `Crypto casino market — ${date}`,
       updated: Date.now(),
       body,
+      ogImage: `${SITE}/api/share/daily.png?date=${encodeURIComponent(date)}`,
     }),
   }
 }
