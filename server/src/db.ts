@@ -500,6 +500,8 @@ CREATE INDEX IF NOT EXISTS idx_dq_date ON data_quality_issue(date, issue_type);
 
 // additive migrations for DBs created before these columns existed
 for (const ddl of [
+  // one-click email-confirmation token (magic link) for digest double-opt-in
+  'ALTER TABLE email_subscriber ADD COLUMN confirm_token TEXT',
   'ALTER TABLE streamers ADD COLUMN followers INTEGER NOT NULL DEFAULT 0',
   'ALTER TABLE streamers ADD COLUMN affiliation TEXT',
   // Trustpilot consumer signal merged onto each directory casino (per-domain /review/ enricher)

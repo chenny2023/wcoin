@@ -112,18 +112,21 @@ export async function sendEmail(
 }
 
 // Subscription confirmation code (distinct copy from the sign-in code).
-export function subscribeConfirmBody(code: string): { subject: string; html: string; text: string } {
+export function subscribeConfirmBody(code: string, confirmUrl: string): { subject: string; html: string; text: string } {
   const safe = escapeHtml(code)
+  const url = escapeHtml(confirmUrl)
   const html = `
     <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#0b0d12;padding:32px;color:#e8eaf0">
       <div style="max-width:440px;margin:0 auto;background:#11141c;border:1px solid #1e2230;border-radius:16px;padding:32px">
         <div style="font-weight:700;font-size:18px;letter-spacing:.04em;color:#f5b100">WCOIN.CASINO</div>
         <h1 style="font-size:20px;margin:20px 0 6px">Confirm your Daily Report subscription</h1>
-        <p style="color:#9aa0b4;font-size:14px;margin:0 0 20px">Enter this code to start receiving the free Crypto Casino Market Daily — on-chain flows, reserves & streamer signals. Expires in 10 minutes.</p>
-        <div style="font-size:34px;font-weight:700;letter-spacing:.32em;background:#0b0d12;border:1px solid #1e2230;border-radius:12px;padding:18px;text-align:center;color:#fff">${safe}</div>
-        <p style="color:#6b7080;font-size:12px;margin:20px 0 0">If you didn't request this, you can ignore this email.</p>
+        <p style="color:#9aa0b4;font-size:14px;margin:0 0 22px">One click to start receiving the free Crypto Casino Market Daily — on-chain flows, reserves &amp; streamer signals. This link expires in 10 minutes.</p>
+        <a href="${url}" style="display:block;background:#f5b100;color:#0b0d12;font-weight:700;text-decoration:none;padding:14px 18px;border-radius:12px;text-align:center;font-size:15px">Confirm subscription →</a>
+        <p style="color:#6b7080;font-size:13px;margin:22px 0 8px">Or enter this code on the site:</p>
+        <div style="font-size:26px;font-weight:700;letter-spacing:.28em;background:#0b0d12;border:1px solid #1e2230;border-radius:12px;padding:14px;text-align:center;color:#fff">${safe}</div>
+        <p style="color:#6b7080;font-size:12px;margin:22px 0 0">If you didn't request this, you can ignore this email.</p>
       </div>
     </div>`
-  const text = `Your WCOIN.CASINO subscription confirmation code is ${code}. It expires in 10 minutes.`
-  return { subject: `Confirm your WCOIN Daily subscription: ${code}`, html, text }
+  const text = `Confirm your WCOIN.CASINO Daily Report subscription by opening this link (expires in 10 minutes):\n${confirmUrl}\n\nOr enter this code on the site: ${code}`
+  return { subject: `Confirm your WCOIN Daily subscription`, html, text }
 }

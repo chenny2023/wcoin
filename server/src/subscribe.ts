@@ -15,6 +15,7 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 const CODE_TTL_MS = 10 * 60_000
 const MAX_CODES_PER_WINDOW = 5
 const MAX_VERIFY_ATTEMPTS = 5
+const SITE = 'https://wcoin.casino'
 
 export function registerSubscribe(app: FastifyInstance) {
   // step 1 — request a confirmation code
@@ -28,15 +29,18 @@ export function registerSubscribe(app: FastifyInstance) {
     const recent = (db.prepare('SELECT COUNT(*) n FROM verification_codes WHERE email=? AND created_at > ?').get(email, now - CODE_TTL_MS) as any).n
     if (recent >= MAX_CODES_PER_WINDOW) return reply.code(429).send({ error: 'Too many requests — try again later' })
 
+    // fresh one-click confirm token each request (so an old link can't linger)
+    const confirmToken = randomBytes(24).toString('hex')
     db.prepare(
-      `INSERT INTO email_subscriber(email, status, frequency, unsubscribe_token, created_at, updated_at)
-       VALUES(?, 'pending', 'daily', ?, ?, ?)
-       ON CONFLICT(email) DO UPDATE SET status='pending', updated_at=excluded.updated_at`,
-    ).run(email, randomBytes(24).toString('hex'), now, now)
+      `INSERT INTO email_subscriber(email, status, frequency, unsubscribe_token, confirm_token, created_at, updated_at)
+       VALUES(?, 'pending', 'daily', ?, ?, ?, ?)
+       ON CONFLICT(email) DO UPDATE SET status='pending', confirm_token=excluded.confirm_token, updated_at=excluded.updated_at`,
+    ).run(email, randomBytes(24).toString('hex'), confirmToken, now, now)
 
     const code = String(randomInt(0, 1_000_000)).padStart(6, '0')
     db.prepare('INSERT INTO verification_codes(email, code, expires_at, attempts, created_at) VALUES(?, ?, ?, 0, ?)').run(email, code, now + CODE_TTL_MS, now)
-    const { delivered } = await sendEmail(email, subscribeConfirmBody(code))
+    const confirmUrl = `${SITE}/api/subscribe/confirm?token=${confirmToken}`
+    const { delivered } = await sendEmail(email, subscribeConfirmBody(code, confirmUrl))
     const devCode = !delivered && config.nodeEnv !== 'production' ? code : undefined
     return { sent: true, delivered, ...(devCode ? { devCode } : {}) }
   })
@@ -68,6 +72,30 @@ export function registerSubscribe(app: FastifyInstance) {
     db.prepare("UPDATE email_subscriber SET status='active', verified_at=?, updated_at=? WHERE email=?").run(now, now, email)
     const tok = (db.prepare('SELECT unsubscribe_token, frequency FROM email_subscriber WHERE email=?').get(email) as any) ?? {}
     return { active: true, unsubscribeToken: tok.unsubscribe_token, frequency: tok.frequency }
+  })
+
+  // one-click CONFIRM (magic link in the confirmation email; activates the subscriber)
+  app.get('/api/subscribe/confirm', async (req, reply) => {
+    const token = (req.query as { token?: string })?.token
+    const page = (heading: string, msg: string) =>
+      reply
+        .header('content-type', 'text/html; charset=utf-8')
+        .header('Cache-Control', 'no-store')
+        .send(
+          `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${heading} — WCOIN.CASINO</title>` +
+            `<body style="font-family:-apple-system,system-ui,sans-serif;background:#0b0d12;color:#e8eaf0;display:grid;place-items:center;min-height:100vh;margin:0">` +
+            `<div style="text-align:center;padding:24px;max-width:420px"><div style="font-weight:700;color:#f5b100;letter-spacing:.04em">WCOIN.CASINO</div>` +
+            `<h1 style="font-size:22px;margin:16px 0 6px">${heading}</h1>` +
+            `<p style="color:#9aa0b4;line-height:1.6">${msg}</p>` +
+            `<a href="https://wcoin.casino/daily" style="display:inline-block;margin-top:18px;background:#f5b100;color:#0b0d12;font-weight:700;text-decoration:none;padding:11px 18px;border-radius:10px">View today's report →</a></div></body>`,
+        )
+    if (!token) return page('Invalid link', 'This confirmation link is missing its token.')
+    const sub = db.prepare('SELECT email FROM email_subscriber WHERE confirm_token=?').get(token) as { email: string } | undefined
+    if (!sub) return page('Link expired or already used', 'This confirmation link is no longer valid. If you still want the WCOIN Daily, just subscribe again at wcoin.casino.')
+    const now = Date.now()
+    db.prepare("UPDATE email_subscriber SET status='active', verified_at=COALESCE(verified_at,?), confirm_token=NULL, updated_at=? WHERE email=?").run(now, now, sub.email)
+    db.prepare('DELETE FROM verification_codes WHERE email=?').run(sub.email) // burn the paired code
+    return page('Subscription confirmed ✓', "You're in — the next WCOIN Daily lands in your inbox tomorrow morning. On-chain flows, reserves and signals, summarised.")
   })
 
   // one-click unsubscribe (token in every email; no login; non-enumerable)
