@@ -426,7 +426,20 @@ function casinoPage(
   }
   const faqHtml = faqs.length ? `<h2>Frequently asked questions</h2>${faqs.map((f) => `<div style="margin:10px 0"><p style="font-weight:600;margin:0 0 2px">${esc(f.q)}</p><p class="prose" style="margin:0;font-size:14px">${esc(f.a)}</p></div>`).join('')}` : ''
 
-  const body = `${limitedNote}${suspectNote}${sub}${trustLine}${stats}${solvency}${chainTable}${ratingsTable}${refTable}${website}${rel}${compareLinks}${chainBestLinks}${faqHtml}${cta}`
+  // reserve-alert sign-up — turns the answer page into a retention point. Plain HTML
+  // form (no JS) so it works on the server-rendered SEO page; double opt-in on submit.
+  const alertForm =
+    oc && oc.reserves > 0
+      ? `<h2 style="margin-top:34px">Get reserve alerts for ${esc(v.name)}</h2>` +
+        `<p class="prose" style="font-size:13px;margin-bottom:10px">Be emailed when ${esc(v.name)}'s tracked on-chain reserves drop materially or a large net outflow is observed. Free, one-click unsubscribe. Observed data — not a solvency or safety statement.</p>` +
+        `<form method="POST" action="/api/casino-alert" style="display:flex;gap:8px;flex-wrap:wrap;max-width:460px">` +
+        `<input type="hidden" name="brand" value="${esc(v.name)}">` +
+        `<input type="email" name="email" required placeholder="you@email.com" style="flex:1;min-width:200px;background:#ffffff08;border:1px solid var(--line);border-radius:9px;padding:10px 12px;color:var(--fg);font-size:14px">` +
+        `<button type="submit" class="cta" style="border:none;cursor:pointer">Alert me</button>` +
+        `</form>`
+      : ''
+
+  const body = `${limitedNote}${suspectNote}${sub}${trustLine}${stats}${solvency}${chainTable}${ratingsTable}${refTable}${website}${rel}${compareLinks}${chainBestLinks}${faqHtml}${alertForm}${cta}`
 
   const jsonLd: object[] = [
     ...(oc

@@ -502,6 +502,24 @@ CREATE TABLE IF NOT EXISTS data_quality_issue (
 );
 CREATE INDEX IF NOT EXISTS idx_dq_date ON data_quality_issue(date, issue_type);
 
+-- Per-casino public alert subscription (no login): a visitor on a /casino page asks to
+-- be emailed when that brand's tracked reserves drop or a large net outflow is observed.
+-- Double opt-in (confirm_token) + non-enumerable unsubscribe_token; one row per (email,brand).
+CREATE TABLE IF NOT EXISTS brand_alert_sub (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  email             TEXT NOT NULL,
+  brand_key         TEXT NOT NULL,
+  brand_label       TEXT,
+  status            TEXT NOT NULL DEFAULT 'pending',  -- pending | active | unsubscribed
+  confirm_token     TEXT,
+  unsubscribe_token TEXT NOT NULL,
+  last_alert_at     INTEGER,                          -- de-dup: don't re-alert too often
+  created_at        INTEGER NOT NULL,
+  updated_at        INTEGER NOT NULL,
+  UNIQUE(email, brand_key)
+);
+CREATE INDEX IF NOT EXISTS idx_brand_alert_brand ON brand_alert_sub(brand_key, status);
+
 -- Community submissions: attribution evidence for unattributed flow, or a correction
 -- request for a tracked brand. Public POST → admin review (never auto-applied).
 CREATE TABLE IF NOT EXISTS submission (

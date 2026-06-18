@@ -13,6 +13,7 @@ import { seedWatchlist } from './watchlist.ts'
 import { registerApi } from './api.ts'
 import { registerAuth, reconcileAdmins } from './auth.ts'
 import { registerSubscribe } from './subscribe.ts'
+import { registerCasinoAlert, startCasinoAlerts } from './casinoalert.ts'
 import { startDigest, registerDigest } from './digest.ts'
 import { startEvm } from './collectors/evm.ts'
 import { startBackfill } from './collectors/backfill.ts'
@@ -82,6 +83,7 @@ async function main() {
   reconcileAdmins() // pin admin to the email allowlist (promote owner, demote strays)
   await registerApi(app)
   registerSubscribe(app) // email digest subscription (double opt-in)
+  registerCasinoAlert(app) // per-casino public reserve-alert subscription (double opt-in)
   registerDigest(app) // admin digest preview + test send
   // Phase 2 SEO: stored, server-rendered landing pages + dynamic sitemap. MUST be
   // registered BEFORE fastifyStatic/notFoundHandler so /casino, /rankings, /chains,
@@ -201,6 +203,7 @@ async function main() {
   startAlerts() // user-defined alert rules: whale stream + net-flow / reserve checks
   startRetention() // periodic prune of transfers past the retention window
   startReserveHistory() // daily solvency snapshots → reserve-adequacy trend
+  startCasinoAlerts() // per-casino reserve-drop alert emails to public subscribers
   startSnapshots() // 1.0 content layer: daily market snapshot (homepage + email source)
   startDailyInsight() // LLM "Today's Market Read" + Notable Signals for the daily report (QA-gated)
   startDigest() // 1.0 daily email digest scheduler (sends at DIGEST_SEND_HOUR_UTC)
