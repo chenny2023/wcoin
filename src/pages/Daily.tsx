@@ -130,16 +130,36 @@ function StatGrid({ data }: { data: any }) {
 }
 
 function MoversTable({ rows }: { rows: any[] }) {
+  const [tab, setTab] = useState<'vol' | 'in' | 'out'>('vol')
   if (!rows?.length) return null
+  const sorted =
+    tab === 'vol'
+      ? [...rows].sort((a, b) => (b.vol24h ?? 0) - (a.vol24h ?? 0))
+      : tab === 'in'
+        ? rows.filter((r) => (r.net7d ?? 0) > 0).sort((a, b) => (b.net7d ?? 0) - (a.net7d ?? 0))
+        : rows.filter((r) => (r.net7d ?? 0) < 0).sort((a, b) => (a.net7d ?? 0) - (b.net7d ?? 0))
+  const view = sorted.slice(0, 8)
+  const TABS = [['vol', 'By 24h Volume'], ['in', 'By Net Inflow'], ['out', 'By Net Outflow']] as const
   return (
     <Card spotlight className="overflow-hidden p-0">
-      <div className="flex items-center gap-2 border-b border-white/8 px-5 py-3.5">
-        <TrendingUp size={16} className="text-gold-400" />
-        <h3 className="font-display text-base font-semibold">Biggest movers — 24h verified volume</h3>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/8 px-5 py-3">
+        <div className="flex items-center gap-2">
+          <TrendingUp size={16} className="text-gold-400" />
+          <h3 className="font-display text-base font-semibold">Biggest movers — verified</h3>
+        </div>
+        <div className="flex gap-1 rounded-lg border border-white/8 bg-white/4 p-0.5">
+          {TABS.map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)} className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition ${tab === k ? 'bg-gold-500/15 text-gold-400' : 'text-white/45 hover:text-white'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="divide-y divide-white/5">
-        {rows.map((m, i) => {
+        {view.length === 0 && <div className="px-5 py-6 text-center text-sm text-white/40">No {tab === 'in' ? 'net inflows' : 'net outflows'} in this window.</div>}
+        {view.map((m, i) => {
           const rep = m.repSignal ?? m.trust
+          const net = m.net7d ?? 0
           return (
             <div key={m.label} className="flex items-center gap-3 px-5 py-3 text-sm">
               <span className="w-5 text-center font-bold text-white/30">{i + 1}</span>
@@ -149,36 +169,132 @@ function MoversTable({ rows }: { rows: any[] }) {
                   Rep. {Math.round(rep)}
                 </span>
               )}
-              <span className="w-24 text-right tabular-nums text-white/45">7d {fmtUsd(m.vol7d)}</span>
-              <span className="w-24 text-right font-semibold tabular-nums text-gold-400">{fmtUsd(m.vol24h)}</span>
+              {tab === 'vol' ? (
+                <>
+                  <span className="w-24 text-right tabular-nums text-white/45">7d {fmtUsd(m.vol7d)}</span>
+                  <span className="w-24 text-right font-semibold tabular-nums text-gold-400">{fmtUsd(m.vol24h)}</span>
+                </>
+              ) : (
+                <span className={`w-32 text-right font-semibold tabular-nums ${net >= 0 ? 'text-mint-400' : 'text-rose-400'}`}>
+                  {net >= 0 ? '+' : '−'}
+                  {fmtUsd(Math.abs(net))} <span className="font-normal text-white/35">7d net</span>
+                </span>
+              )}
             </div>
           )
         })}
       </div>
-      <ModuleNote>Verified casino brands only · ranked by 24h tracked volume. “Rep.” is a composite reputation signal, not a safety rating.</ModuleNote>
+      <ModuleNote>Verified casino brands only. “Rep.” is a composite reputation signal, not a safety rating. Net flow shown over the 7d window.</ModuleNote>
     </Card>
   )
 }
 
 function ChainBars({ rows }: { rows: any[] }) {
+  const [mode, setMode] = useState<'share' | 'abs'>('share')
   if (!rows?.length) return null
+  const total = rows.reduce((s, r) => s + (r.vol24h || 0), 0) || 1
   const max = Math.max(...rows.map((r) => r.vol24h || 0), 1)
   return (
     <Card className="p-5">
-      <h3 className="mb-4 font-display text-base font-semibold">Volume by chain — 24h</h3>
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="font-display text-base font-semibold">Volume by chain — 24h</h3>
+        <div className="flex gap-1 rounded-lg border border-white/8 bg-white/4 p-0.5">
+          {(['share', 'abs'] as const).map((k) => (
+            <button key={k} onClick={() => setMode(k)} className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition ${mode === k ? 'bg-gold-500/15 text-gold-400' : 'text-white/45 hover:text-white'}`}>
+              {k === 'share' ? 'Share' : 'Absolute'}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="space-y-2.5">
-        {rows.slice(0, 8).map((c) => (
-          <div key={c.chain} className="flex items-center gap-3">
-            <div className="w-20 shrink-0">
-              <ChainPill chain={c.chain} />
+        {rows.slice(0, 8).map((c) => {
+          const share = (c.vol24h || 0) / total
+          return (
+            <div key={c.chain} className="flex items-center gap-3">
+              <div className="w-20 shrink-0">
+                <ChainPill chain={c.chain} />
+              </div>
+              <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/5">
+                <div className="h-full rounded-full bg-gradient-to-r from-gold-400 to-gold-600" style={{ width: `${Math.max(2, mode === 'share' ? share * 100 : (c.vol24h / max) * 100)}%` }} />
+              </div>
+              <span className="w-24 text-right text-sm font-semibold tabular-nums text-white/70">{mode === 'share' ? `${(share * 100).toFixed(1)}%` : fmtUsd(c.vol24h)}</span>
             </div>
-            <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/5">
-              <div className="h-full rounded-full bg-gradient-to-r from-gold-400 to-gold-600" style={{ width: `${Math.max(2, (c.vol24h / max) * 100)}%` }} />
-            </div>
-            <span className="w-20 text-right text-sm font-semibold tabular-nums text-white/70">{fmtUsd(c.vol24h)}</span>
+          )
+        })}
+      </div>
+      <p className="mt-3 text-[11px] text-white/35">Share view normalises chains so smaller networks stay readable when one chain dominates.</p>
+    </Card>
+  )
+}
+
+function MarketConcentration({ c }: { c: any }) {
+  if (!c) return null
+  const pct = (x: number) => `${((x ?? 0) * 100).toFixed(1)}%`
+  const items = [
+    { k: 'Top 3 verified brands', v: pct(c.top3Share) },
+    { k: 'Top 5 verified brands', v: pct(c.top5Share) },
+    { k: `Top chain${c.topChain ? ` · ${c.topChain}` : ''}`, v: pct(c.topChainShare) },
+  ]
+  return (
+    <Card spotlight className="p-5">
+      <h3 className="mb-1 font-display text-base font-semibold">
+        Market Concentration
+        <Tip text="How concentrated the day's verified volume is among the top brands and the leading chain. High concentration = the day was driven by a few players, not broad activity." />
+      </h3>
+      <p className="mb-3 text-[12px] text-white/45">Share of 24h verified volume.</p>
+      <div className="grid grid-cols-3 gap-3">
+        {items.map((it) => (
+          <div key={it.k} className="rounded-xl border border-white/8 bg-white/[0.02] p-3 text-center">
+            <div className="font-display text-xl font-bold tabular-nums text-gradient-gold">{it.v}</div>
+            <div className="mt-1 text-[11px] leading-tight text-white/50">{it.k}</div>
           </div>
         ))}
       </div>
+    </Card>
+  )
+}
+
+function SourceHealth({ rows }: { rows: any[] }) {
+  if (!rows?.length) return null
+  const dot = (s: string) => (s === 'Healthy' ? 'bg-mint-400' : s === 'Delayed' ? 'bg-gold-400' : s === 'Unknown' ? 'bg-white/30' : 'bg-rose-400')
+  const ago = (m: number | null) => (m == null || m < 1 ? '' : ` · ${m < 60 ? `${m}m` : `${Math.round(m / 60)}h`} ago`)
+  return (
+    <Card className="p-5">
+      <h3 className="mb-3 font-display text-base font-semibold">
+        Source Health
+        <Tip text="User-readable status of the data sources feeding this report — not engineering monitoring." />
+      </h3>
+      <div className="space-y-2.5">
+        {rows.map((r) => (
+          <div key={r.source} className="flex items-center gap-3 text-sm">
+            <span className={`h-2 w-2 shrink-0 rounded-full ${dot(r.status)}`} />
+            <span className="flex-1 text-white/70">{r.source}</span>
+            <span className="text-white/45">{r.status}{ago(r.lagMin)}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
+function CoverageNotes() {
+  const notes = [
+    'Verified flow includes only mapped casino brands with medium or higher confidence.',
+    'Unattributed casino-related flow is excluded from all verified totals and rankings.',
+    'Reserve coverage may be partial by brand and is shown as a level, not a percentage.',
+    'Streamer coverage varies by platform availability.',
+  ]
+  return (
+    <Card className="p-5">
+      <h3 className="mb-2 font-display text-base font-semibold">Data Coverage Notes</h3>
+      <ul className="space-y-1.5 text-[13px] text-white/55">
+        {notes.map((n, i) => (
+          <li key={i} className="flex gap-2">
+            <span className="text-gold-400">•</span>
+            {n}
+          </li>
+        ))}
+      </ul>
     </Card>
   )
 }
@@ -323,6 +439,8 @@ export default function Daily() {
           <div className="space-y-6">
             <StatGrid data={data} />
 
+            <MarketConcentration c={p?.concentration} />
+
             <div className="grid gap-6 lg:grid-cols-2">
               <MoversTable rows={p?.topMovers ?? []} />
               <ChainBars rows={p?.chainVolume ?? []} />
@@ -331,6 +449,11 @@ export default function Daily() {
             <div className="grid gap-6 lg:grid-cols-2">
               <WhaleGroups groups={p?.whaleGroups ?? []} events={p?.whales ?? []} />
               <ReserveList rows={p?.topReserves ?? []} />
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-2">
+              <SourceHealth rows={p?.sourceHealth ?? []} />
+              <CoverageNotes />
             </div>
 
             {/* Unattributed flow — pattern-detected, shown separately from verified totals */}
@@ -363,6 +486,15 @@ export default function Daily() {
               </p>
               <SubscribeBox />
             </Card>
+
+            {/* Historical reports entry */}
+            {data.snapshot_date && (
+              <div className="px-1 text-[13px] text-white/45">
+                <a href={`/reports/daily/${new Date(new Date(data.snapshot_date + 'T00:00:00Z').getTime() - 86400000).toISOString().slice(0, 10)}`} className="text-gold-400 hover:underline">
+                  ← Previous daily reports
+                </a>
+              </div>
+            )}
 
             {/* Methodology */}
             <p className="px-1 text-xs leading-relaxed text-white/35">

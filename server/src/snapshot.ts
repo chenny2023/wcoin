@@ -108,12 +108,44 @@ export async function generateMarketSnapshot(): Promise<void> {
   const activeCasinos = verified.filter((b) => (b.volume24h ?? 0) > 0).length
 
   const reserveRows = verified.filter((b) => b.reserves > 0).sort((a, b) => b.reserves - a.reserves)
+
+  // market concentration — is the day driven by a few brands / one chain?
+  const volSorted = verified.filter((b) => !b.volumeSuspect).map((b) => b.volume24h ?? 0).sort((a, b) => b - a)
+  const totVol = volSorted.reduce((s, x) => s + x, 0) || 1
+  const totChainVol = chainRows.reduce((s, c) => s + (c.v ?? 0), 0) || 1
+  const concentration = {
+    top3Share: volSorted.slice(0, 3).reduce((s, x) => s + x, 0) / totVol,
+    top5Share: volSorted.slice(0, 5).reduce((s, x) => s + x, 0) / totVol,
+    topChain: chainRows[0]?.chain ?? null,
+    topChainShare: chainRows[0] ? (chainRows[0].v ?? 0) / totChainVol : 0,
+  }
+
+  // source health — user-readable data-coverage status per source (not eng monitoring)
+  let sourceHealth: { source: string; status: string; lagMin: number | null }[] = []
+  try {
+    const recency = (source: string, ts: number | null | undefined) => {
+      const lag = ts ? Math.round((now - ts) / 60_000) : null
+      const status = lag == null ? 'Unknown' : lag < 60 ? 'Healthy' : lag < 360 ? 'Delayed' : 'Stale'
+      return { source, status, lagMin: lag }
+    }
+    const one = (sql: string): number | null => ((db.prepare(sql).get() as any)?.t ?? null)
+    sourceHealth = [
+      recency('On-chain indexers', one('SELECT MAX(ts) t FROM transfers')),
+      recency('Reserve snapshots', one("SELECT MAX(updated_at) t FROM arkham_casino WHERE updated_at IS NOT NULL")),
+      recency('Streamer monitor', one('SELECT MAX(updated_at) t FROM streamers')),
+    ]
+  } catch (e) {
+    console.warn('[snapshot] source health skipped:', (e as Error).message)
+  }
+
   const payload = {
+    concentration,
+    sourceHealth,
     topMovers: verified
       .filter((b) => !b.volumeSuspect) // keep anomalous wash/internal volume out of movers
       .slice()
       .sort((a, b) => (b.volume24h ?? 0) - (a.volume24h ?? 0))
-      .slice(0, 8)
+      .slice(0, 15)
       // `repSignal` replaces the bare `trust` field (which read like an official safety
       // score); `trust` kept for backward-compat with older consumers/snapshots.
       .map((b) => ({ label: b.brand, vol24h: b.volume24h ?? 0, vol7d: b.volume7d ?? 0, net7d: b.net7d ?? 0, change24h: b.change24h ?? null, repSignal: b.trust ?? null, trust: b.trust ?? null, confidence: b.confidence ?? 'medium' })),

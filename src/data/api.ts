@@ -510,6 +510,8 @@ export interface MarketSnapshot {
   reserve_change_7d: number | null
   confidence_level: string
   payload: {
+    concentration?: { top3Share: number; top5Share: number; topChain: string | null; topChainShare: number }
+    sourceHealth?: { source: string; status: string; lagMin: number | null }[]
     topMovers: { label: string; vol24h: number; vol7d: number; net7d: number; trust: number | null; repSignal?: number | null; confidence?: string; change24h?: number | null }[]
     topReserves: { label: string; reserves: number; coverage: number | null; level?: string; confidence?: string }[]
     chainVolume: { chain: string; vol24h: number }[]
