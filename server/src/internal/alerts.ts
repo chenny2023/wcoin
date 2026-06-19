@@ -15,6 +15,12 @@ import { productByKey } from './products.ts'
 // 任一渠道未配置则静默跳过；都没配就只在库里登记不外发。
 // ─────────────────────────────────────────────────────────────────────────────
 
+// 自建表（幂等）——不能依赖 socialintel.ts 的建表先于本模块执行：socialintel 反过来
+// import 本模块，其顶层 import 会先于自身 db.exec 跑，导致这里 prepare 时表还不存在。
+db.exec(`CREATE TABLE IF NOT EXISTS social_alert_sent (
+  signal_id TEXT PRIMARY KEY,
+  ts        INTEGER NOT NULL
+)`)
 const sent = db.prepare('INSERT OR IGNORE INTO social_alert_sent(signal_id, ts) VALUES(?, ?)')
 
 export interface AlertSignal {
