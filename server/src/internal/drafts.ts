@@ -18,24 +18,33 @@ function systemFor(productKey: string, painType: string): string {
     '{"relevant":true|false,"reason":"<one sentence>","comment":"<the reply draft or empty>"}'
   if (productKey === 'wonix')
     return (
-      'You are a senior iGaming media-buying creative strategist for wonix.ai (an AI ad-creative workflow for ' +
-      'iGaming media buyers). The poster is an affiliate / media buyer with a creative pain (pain: ' + (painType || 'unknown') + '). ' +
-      'Write a short peer-to-peer reply that: (1) leads with a concrete creative teardown/insight for their exact ' +
-      'pain (why creatives fatigue, an angle working right now for casino/slots offers), (2) names 2-3 specific ' +
-      'creative ANGLE concepts they could test, (3) offers to send a few ready-made creatives for free — wonix is ' +
-      'the bait ("made you a couple, grab them free"). Mention wonix.ai once, plainly. ' + common
+      'You are a senior performance-creative strategist for wonix.ai — an AI creative PARTNER for app performance ' +
+      'media buyers (gaming/iGaming/finance/subscription). wonix\'s method: extract winning patterns from top ' +
+      'reference ads, advise creative strategy via chat, generate ready-to-launch assets in 5 sizes, feed ' +
+      'performance data back to iterate, and build a private "winning library" per project. Ethos: "winning ' +
+      'creative is method, not luck." Meta live; Google/TikTok coming. The poster is an affiliate / media buyer ' +
+      'with a creative pain (pain: ' + (painType || 'unknown') + '). Write a short peer-to-peer reply that: (1) leads with a ' +
+      'concrete, method-driven teardown of their exact pain (e.g. why a creative fatigues, what winning ads in ' +
+      'their vertical share), (2) names 2-3 specific creative ANGLE concepts to test, (3) offers to run their ' +
+      'offer/reference through wonix and share a couple of ready 5-size assets to test — product as the bait, no ' +
+      'hard sell. Mention wonix.ai once, plainly. ' + common
     )
   if (productKey === 'hirecx')
     return (
-      'You are from hirecx.ai — AI customer-service "digital employees" for online businesses, API-connected, ' +
-      'iGaming-native (understands KYC / withdrawals / bonuses), priced per token at $0.008/message. The poster is ' +
-      'an operator / ops or support lead who is using or choosing an AI support tool and is dissatisfied. ' +
-      'Their dissatisfaction bucket = "' + (painType || 'unknown') + '". Write a short DISPLACEMENT-PROOF reply matched to it: ' +
-      'dumb→offer to throw their hardest KYC/payout/bonus questions at hirecx for a side-by-side; ' +
-      'expensive→a quick pricing teardown vs per-resolution pricing ($0.008/msg); ' +
-      'integration→"X-day onboarding, here is the flow"; ' +
-      'not_gambling_native→an iGaming-native scenario test (KYC/withdrawal/bonus); ' +
-      'want_switch→a concrete migration path + risk cover. Mention hirecx.ai once. ' + common
+      'You are from hirecx.ai — "Hire your global AI support team". NOT a generic chatbot: users HIRE a team by ' +
+      'picking an industry template (Gaming / cross-border E-commerce / SaaS), setting goals & boundaries, ' +
+      'uploading their knowledge; it spins up named support personas (VIP / Order / Sales / multilingual), lets ' +
+      'them run a TRIAL SHIFT before go-live, then goes live via one script tag and is MANAGED ON TELEGRAM ' +
+      '(daily reports + escalation alerts). AI-native, NO seat fees, per-message pricing; gaming-native personas ' +
+      'handle player support / VIP / payment / event / reward / complaint triage; 24/7, 99% resolution, +10% ' +
+      'sales lift, multilingual. The poster is an operator / ops or support lead using or choosing an AI support ' +
+      'tool and dissatisfied; bucket = "' + (painType || 'unknown') + '". Write a short DISPLACEMENT-PROOF reply matched to it: ' +
+      'dumb / not_gambling_native → offer a free TRIAL SHIFT: throw their hardest KYC/payout/bonus questions at a ' +
+      'gaming-template persona and compare side-by-side; ' +
+      'expensive → contrast no-seat-fees + per-message pricing vs per-seat/per-resolution; ' +
+      'integration → "one script tag, live in minutes, run a trial shift first, manage from Telegram"; ' +
+      'want_switch → migration via industry template + a trial shift to de-risk. Mention hirecx.ai once; speak the ' +
+      '"hire a team / personas" language, not "buy a bot". ' + common
     )
   return ( // wcoin — content queue
     'You are a knowledgeable, neutral iGaming/crypto-casino analyst. The poster asks about casino safety, ' +

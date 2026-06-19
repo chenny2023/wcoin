@@ -85,10 +85,12 @@ export const PRODUCTS: ProductConfig[] = [
     key: 'hirecx',
     name: 'hirecx.ai',
     url: 'https://hirecx.ai',
-    // AI 数字员工 / AI 客服团队：像招人一样为网站配置 AI 客服，API 打通后承担销售+售后，
-    // 按 token 计费每条消息仅 $0.008。受众=网站主/电商/SaaS/客服与增长负责人。
+    // 真实定位(读自官网 2026-06)：「雇佣你的全球 AI 客服团队」。AI-native、无坐席费、按消息计费、
+    // 在 Telegram 上管理。流程像招人：选行业模板(游戏/跨境电商/SaaS)→设目标边界→传知识库→
+    // 生成有名字的 persona(VIP/订单/销售/多语种)→试岗演练→一段 script 嵌入上线。
+    // 卖点：99% 自助解决率、24/7、+10% 销售转化、多语种、游戏场景原生(玩家/VIP/支付/活动)。
     pitch:
-      'hirecx.ai 是“AI 数字员工”平台：像招人一样为你的网站配置一支 AI 客服团队，打通 API 后可承接售前销售、售后支持等全流程，按 token 用量计费，每条消息仅 $0.008。',
+      'hirecx.ai —「雇佣你的全球 AI 客服团队」：像招人一样选行业模板(游戏/跨境电商/SaaS)、设目标与边界、上传知识库，几分钟生成有名字的客服 persona(VIP/订单/销售/多语种)，试岗演练后一段 script 嵌入即上线，日报与升级提醒在 Telegram 管理。AI-native、无坐席费、按消息计费；主打 99% 自助解决率、24/7、+10% 销售转化、游戏场景原生(玩家/VIP/支付/活动)。',
     reddit: {
       brand: ['hirecx.ai', 'hirecx'],
       // spec：HireCX = 竞品置换监听。种子=竞品 AI 客服产品名（命中后由分类器判定"是否在用+是否不满"）。
@@ -129,10 +131,11 @@ export const PRODUCTS: ProductConfig[] = [
     key: 'wonix',
     name: 'wonix.ai',
     url: 'https://wonix.ai',
-    // 面向 iGaming 行业的广告投放创意工作流：帮投手/媒体采买产出更优广告素材实现投放增长。
-    // 受众=iGaming 广告投手 / 联盟营销 / 绩效投放（performance / media buying）。
+    // 真实定位(读自官网 2026-06)：app 效果投放的 AI 创意 partner，"制胜创意靠方法不靠运气"。
+    // 从优质参考广告提炼制胜规律→对话给创意策略→一键产出 5 种尺寸素材→性能数据回流迭代→
+    // 沉淀每个项目私有的"制胜素材库"。受众=app 效果投手(gaming/iGaming/finance/订阅)。Meta 已上线，Google/TikTok 在路上。
     pitch:
-      'wonix.ai 是面向 iGaming 行业的广告投放创意工作流：帮投手快速产出更优质的广告素材（creative），提升投放转化与增长。',
+      'wonix.ai 是面向 app 效果投放（gaming/iGaming/finance/订阅类）的 AI 创意 partner：从优质参考广告提炼制胜规律、用对话给创意策略、一键产出 5 种尺寸素材、性能数据回流持续迭代，并为每个项目沉淀私有的"制胜素材库"——"制胜创意靠方法不靠运气"。目前 Meta 已上线，Google/TikTok 在路上。',
     reddit: {
       brand: ['wonix.ai', 'wonix'],
       competitor: [
