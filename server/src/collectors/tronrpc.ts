@@ -18,7 +18,11 @@ import { b58ToHex20, hex20ToB58 } from '../tronaddr.ts'
 // ─────────────────────────────────────────────────────────────────────────────
 
 const BLOCK_MS = 3_000
-const RANGE_FLOOR = 100
+// Keyless TronGrid public jsonrpc caps eth_getLogs at 10000 results per call, and
+// watched Tron casino addresses are dense enough that even ~100 blocks of USDT
+// transfers can exceed that. The adaptive range must be able to shrink well below
+// 100 to get under the cap — so the floor is small (a couple of blocks).
+const RANGE_FLOOR = 2
 
 // Keyless public fallback. The configured TRON_JSONRPC may be a paid/shared provider
 // (e.g. GetBlock) that returns 402/401/403/429 once credits or rate limits run out —
@@ -177,6 +181,7 @@ function migrateFromV1() {
 // Adaptive range (like the backfill): more watched addresses → more logs per
 // block span, and a fixed range would wedge on "more than 10000 results".
 let fwdRange = 0
+let fwdFailsAtFloor = 0
 export async function runTronRpcOnce() {
   const watched = watchedTron()
   if (watched.length === 0) return
@@ -203,12 +208,23 @@ export async function runTronRpcOnce() {
       if (added) console.log(`[tronrpc] blocks ${from}-${to}: +${added} transfers`)
       from = to + 1
       fwdRange = Math.min(config.tronMaxRange, Math.ceil(fwdRange * 1.5))
+      fwdFailsAtFloor = 0
     } catch (e) {
       if (fwdRange > RANGE_FLOOR) {
         fwdRange = Math.max(RANGE_FLOOR, Math.floor(fwdRange / 2))
         continue
       }
-      throw e // stuck at floor — bubble up for the caller's backoff
+      // Already at the floor and still failing — e.g. a single ultra-dense block
+      // exceeds the public endpoint's 10000-result cap. Skip this span after a few
+      // tries (accept a tiny gap) rather than wedging the whole forward indexer.
+      if (++fwdFailsAtFloor >= 4) {
+        console.warn(`[tronrpc] skipping blocks ${from}-${to} after ${fwdFailsAtFloor} floor failures: ${(e as Error).message}`)
+        stateSet('tronrpc:lastBlock', to)
+        from = to + 1
+        fwdFailsAtFloor = 0
+        continue
+      }
+      throw e // back off and retry at the floor
     }
   }
 }
