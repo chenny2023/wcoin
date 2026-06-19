@@ -131,6 +131,33 @@ export function intentScore(text: string): number {
   return Number(s.toFixed(3))
 }
 
+// ── 俄语/CIS 情绪词典 ─────────────────────────────────────────────────────────
+// 共享的 sentiment.ts 是英文赌场词典，对俄语≈0。这里补一套 CIS арбитраж 语境的
+// 正/负词，与英文分数相加（封装在内部工具，不动 sentiment.ts）。让 FB-Killa 等
+// 俄语贴的"竞品痛点(负面)"信号能浮现。
+const RU_NEG = [
+  'бан', 'забан', 'заблокир', 'скам', 'развод', 'развел', 'кидал', 'кидают', 'обман', 'мошен',
+  'фрод', 'не плат', 'не выплат', 'невыплат', 'задерж', 'проблем', 'дорого', 'отстой', 'ужас',
+  'плохо', 'минус', 'слил', 'потерял', 'жалоб', 'шорт', 'шторм', 'апрув упал', 'не работает',
+]
+const RU_POS = [
+  'топ', 'отлично', 'лучш', 'рекоменд', 'хорош', 'профит', 'плюс', 'окупа', 'работает', 'доволен',
+  'спасибо', 'годно', 'кайф', 'выгодно', 'апрув', 'залив', 'успех',
+]
+function ruSentiment(text: string): number {
+  const t = (text || '').toLowerCase()
+  if (!/[а-яё]/.test(t)) return 0 // 没有西里尔字母就跳过
+  let pos = 0, neg = 0
+  for (const w of RU_POS) if (t.includes(w)) pos++
+  for (const w of RU_NEG) if (t.includes(w)) neg++
+  if (!pos && !neg) return 0
+  return Math.max(-1, Math.min(1, (pos - neg) * 0.3))
+}
+// 信号统一情绪：英文词典 + 俄语词典叠加，截断到 [-1,1]
+function senti(text: string): number {
+  return Math.max(-1, Math.min(1, lexScore(text) + ruSentiment(text)))
+}
+
 // ── Reddit Atom 解析（与 collectors/reddit.ts 同范式）─────────────────────────
 function decodeEntities(s: string): string {
   return s
@@ -367,7 +394,7 @@ async function runRedditJob(j: Extract<Job, { platform: 'reddit' }>): Promise<nu
       const r = insertSignal.run({
         id, product: j.product, platform: 'reddit', kind: j.kind, query: j.query,
         author: e.author.slice(0, 120), title: e.title.slice(0, 300), body: e.content,
-        url: e.link, score: 0, sentiment: lexScore(text), intent, ts: e.ts, collected_ts: now,
+        url: e.link, score: 0, sentiment: senti(text), intent, ts: e.ts, collected_ts: now,
       })
       added += r.changes
       if (r.changes) fresh.push({ id, product: j.product, platform: 'reddit', kind: j.kind, title: e.title, url: e.link, intent })
@@ -393,7 +420,7 @@ async function runTelegramJob(j: Extract<Job, { platform: 'telegram' }>): Promis
       const r = insertSignal.run({
         id, product: j.product, platform: 'telegram', kind: 'demand', query: j.query,
         author: j.query, title: m.text.slice(0, 300), body: m.text,
-        url, score: 0, sentiment: lexScore(m.text), intent, ts: m.ts || now, collected_ts: now,
+        url, score: 0, sentiment: senti(m.text), intent, ts: m.ts || now, collected_ts: now,
       })
       added += r.changes
       if (r.changes) fresh.push({ id, product: j.product, platform: 'telegram', kind: 'demand', title: m.text.slice(0, 200), url, intent })
@@ -417,7 +444,7 @@ async function runXJob(j: Extract<Job, { platform: 'x' }>): Promise<number> {
         product: j.product, platform: 'x', kind: j.kind, query: j.query,
         author: j.query, title: t.text.replace(/\s+/g, ' ').slice(0, 300), body: t.text.slice(0, 2000),
         url: `https://x.com/${j.query}/status/${t.id}`, score: t.likes + t.rts,
-        sentiment: lexScore(t.text), intent: intentScore(t.text) * 0.5,
+        sentiment: senti(t.text), intent: intentScore(t.text) * 0.5,
         ts: t.ts || now, collected_ts: now,
       })
       added += r.changes
@@ -441,7 +468,7 @@ async function runForumJob(j: Extract<Job, { platform: 'forum' }>): Promise<numb
       const r = insertSignal.run({
         id, product: j.product, platform: 'forum', kind: 'demand', query: j.query,
         author: j.query, title: t.title, body: '',
-        url: t.url, score: 0, sentiment: lexScore(t.title), intent, ts: now, collected_ts: now,
+        url: t.url, score: 0, sentiment: senti(t.title), intent, ts: now, collected_ts: now,
       })
       added += r.changes
       if (r.changes) fresh.push({ id, product: j.product, platform: 'forum', kind: 'demand', title: t.title, url: t.url, intent })

@@ -214,8 +214,9 @@ async function renderOverview(){
   const demandTbl='<div class="panel"><h3>🎯 高意图机会词<span class="tag">按平均意图</span></h3><table class="tbl"><tr><th>关键词</th><th>意图</th><th>条数</th><th>情绪</th></tr>'+
     (a.topDemand.length?a.topDemand.map(d=>'<tr><td>'+esc(d.query)+'</td><td>'+meter(d.avg_intent)+'</td><td class="tabnum">'+d.n+'</td><td>'+sentChip(d.avg_sent)+'</td></tr>').join(''):'<tr><td colspan="4" class="dim">暂无</td></tr>')+'</table></div>'
 
-  const compTbl='<div class="panel"><h3>⚔️ 竞品讨论热度<span class="tag">按条数</span></h3><table class="tbl"><tr><th>竞品词</th><th>条数</th><th>平均情绪</th></tr>'+
-    (a.topCompetitor.length?a.topCompetitor.map(d=>'<tr><td>'+esc(d.query)+'</td><td class="tabnum">'+d.n+'</td><td>'+sentChip(d.avg_sent)+'</td></tr>').join(''):'<tr><td colspan="3" class="dim">暂无</td></tr>')+'</table></div>'
+  const arrow=d=>{const x=d||0;if(x>0)return '<span style="color:#ff7a59;font-weight:700">▲'+x+'</span>';if(x<0)return '<span style="color:#5fb0ff;font-weight:700">▼'+(-x)+'</span>';return '<span class="dim">—</span>'}
+  const compTbl='<div class="panel"><h3>⚔️ 竞品讨论热度<span class="tag">条数 · 环比上一周期</span></h3><table class="tbl"><tr><th>竞品词</th><th>条数</th><th>环比</th><th>平均情绪</th></tr>'+
+    (a.topCompetitor.length?a.topCompetitor.map(d=>'<tr><td>'+esc(d.query)+'</td><td class="tabnum">'+d.n+'</td><td class="tabnum">'+arrow(d.delta)+'</td><td>'+sentChip(d.avg_sent)+'</td></tr>').join(''):'<tr><td colspan="4" class="dim">暂无</td></tr>')+'</table></div>'
 
   const opp='<div class="panel"><h3>🔥 最高意图机会贴<span class="tag">未处理 · 一键生成草稿</span></h3>'+
     (a.topOpportunities.length?a.topOpportunities.map(o=>

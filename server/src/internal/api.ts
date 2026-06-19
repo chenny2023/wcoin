@@ -67,11 +67,21 @@ export function registerSocialIntel(app: FastifyInstance): void {
       SELECT query, COUNT(*) n, AVG(intent) avg_intent, AVG(sentiment) avg_sent
       FROM social_intel WHERE ${sinceClause} AND kind='demand'
       GROUP BY query ORDER BY avg_intent DESC, n DESC LIMIT 15`).all(since)
-    // 竞品讨论热度（按命中关键词）
-    const topCompetitor = db.prepare(`
+    // 竞品讨论热度（按命中关键词）+ 环比上一同期窗口（涨跌箭头）
+    const topCompetitorRaw = db.prepare(`
       SELECT query, COUNT(*) n, AVG(sentiment) avg_sent
       FROM social_intel WHERE ${sinceClause} AND kind='competitor'
-      GROUP BY query ORDER BY n DESC LIMIT 15`).all(since)
+      GROUP BY query ORDER BY n DESC LIMIT 15`).all(since) as { query: string; n: number; avg_sent: number }[]
+    const prevSince = since - days * 86_400_000
+    const prevRows = db.prepare(`
+      SELECT query, COUNT(*) n FROM social_intel
+      WHERE collected_ts > ? AND collected_ts <= ? AND kind='competitor'
+      GROUP BY query`).all(prevSince, since) as { query: string; n: number }[]
+    const prevMap = new Map(prevRows.map((r) => [r.query, r.n]))
+    const topCompetitor = topCompetitorRaw.map((r) => {
+      const prev = prevMap.get(r.query) || 0
+      return { ...r, prev, delta: r.n - prev }
+    })
     // 按天趋势
     const trend = db.prepare(`
       SELECT strftime('%Y-%m-%d', collected_ts/1000, 'unixepoch') d, COUNT(*) n
