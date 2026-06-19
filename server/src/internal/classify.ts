@@ -82,12 +82,15 @@ async function classifyProductBatch(product: string): Promise<number> {
         seen.add(it.i)
         const keep = it.keep !== false && it.actor_type !== 'noise'
         const status = keep ? 'new' : 'dropped'
+        // Reddit 销售类(wonix/hirecx)外联默认改私信：DM 不过 AutoModerator，公开评论易被删。
+        let reco = (it.reco_play || '').slice(0, 16)
+        if (keep && row.platform === 'reddit' && (product === 'wonix' || product === 'hirecx') && reco !== 'content' && reco !== 'discard') reco = 'dm'
         upd.run(
           (it.actor_type || '').slice(0, 24), (it.intent_tier || '').slice(0, 8),
           Math.max(0, Math.min(1, (Number(it.intent_score) || 0) / 100)),
           (it.pain_type || '').slice(0, 32),
           it.solvable === true ? 1 : it.solvable === false ? 0 : null,
-          (it.reco_play || '').slice(0, 16), Math.max(0, Math.min(1, Number(it.confidence) || 0)),
+          reco, Math.max(0, Math.min(1, Number(it.confidence) || 0)),
           status, now, row.id,
         )
         keep ? kept++ : dropped++

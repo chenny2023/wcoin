@@ -203,7 +203,7 @@ export function registerSocialIntel(app: FastifyInstance): void {
     const rows = db
       .prepare(
         `SELECT d.*, s.title AS post_title, s.url AS post_url, s.platform, s.kind, s.author, s.intent, s.zh AS post_zh,
-              s.actor_type, s.intent_tier, s.pain_type, s.solvable
+              s.actor_type, s.intent_tier, s.pain_type, s.solvable, s.reco_play
          FROM social_drafts d JOIN social_intel s ON s.id = d.signal_id
          WHERE d.status = ? ORDER BY d.created_ts DESC LIMIT 100`,
       )

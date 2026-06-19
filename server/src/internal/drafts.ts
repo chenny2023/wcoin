@@ -11,8 +11,14 @@ import { productByKey } from './products.ts'
 // 人工审核后再发；无 OPENROUTER_API_KEY 时返回提示。
 // ─────────────────────────────────────────────────────────────────────────────
 
-// 平台投放规范——Reddit 最严（带链接/推销会被 AutoModerator 直接删）。
-function deliveryRules(platform: string): string {
+// 投放规范——若动作是私信(DM)则走 DM 模式（不过 AutoModerator，可更直接）；否则按平台。
+function deliveryRules(platform: string, play: string): string {
+  if (play === 'dm')
+    return (
+      'DELIVERY = a PRIVATE 1:1 DM (not a public comment — it will NOT be auto-moderated). You may be direct: ' +
+      'name the product and include ONE link, plus a concrete, personalized offer. BUT open by referencing their ' +
+      'specific post/problem, sound human and 1:1 (never a mass-DM template), keep it short, disclose who you are.'
+    )
   if (platform === 'reddit')
     return (
       'PLATFORM = Reddit (STRICT anti-promo — comments with links or a product pitch get auto-removed, ' +
@@ -35,12 +41,12 @@ function deliveryRules(platform: string): string {
   )
 }
 
-function systemFor(productKey: string, painType: string, platform: string): string {
+function systemFor(productKey: string, painType: string, platform: string, play: string): string {
   const common =
     'Write the reply in the SAME LANGUAGE as the post (e.g. Russian post → Russian reply, Spanish → Spanish). ' +
     'You are NOT a spammer: only produce a reply if it is genuinely a fit; otherwise set relevant=false. ' +
     'Sound like a real, knowledgeable peer — concrete and specific, NO hype, NO emoji spam, NO "check out", ' +
-    'NO superlatives, NO fake claims. ' + deliveryRules(platform) + ' Respond ONLY as JSON: ' +
+    'NO superlatives, NO fake claims. ' + deliveryRules(platform, play) + ' Respond ONLY as JSON: ' +
     '{"relevant":true|false,"reason":"<one sentence>","comment":"<the reply draft or empty>"}'
   if (productKey === 'wonix')
     return (
@@ -105,7 +111,7 @@ The social-media post (platform: ${sig.platform}, actor: ${sig.actor_type || '?'
 - Author: ${sig.author || '(unknown)'}
 - URL: ${sig.url}`
 
-  const res = await generateContent(systemFor(sig.product, sig.pain_type, sig.platform), user)
+  const res = await generateContent(systemFor(sig.product, sig.pain_type, sig.platform, sig.reco_play), user)
   if (!res) return { ok: false, message: 'AI 生成失败（OpenRouter 无响应）' }
   const d = res.data as { relevant?: boolean; reason?: string; comment?: string }
   const relevant = !!d.relevant
