@@ -20,8 +20,15 @@ import { b58ToHex20, hex20ToB58 } from '../tronaddr.ts'
 const BLOCK_MS = 3_000
 const RANGE_FLOOR = 100
 
-async function rpc(method: string, params: unknown[]): Promise<any> {
-  const res = await fetch(config.tronJsonRpc, {
+// Keyless public fallback. The configured TRON_JSONRPC may be a paid/shared provider
+// (e.g. GetBlock) that returns 402/401/403/429 once credits or rate limits run out —
+// when that happens we don't want Tron indexing to die, so we fall back to TronGrid's
+// public jsonrpc for a cooldown window (and re-probe the paid endpoint afterward).
+const PUBLIC_TRON_JSONRPC = 'https://api.trongrid.io/jsonrpc'
+let fallbackUntil = 0
+
+async function rpcAt(endpoint: string, method: string, params: unknown[]): Promise<any> {
+  const res = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
@@ -31,6 +38,25 @@ async function rpc(method: string, params: unknown[]): Promise<any> {
   const json = await res.json()
   if (json.error) throw new Error(json.error.message || 'rpc error')
   return json.result
+}
+
+async function rpc(method: string, params: unknown[]): Promise<any> {
+  const primary = config.tronJsonRpc
+  // Already in fallback, or the configured endpoint IS the public one → go straight to public.
+  if (primary === PUBLIC_TRON_JSONRPC || Date.now() < fallbackUntil) {
+    return rpcAt(PUBLIC_TRON_JSONRPC, method, params)
+  }
+  try {
+    return await rpcAt(primary, method, params)
+  } catch (e) {
+    // Quota/auth/rate-limit on the paid provider → switch to keyless TronGrid for 30m.
+    if (/HTTP (40[1-3]|429)/.test((e as Error).message)) {
+      fallbackUntil = Date.now() + 30 * 60_000
+      console.warn(`[tronrpc] primary endpoint ${(e as Error).message} — falling back to public TronGrid for 30m`)
+      return rpcAt(PUBLIC_TRON_JSONRPC, method, params)
+    }
+    throw e
+  }
 }
 
 interface TronWatch {
