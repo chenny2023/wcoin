@@ -12,6 +12,20 @@ import { generateContent, openrouterEnabled } from '../content/openrouter.ts'
 // ─────────────────────────────────────────────────────────────────────────────
 
 const BATCH = Number(process.env.SOCIAL_TRANSLATE_BATCH) || 10
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+// 写入重试：zh 回填会与赌场索引器的批量写撞锁（runtime busy_timeout 仅 5s 不够）。
+// 退避重试几次，避免 "database is locked" 直接丢弃整批。
+async function writeWithRetry(fn: () => void, tries = 4): Promise<boolean> {
+  for (let i = 0; i < tries; i++) {
+    try { fn(); return true }
+    catch (e) {
+      if (!/locked|busy/i.test((e as Error).message) || i === tries - 1) throw e
+      await sleep(800 * (i + 1))
+    }
+  }
+  return false
+}
 
 const SYS =
   '你是中文情报分析助手。下面是若干条英文/俄文社媒帖子（来自 Reddit/X/Telegram/论坛）。' +
@@ -45,6 +59,7 @@ export async function translateBatch(): Promise<number> {
   const upd = db.prepare('UPDATE social_intel SET zh = ? WHERE id = ?')
   let n = 0
   const tx = db.transaction(() => {
+    n = 0
     for (const it of items) {
       const row = indexed[it.i]
       const zh = (it.zh || '').toString().trim().slice(0, 600)
@@ -53,7 +68,7 @@ export async function translateBatch(): Promise<number> {
       n++
     }
   })
-  tx()
+  await writeWithRetry(tx)
   if (n) console.log(`[social-intel] 中文解读回填 +${n}`)
   return n
 }
@@ -69,7 +84,7 @@ export async function translateOne(signalId: string): Promise<string | null> {
   const res = await generateContent(SYS, buildPrompt([{ i: 0, platform: r.platform, kind: r.kind, title: r.title, body: r.body }]))
   const zh = ((res?.data?.items?.[0]?.zh as string) || '').trim().slice(0, 600)
   if (!zh) return null
-  db.prepare('UPDATE social_intel SET zh = ? WHERE id = ?').run(zh, signalId)
+  await writeWithRetry(() => { db.prepare('UPDATE social_intel SET zh = ? WHERE id = ?').run(zh, signalId) })
   return zh
 }
 
