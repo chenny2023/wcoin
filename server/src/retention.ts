@@ -16,9 +16,11 @@ const BATCH = 5_000
 export async function pruneOldTransfers(): Promise<number> {
   if (!(config.retainDays > 0)) return 0
   const cutoff = Date.now() - config.retainDays * 86_400_000
-  const before = (db.prepare('SELECT COUNT(*) n FROM transfers WHERE ts < ?').get(cutoff) as any).n as number
-  if (!before) return 0
-  console.log(`[retention] pruning ${before} transfers older than ${config.retainDays}d…`)
+  // NO upfront COUNT(*) here: on the multi-GB, tens-of-millions-row transfers table
+  // that single synchronous count scanned a huge index range on a cold cache and
+  // froze the event loop for ~2min at boot (→ healthcheck 000, deploy fragility, took
+  // the site down 2026-06-19). The chunked DELETE below is self-limiting (it stops
+  // once a batch deletes < BATCH), so the count was only ever feeding a log line.
   const del = db.prepare(
     'DELETE FROM transfers WHERE rowid IN (SELECT rowid FROM transfers WHERE ts < ? LIMIT ?)',
   )
@@ -43,7 +45,7 @@ export async function pruneOldTransfers(): Promise<number> {
   if (!config.backupActive) {
     try { db.pragma('wal_checkpoint(TRUNCATE)') } catch {}
   }
-  console.log(`[retention] pruned ${deleted} transfers; freed pages are reused so the DB file stops growing`)
+  if (deleted) console.log(`[retention] pruned ${deleted} transfers older than ${config.retainDays}d; freed pages are reused so the DB file stops growing`)
   return deleted
 }
 
