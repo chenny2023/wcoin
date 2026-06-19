@@ -24,6 +24,9 @@ const BLOCK_MS = 3_000
 // 100 to get under the cap — so the floor is small (a couple of blocks).
 const RANGE_FLOOR = 2
 
+// Most blocks to catch up in a single forward tick — bounds the per-tick write burst.
+const MAX_CATCHUP_BLOCKS = 400
+
 // Keyless public fallback. The configured TRON_JSONRPC may be a paid/shared provider
 // (e.g. GetBlock) that returns 402/401/403/429 once credits or rate limits run out —
 // when that happens we don't want Tron indexing to die, so we fall back to TronGrid's
@@ -108,7 +111,10 @@ async function getLogsRange(
 // synchronous better-sqlite3 transaction would block Node's single thread for
 // seconds and starve the HTTP server (API/healthcheck timeouts). Chunking +
 // setImmediate keeps the loop responsive while indexing.
-const INSERT_CHUNK = 1000
+// Smaller chunk = shorter individual synchronous transaction, so if a write has to
+// wait on a litestream checkpoint lock the event-loop freeze is bounded per chunk
+// (we yield between chunks). 400 balances that against per-transaction overhead.
+const INSERT_CHUNK = 400
 async function insertLogs(
   logs: any[],
   byHex: Map<string, WatchRow>,
@@ -196,8 +202,15 @@ export async function runTronRpcOnce() {
 
   if (!fwdRange) fwdRange = config.tronMaxRange
   let from = last + 1
-  while (from <= head) {
-    const to = Math.min(from + fwdRange - 1, head)
+  // Cap the catch-up per tick. After a deploy/downtime `head - last` can be hundreds
+  // of blocks; processing them all in one call bursts a huge write volume (USDT is
+  // dense — thousands of rows/block-span) that contends with litestream checkpoints
+  // and freezes the event loop. Spread it across ticks (TRON_POLL_MS) — the next tick
+  // resumes from lastBlock. 400 blocks/tick still clears backlogs far faster than the
+  // ~3.3 blocks/tick the chain produces, so it catches up within a handful of ticks.
+  const catchupCeil = Math.min(head, last + MAX_CATCHUP_BLOCKS)
+  while (from <= catchupCeil) {
+    const to = Math.min(from + fwdRange - 1, catchupCeil)
     try {
       // sequential (not parallel) to stay under shared-endpoint burst limits
       const deposits = await getLogsRange(usdtHex, hexes, from, to, 2)

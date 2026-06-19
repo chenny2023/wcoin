@@ -74,9 +74,12 @@ async function main() {
   // RESTART checkpoint, which holds the write lock) briefly overlaps with this new
   // container's boot. The first boot writes (seedWatchlist, migrations, admin
   // reconcile) would hit SQLITE_BUSY and crash the process — a fatal deploy loop.
-  // There's NO traffic yet during boot, so a long busy_timeout is free: we just
-  // patiently wait out the old container's checkpoint. Restored to 5s after listen.
-  db.pragma('busy_timeout = 30000')
+  // There's NO traffic yet during boot (we haven't called listen()), so a generous
+  // busy_timeout is free — we just patiently wait out the old container's checkpoint
+  // instead of crashing. 15s comfortably covers a shutdown checkpoint now that the
+  // WAL is kept small (litestream defaults), without blocking boot for a full 30s.
+  // Restored to 5s right after listen() so a runtime lock can't freeze the loop long.
+  db.pragma('busy_timeout = 15000')
   seedWatchlist()
 
   const app = Fastify({ logger: false })
