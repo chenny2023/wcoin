@@ -100,17 +100,21 @@ export const PRODUCTS: ProductConfig[] = [
         'tidio', 'chatbase', 'salesforce agentforce', 'gorgias ai', 'freshchat', 'crisp chat',
         'voiceflow', 'kustomer ai',
       ],
-    // demand 种子=「不满 / 想换 / 选型」话术（撒网，再由分类器分桶 蠢/贵/接入/不懂博彩/想换）。
+    // demand 种子撒大网（关键词源已无 vocab 闸门，分类器分桶 蠢/贵/接入/不懂博彩/想换 并排除噪音）。
     demand: [
-      // 不满（蠢）
-      'AI chatbot wrong answers', 'support bot useless', 'chatbot cant understand', 'ai support dumb',
+      // 不满（蠢/答非所问）
+      'AI chatbot wrong answers', 'support bot useless', 'chatbot cant understand', 'ai support dumb', 'chatbot frustrating',
       // 不满（贵）
-      'intercom too expensive', 'zendesk ai pricing', 'ai support per resolution cost',
+      'intercom too expensive', 'zendesk ai pricing', 'ai support per resolution cost', 'customer support tool too expensive',
       // 不满（接入）
-      'hard to integrate chatbot', 'bad chatbot api',
+      'hard to integrate chatbot', 'bad chatbot api', 'chatbot onboarding painful',
       // 想换 / 选型
-      'looking to switch ai support', 'best ai customer service', 'intercom alternative',
+      'looking to switch ai support', 'best ai customer service', 'intercom alternative', 'zendesk alternative',
+      'ai customer service tool', 'ai chatbot for website', 'live chat software recommendation',
+      // 行业垂直（游戏/电商/SaaS）
       'ai customer service for igaming', 'ai support for online casino', 'ai chatbot for sportsbook',
+      'customer support for shopify store', 'ai support for ecommerce', 'customer support for saas',
+      'player support automation', 'multilingual customer support',
       // 不懂博彩场景
       'chatbot doesnt understand kyc', 'support bot bonus questions',
     ],
@@ -147,18 +151,19 @@ export const PRODUCTS: ProductConfig[] = [
         'creatify ai',
         'smartly.io',
       ],
-    // spec 痛点分层种子：创意疲劳 / 封号拒审 / CPA↑ROAS↓ / 求素材 / 放量瓶颈（再由分类器分层+判 solvable）。
+    // 撒大网（分类器再分层/判 solvable）：关键词源已无 vocab 闸门，宽词换量，靠分类器精筛。
     demand: [
-      // 创意疲劳 / 素材跑挂（可解）
-      'creatives not converting', 'gambling ad fatigue', 'casino creatives dying', 'need new creatives',
-      'крео не заходит', 'крео выгорел',
-      // 求素材 / 找设计（可解）
-      'igaming ad creative', 'casino ad creatives', 'creatives for facebook gambling', 'where to get gambling creatives',
-      'крео гемблинг', 'нужны крео казино',
-      // 放量瓶颈（可解）
-      'scaling gambling ads', 'cant scale casino offers',
-      // 封号 / 拒审 / CPA（多为不可解→只记录）
-      'facebook ad account banned gambling', 'gambling ad disapproved', 'casino cpa too high',
+      // 创意/素材
+      'casino ad creative', 'igaming ad creative', 'gambling ad creative', 'creatives not converting',
+      'gambling ad fatigue', 'need casino creatives', 'ad creatives for casino',
+      // 投放痛点
+      'facebook ad account banned', 'gambling ad disapproved', 'scaling gambling ads', 'casino cpa too high',
+      'igaming roas', 'casino offer not converting',
+      // 媒体采买 / 联盟（宽网）
+      'igaming media buyer', 'casino media buying', 'igaming affiliate', 'casino traffic', 'gambling ads',
+      'spy gambling ads', 'casino marketing',
+      // 俄语 CIS
+      'крео гемблинг', 'крео казино', 'арбитраж гемблинг', 'залив на казино', 'крео не заходит', 'крео выгорел',
     ],
     },
     // iGaming 投手 / 联盟营销 / 绩效投放聚集的 Reddit 社区（含玩家端痛点供反向选品）
@@ -170,22 +175,25 @@ export const PRODUCTS: ProductConfig[] = [
     // iGaming 投手浓度最高的公开论坛（XenForo/vBulletin，走住宅代理过 Cloudflare）。
     // FB-Killa = CIS 最大 арбитраж 论坛（实测可抓 122 帖，俄语意图词已加）。
     // vc.ru / CPALENTA 是文章站(非论坛结构)，需专门解析器，暂缓。
+    // 仅保留实测可抓的(直连即通)。BHW 全系=Cloudflare 拦截页(0 帖、白耗额度)已移除；
+    // affLIFT 需登录/挡爬也移除。FB-Killa 是主力(122 帖/页)。
     forums: [
-      { name: 'BHW · iGaming', url: 'https://www.blackhatworld.com/tags/igaming/' },
-      { name: 'BHW · gambling', url: 'https://www.blackhatworld.com/tags/gambling/' },
-      { name: 'BHW · media-buying', url: 'https://www.blackhatworld.com/forums/media-buying.175/' },
-      { name: 'AGD · casino-affiliate', url: 'https://www.affiliateguarddog.com/community/categories/casino-affiliate-forums.56/' },
-      { name: 'AffiliateFix', url: 'https://affiliatefix.com/whats-new/posts/' },
       { name: 'FB-Killa (CIS)', url: 'https://fb-killa.pro/forums/' },
+      { name: 'AffiliateFix', url: 'https://affiliatefix.com/whats-new/posts/' },
+      { name: 'AGD · casino-affiliate', url: 'https://www.affiliateguarddog.com/community/categories/casino-affiliate-forums.56/' },
     ],
-    // 去噪关键：论坛/泛词命中必须真讲"广告素材/投放机制"才算 wonix 需求——故意只放素材/投放词，
-    // 不放 casino/gambling/affiliate（那些会让整页赌场联盟帖都通过，等于没过滤）。
+    // 论坛 firehose 过滤词：放宽到「广告素材 + 媒体采买痛点」语境（封号/CPA/ROAS/放量也算 wonix 痛点），
+    // 仍排除纯赌场玩家闲聊。关键词源已不走此闸门，分类器做最终精筛。
     relevance: [
+      // 创意/素材
       'creative', 'creatives', 'ad creative', 'ad copy', 'ugc', 'banner', 'video ad', 'thumbnail',
-      'landing page', 'prelander', 'preland', 'cloak', 'cloaking', 'spy tool', 'adspy', 'ad fatigue',
-      'ad account', 'facebook ads', 'fb ads', 'google ads', 'tiktok ads', 'creo', 'ad ban', 'ad design',
+      'landing page', 'prelander', 'preland', 'cloak', 'cloaking', 'spy tool', 'adspy', 'ad fatigue', 'creo', 'ad design',
+      // 媒体采买/投放痛点
+      'media buy', 'media buyer', 'affiliate', 'arbitrage', 'traffic', 'offer', 'cpa', 'roas', 'ctr',
+      'ad account', 'ad ban', 'banned', 'disapprove', 'scaling', 'facebook ads', 'fb ads', 'tiktok ads', 'google ads', 'keitaro', 'tracker', 'funnel',
       // 俄语
       'крео', 'креатив', 'креатива', 'баннер', 'связк', 'прелендинг', 'клоак', 'спай',
+      'арбитраж', 'залив', 'офер', 'оффер', 'траф', 'бан', 'апрув', 'кампани',
     ],
   },
 ]
