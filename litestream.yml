@@ -5,14 +5,10 @@
 # data loss. Values are interpolated from the environment.
 dbs:
   - path: ${DB_PATH}
-    # Checkpoint tuning — see docker-entrypoint.sh (this file is reference/parity;
-    # the entrypoint renders the real config to /tmp with these same values).
-    # v0.3.13's busy-timeout is hardcoded (1s), so we cut checkpoint FREQUENCY instead
-    # (every 5m, only at ≥4000 WAL pages) to stop colliding with the collectors'
-    # continuous writes. WAL bounded by app's journal_size_limit=64MB.
-    monitor-interval: 1s
-    checkpoint-interval: 5m
-    min-checkpoint-page-count: 4000
+    # NOTE: do NOT raise checkpoint-interval / min-checkpoint-page-count — a larger WAL
+    # makes the SHUTDOWN checkpoint slower, and on Railway's recreate deploys that
+    # overlaps the new container's boot writes → SQLITE_BUSY crash loop (2026-06-19).
+    # Defaults keep the WAL small. See docker-entrypoint.sh.
     replicas:
       - type: s3
         bucket: ${BACKUP_R2_BUCKET}

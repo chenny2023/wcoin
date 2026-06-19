@@ -69,6 +69,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const distDir = join(__dirname, '../../dist')
 
 async function main() {
+  // Boot-window lock tolerance. Railway uses a recreate deploy strategy on the
+  // mounted volume, so the OLD container (and its litestream doing a shutdown
+  // RESTART checkpoint, which holds the write lock) briefly overlaps with this new
+  // container's boot. The first boot writes (seedWatchlist, migrations, admin
+  // reconcile) would hit SQLITE_BUSY and crash the process — a fatal deploy loop.
+  // There's NO traffic yet during boot, so a long busy_timeout is free: we just
+  // patiently wait out the old container's checkpoint. Restored to 5s after listen.
+  db.pragma('busy_timeout = 30000')
   seedWatchlist()
 
   const app = Fastify({ logger: false })
@@ -122,6 +130,11 @@ async function main() {
   }
 
   await app.listen({ port: config.port, host: '0.0.0.0' })
+
+  // Boot writes are done and we're serving traffic now — drop the busy_timeout back
+  // to 5s so a runtime lock can't freeze the event loop for 30s (it would block the
+  // single thread while waiting). Brief lock contention at runtime is self-healing.
+  db.pragma('busy_timeout = 5000')
 
   // Start the read-only analytics worker right after listen (cheap thread spawn) so
   // heavy reads are offloaded before the first request and before maintenance.
