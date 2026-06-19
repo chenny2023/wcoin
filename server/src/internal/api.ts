@@ -252,6 +252,20 @@ export function registerSocialIntel(app: FastifyInstance): void {
     return { ok: true, translated: n }
   })
 
+  // 清空某产品的所有信号/草稿（重对齐后做一轮"全新采集"用）
+  app.post('/api/internal/social/purge', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const b = (req.body || {}) as { product?: string }
+    const product = String(b.product || '').trim()
+    if (!product) return reply.code(400).send({ error: 'product required' })
+    const drafts = db
+      .prepare('DELETE FROM social_drafts WHERE signal_id IN (SELECT id FROM social_intel WHERE product=?)')
+      .run(product).changes
+    const topics = db.prepare('DELETE FROM social_topics WHERE product=?').run(product).changes
+    const signals = db.prepare('DELETE FROM social_intel WHERE product=?').run(product).changes
+    return { ok: true, deleted: { signals, drafts, topics } }
+  })
+
   // 手动触发一轮采集（管理员调试用）
   app.post('/api/internal/social/run', async (req, reply) => {
     if (!requireAdmin(req, reply)) return

@@ -377,8 +377,23 @@ async function renderCustom(){
   const list='<div class="panel"><h3>📌 已保存的采集需求<span class="tag">启用中的随主调度轮询</span></h3>'+
     '<table class="tbl"><tr><th></th><th>需求</th><th>类别</th><th>平台</th><th>产品</th><th>上次</th><th></th></tr>'+rows+'</table></div>'
 
-  $('#app').innerHTML=shell('<p class="lead">临时有新的情报方向？在这里填关键词即时采集，勾选保存后会被纳入定时轮询。结果进入"信号"页（按产品标签过滤）。</p>'+form+list)
+  const opt2=(v,l)=>'<option value="'+v+'">'+l+'</option>'
+  const maint='<div class="panel"><h3>🧹 数据维护：清空并重新采集<span class="tag">重对齐关键词后用</span></h3>'+
+    '<p class="mut" style="font-size:13px;margin:0 0 10px">改了某产品的关键词/相关性后，可清掉它的旧数据，让采集器按新配置干净重采（仅删该产品，其他产品不动）。</p>'+
+    '<div class="crow"><select id="pg-product">'+products.map(p=>opt2(p.key,p.name)).join('')+'</select>'+
+    '<button class="btn bad" id="pg-go">清空该产品数据</button></div></div>'
+  $('#app').innerHTML=shell('<p class="lead">临时有新的情报方向？在这里填关键词即时采集，勾选保存后会被纳入定时轮询。结果进入"信号"页（按产品标签过滤）。</p>'+form+list+maint)
   $('#c-go').onclick=customGo
+  $('#pg-go').onclick=purgeGo
+}
+async function purgeGo(){
+  const product=$('#pg-product').value
+  const name=(products.find(p=>p.key===product)||{}).name||product
+  if(!confirm('确定清空 '+name+' 的全部信号和草稿？此操作不可恢复（其他产品不受影响）。'))return
+  const b=$('#pg-go');b.textContent='清空中…';b.disabled=true
+  const r=await api('/api/internal/social/purge',{method:'POST',body:JSON.stringify({product})})
+  toast(r.ok?('已清空 '+name+'：信号'+r.deleted.signals+' 草稿'+r.deleted.drafts):('失败：'+(r.error||'')))
+  renderCustom()
 }
 async function customGo(){
   const body={label:$('#c-label').value,product:$('#c-product').value,kind:$('#c-kind').value,platform:$('#c-platform').value,query:$('#c-query').value,subreddits:$('#c-subs').value,save:$('#c-save').checked}

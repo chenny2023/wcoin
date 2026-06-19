@@ -158,6 +158,19 @@ function senti(text: string): number {
   return Math.max(-1, Math.min(1, lexScore(text) + ruSentiment(text)))
 }
 
+// ── 相关性闸门 ────────────────────────────────────────────────────────────────
+// 对 demand 类信号（含论坛整页吞入、广搜泛词命中）做领域词过滤，去掉无效信息。
+// 品牌/竞品类精确命中不过滤。产品未配 relevance=不过滤。
+const RELEVANCE = new Map<string, string[]>()
+for (const p of PRODUCTS) if (p.relevance?.length) RELEVANCE.set(p.key, p.relevance.map((s) => s.toLowerCase()))
+function relevant(product: string, kind: string, text: string): boolean {
+  if (kind !== 'demand') return true // 品牌/竞品精确，放行
+  const vocab = RELEVANCE.get(product)
+  if (!vocab) return true // 未配置词表=不过滤
+  const t = (text || '').toLowerCase()
+  return vocab.some((w) => t.includes(w))
+}
+
 // ── Reddit Atom 解析（与 collectors/reddit.ts 同范式）─────────────────────────
 function decodeEntities(s: string): string {
   return s
@@ -514,6 +527,7 @@ async function runRedditJob(j: Extract<Job, { platform: 'reddit' }>): Promise<nu
   const tx = db.transaction(() => {
     for (const e of parseAtom(xml)) {
       const text = `${e.title} ${e.content}`
+      if (!relevant(j.product, j.kind, text)) continue
       const intent = j.kind === 'demand' ? intentScore(text) : intentScore(text) * 0.5
       const id = `reddit_${e.id}_${j.product}_${j.kind}`
       const r = insertSignal.run({
@@ -539,6 +553,7 @@ async function runTelegramJob(j: Extract<Job, { platform: 'telegram' }>): Promis
   const fresh: AlertSignal[] = []
   const tx = db.transaction(() => {
     for (const m of parseTgMessages(html)) {
+      if (!relevant(j.product, 'demand', m.text)) continue
       const intent = intentScore(m.text)
       const id = `tg_${m.id}_${j.product}`
       const url = `https://t.me/${m.id}`
@@ -593,6 +608,7 @@ async function runForumJob(j: Extract<Job, { platform: 'forum' }>): Promise<numb
   const fresh: AlertSignal[] = []
   const tx = db.transaction(() => {
     for (const t of parseForumThreads(html, j.url)) {
+      if (!relevant(j.product, 'demand', t.title)) continue
       const intent = intentScore(t.title)
       const id = `forum_${t.id}_${j.product}`
       const r = insertSignal.run({
@@ -621,6 +637,7 @@ async function runBlueskyJob(j: Extract<Job, { platform: 'bluesky' }>): Promise<
       const text: string = p?.record?.text ?? ''
       const rkey = String(p?.uri ?? '').split('/').pop() ?? ''
       if (!text || !rkey) continue
+      if (!relevant(j.product, j.kind, text)) continue
       const handle: string = p?.author?.handle ?? ''
       const intent = j.kind === 'demand' ? intentScore(text) : intentScore(text) * 0.5
       const id = `bs_${rkey}_${j.product}_${j.kind}`
@@ -653,6 +670,7 @@ async function runHnJob(j: Extract<Job, { platform: 'hn' }>): Promise<number> {
       const oid = String(h?.objectID ?? '')
       if (!text || !oid) continue
       const clean = text.replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ').replace(/\s+/g, ' ').trim()
+      if (!relevant(j.product, j.kind, clean)) continue
       const intent = j.kind === 'demand' ? intentScore(clean) : intentScore(clean) * 0.5
       const id = `hn_${oid}_${j.product}_${j.kind}`
       const url = `https://news.ycombinator.com/item?id=${oid}`
@@ -680,6 +698,7 @@ async function runThreadsJob(j: Extract<Job, { platform: 'threads' }>): Promise<
   const fresh: AlertSignal[] = []
   const tx = db.transaction(() => {
     for (const p of posts) {
+      if (!relevant(j.product, j.kind, p.text)) continue
       const intent = j.kind === 'demand' ? intentScore(p.text) : intentScore(p.text) * 0.5
       const id = `th_${p.id}_${j.product}_${j.kind}`
       const url = p.url

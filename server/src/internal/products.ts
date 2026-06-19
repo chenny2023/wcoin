@@ -49,6 +49,12 @@ export interface ProductConfig {
    * 走住宅代理/解锁器过 Cloudflare。适合 iGaming 投手聚集的 BHW/AGD/AffiliateFix 等。
    */
   forums?: { name: string; url: string }[]
+  /**
+   * 相关性词表（领域词）——去噪闸门。对"需求(demand)"类信号（含论坛/TG/广搜命中），
+   * 标题/正文必须包含其中至少一个词才入库；品牌/竞品类精确命中不受此限。
+   * 解决"论坛整页吞入 + 泛词命中"带来的无效信息。留空=不过滤。
+   */
+  relevance?: string[]
 }
 
 // 关键词可随时增删调优；竞品 X 账号名写错会自动 404 忽略，安全。各产品 ownHandles 待补真实账号。
@@ -96,22 +102,42 @@ export const PRODUCTS: ProductConfig[] = [
         'chatbase',
         'salesforce agentforce',
       ],
-      demand: [
-        'AI customer service',
-        'AI customer support',
-        'AI chatbot for website',
-        'AI support agent',
-        'automate customer support',
-        'best AI customer service tool',
-        'customer service automation',
-        'AI agent for sales',
-        'replace live chat with AI',
-        'chatbot for ecommerce support',
-      ],
+    // 目标 = 特定垂直（游戏/博彩网站、AI SaaS、电商独立站）表达"要 online AI 客服/销售"
+    // 的需求与痛点——而非泛泛的"CX 工具选型"。关键词围绕这些行业主的真实说法。
+    demand: [
+      // 电商/独立站
+      'live chat for ecommerce',
+      'customer support for my store',
+      'Shopify customer support app',
+      'automate ecommerce customer service',
+      'AI chatbot for online store',
+      // SaaS
+      'customer support for SaaS',
+      'AI support agent for SaaS',
+      'reduce support tickets',
+      'support team overwhelmed',
+      // 游戏/博彩网站
+      'live chat for igaming',
+      'customer support for online casino',
+      'player support automation',
+      '24/7 customer support for website',
+      // 通用高意图
+      'AI customer service for website',
+      'AI sales agent for website',
+      'outsource customer support',
+    ],
     },
-    subreddits: ['CustomerService', 'CustomerSuccess', 'SaaS', 'ecommerce', 'startups', 'smallbusiness'],
+    subreddits: ['ecommerce', 'shopify', 'dropship', 'SaaS', 'Entrepreneur', 'smallbusiness', 'CustomerService', 'startups'],
     // ownHandles 待补：填入 hirecx 自己的 X 账号名（不带 @）
     x: { competitorHandles: ['intercom', 'zendesk', 'ada_cx', 'decagon'], ownHandles: [] },
+    // 去噪：只有真正讲"客服/支持/在线销售对话"的帖才算 hirecx 需求（行业垂直里筛出 CS 话题）
+    relevance: [
+      'customer service', 'customer support', 'customer experience', 'support ticket', 'support tickets',
+      'live chat', 'livechat', 'chatbot', 'chat bot', 'help desk', 'helpdesk', 'support team', 'support agent',
+      'support rep', 'cx ', 'ai agent', 'virtual agent', 'conversational ai', 'support automation', 'chat widget',
+      'presales', 'pre-sales', 'after-sales', 'sales chat', 'respond to customers', 'handle inquiries',
+      'support volume', 'support cost', 'answer customers', 'player support', 'support inbox', 'tickets',
+    ],
   },
   {
     key: 'wonix',
@@ -132,18 +158,23 @@ export const PRODUCTS: ProductConfig[] = [
         'creatify ai',
         'smartly.io',
       ],
-      demand: [
-        'ad creative tool',
-        'AI ad creatives',
-        'generate ad creatives',
-        'creative automation',
-        'best tool for ad creatives',
-        'scaling facebook ad creatives',
-        'ad creative generator',
-        'iGaming ad creative',
-        'casino ad creatives',
-        'media buying creative workflow',
-      ],
+    // 收窄到「iGaming 广告素材/投放」语境，去掉 "ad creative tool" 这类泛词（会引来一堆
+    // 非博彩营销噪音）。中英俄混合（FB-Killa 等 CIS 论坛是俄语）。
+    demand: [
+      'igaming ad creative',
+      'casino ad creatives',
+      'gambling ad creative',
+      'slots ad creatives',
+      'creatives for facebook gambling',
+      'best creatives for igaming',
+      'gambling ad fatigue',
+      'spy tool gambling ads',
+      'casino ad copy',
+      // 俄语 CIS 投手说法：crea/креатив=素材
+      'крео гемблинг',
+      'крео казино',
+      'арбитраж крео',
+    ],
     },
     // iGaming 投手 / 联盟营销 / 绩效投放聚集的 Reddit 社区（含玩家端痛点供反向选品）
     subreddits: ['Affiliatemarketing', 'PPC', 'FacebookAds', 'advertising', 'sportsbook', 'onlinegambling', 'gambling'],
@@ -161,6 +192,15 @@ export const PRODUCTS: ProductConfig[] = [
       { name: 'AGD · casino-affiliate', url: 'https://www.affiliateguarddog.com/community/categories/casino-affiliate-forums.56/' },
       { name: 'AffiliateFix', url: 'https://affiliatefix.com/whats-new/posts/' },
       { name: 'FB-Killa (CIS)', url: 'https://fb-killa.pro/forums/' },
+    ],
+    // 去噪关键：论坛/泛词命中必须真讲"广告素材/投放机制"才算 wonix 需求——故意只放素材/投放词，
+    // 不放 casino/gambling/affiliate（那些会让整页赌场联盟帖都通过，等于没过滤）。
+    relevance: [
+      'creative', 'creatives', 'ad creative', 'ad copy', 'ugc', 'banner', 'video ad', 'thumbnail',
+      'landing page', 'prelander', 'preland', 'cloak', 'cloaking', 'spy tool', 'adspy', 'ad fatigue',
+      'ad account', 'facebook ads', 'fb ads', 'google ads', 'tiktok ads', 'creo', 'ad ban', 'ad design',
+      // 俄语
+      'крео', 'креатив', 'креатива', 'баннер', 'связк', 'прелендинг', 'клоак', 'спай',
     ],
   },
 ]
