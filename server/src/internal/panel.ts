@@ -151,7 +151,7 @@ function loginView(step){
 }
 
 function shell(inner){
-  const nav=[['overview','概览'],['signals','信号'],['drafts','草稿'],['custom','自定义采集']]
+  const nav=[['overview','概览'],['signals','信号'],['painradar','竞品痛点'],['topics','选题建议'],['drafts','草稿'],['custom','自定义采集']]
     .map(t=>'<button class="'+(tab===t[0]?'on':'')+'" data-act="go" data-id="'+t[0]+'">'+t[1]+'</button>').join('')
   return '<header><div class="brand"><div class="logo">📡</div>社媒情报</div>'+
     '<div class="nav">'+nav+'</div><div class="spacer"></div>'+
@@ -167,6 +167,8 @@ async function render(loginStep){
   try{
     if(tab==='overview')await renderOverview()
     else if(tab==='signals')await renderSignals()
+    else if(tab==='painradar')await renderPainRadar()
+    else if(tab==='topics')await renderTopics()
     else if(tab==='drafts')await renderDrafts()
     else await renderCustom()
   }catch(e){$('#app').innerHTML=shell('<div class="empty"><div class="big">⚠️</div>'+esc(e.message||'加载失败')+'</div>')}
@@ -234,7 +236,7 @@ function toolbar(){
    '<input class="search" id="f-q" placeholder="🔎 搜索标题/正文/作者…" value="'+esc(filters.q)+'">'+
    '<select id="f-product">'+opt('','全部产品',filters.product)+products.map(p=>opt(p.key,p.name,filters.product)).join('')+'</select>'+
    '<select id="f-kind">'+['|全部类别','demand|需求/机会','competitor|竞品','brand|品牌'].map(o=>{const[v,l]=o.split('|');return opt(v,l,filters.kind)}).join('')+'</select>'+
-   '<select id="f-platform">'+['|全部平台','reddit|Reddit','x|X','threads|Threads'].map(o=>{const[v,l]=o.split('|');return opt(v,l,filters.platform)}).join('')+'</select>'+
+   '<select id="f-platform">'+['|全部平台','reddit|Reddit','x|X','telegram|Telegram'].map(o=>{const[v,l]=o.split('|');return opt(v,l,filters.platform)}).join('')+'</select>'+
    '<select id="f-intent">'+['0|意图≥0','0.25|意图≥0.25','0.45|意图≥0.45','0.7|意图≥0.7'].map(o=>{const[v,l]=o.split('|');return opt(v,l,filters.minIntent)}).join('')+'</select>'+
    '<select id="f-status">'+['|全部状态','new|未处理','reviewed|已生成草稿','ignored|已忽略'].map(o=>{const[v,l]=o.split('|');return opt(v,l,filters.status)}).join('')+'</select>'+
    '<select id="f-sort">'+['intent|意图优先','ts|最新优先'].map(o=>{const[v,l]=o.split('|');return opt(v,l,filters.sort)}).join('')+'</select>'+
@@ -265,6 +267,58 @@ async function renderSignals(){
 }
 H.mkdraft=async(id,btn)=>{if(btn){btn.textContent='生成中…';btn.disabled=true}const r=await api('/api/internal/social/draft',{method:'POST',body:JSON.stringify({signalId:id})});toast(r.message||'完成');if(r.ok&&r.draftId){tab='drafts';render()}else if(btn){btn.textContent='生成推荐草稿';btn.disabled=false}}
 H.ignore=async id=>{await api('/api/internal/social/signal/'+id+'/status',{method:'POST',body:JSON.stringify({status:'ignored'})});toast('已忽略');renderSignals()}
+
+// ── 竞品痛点雷达 ────────────────────────────────────────────────────────────
+let prFilter=''
+async function renderPainRadar(){
+  const qs=prFilter?('?product='+prFilter):''
+  const {signals}=await api('/api/internal/social/painradar'+qs)
+  const opt=(v,l,sel)=>'<option value="'+v+'"'+(sel===v?' selected':'')+'>'+l+'</option>'
+  const bar='<div class="toolbar"><span class="mut" style="font-weight:600">按"痛点分(高意图+负面)"排序，越靠前越可能在找替代方案</span>'+
+    '<select id="pr-product" class="right">'+opt('','全部产品',prFilter)+products.map(p=>opt(p.key,p.name,prFilter)).join('')+'</select></div>'
+  const cards=signals.length?signals.map(s=>
+    '<div class="card"><div class="crow"><span class="pill competitor">竞品: '+esc(s.query||'')+'</span>'+
+    '<span class="pill plat">'+s.platform+'</span><span class="pill prod">'+esc(pname(s.product))+'</span>'+
+    '<span class="meter"><span class="mt"><span class="mf" style="width:'+Math.round(Math.min(1,(s.pain||0)/2)*100)+'%;background:#ff5c5c"></span></span><b style="color:#ff5c5c">痛点 '+(s.pain||0).toFixed(2)+'</b></span>'+
+    sentChip(s.sentiment)+'<span class="right dim" style="font-size:12px">'+ago(s.ts)+' · '+esc(s.author||'')+'</span></div>'+
+    '<div class="title">'+esc(s.title)+'</div>'+
+    '<div class="body">'+esc((s.body||'').slice(0,360))+'</div>'+
+    '<div class="crow" style="margin-top:10px"><a href="'+esc(s.url)+'" target="_blank">查看原贴 ↗</a>'+
+    '<button class="btn sm pri right" data-act="mkdraft" data-id="'+s.id+'">生成替代方案草稿</button>'+
+    '<button class="btn sm ghost" data-act="ignore" data-id="'+s.id+'">忽略</button></div></div>').join('')
+    :'<div class="empty"><div class="big">⚔️</div>暂无竞品痛点信号。<br><span class="mut">需要竞品词采集到带负面情绪的帖子；补全 products.ts 竞品词、多采集几轮后这里会出现"准备换供应商"的人。</span></div>'
+  $('#app').innerHTML=shell('<p class="lead">捞出对竞品不满、且在主动选型的人——这是转化率最高的人群。生成草稿会以"我们产品作为替代方案"切入。</p>'+bar+cards)
+  $('#pr-product').onchange=e=>{prFilter=e.target.value;renderPainRadar()}
+}
+
+// ── 选题建议 ────────────────────────────────────────────────────────────────
+let tpFilter=''
+async function renderTopics(){
+  const qs=tpFilter?('?product='+tpFilter):''
+  const {topics}=await api('/api/internal/social/topics'+qs)
+  const opt=(v,l,sel)=>'<option value="'+v+'"'+(sel===v?' selected':'')+'>'+l+'</option>'
+  const bar='<div class="toolbar"><label class="fld" style="flex-direction:row;align-items:center;gap:8px">为产品生成选题<select id="tp-product">'+products.map(p=>opt(p.key,p.name,tpFilter||products[0]&&products[0].key)).join('')+'</select></label>'+
+    '<button class="btn pri" id="tp-go">✨ AI 归纳选题</button>'+
+    '<select id="tp-filter" class="right">'+opt('','全部产品',tpFilter)+products.map(p=>opt(p.key,p.name,tpFilter)).join('')+'</select></div>'
+  const cards=topics.length?topics.map(t=>
+    '<div class="card"><div class="crow"><span class="pill prod">'+esc(pname(t.product))+'</span>'+
+    (t.keyword?'<span class="pill" style="color:#7ab8ff;border-color:#1f3a5c">🔑 '+esc(t.keyword)+'</span>':'')+
+    '<span class="right dim" style="font-size:11px">'+(t.demand_count||0)+' 条需求支撑 · '+esc(t.model||'')+'</span></div>'+
+    '<div class="title">'+esc(t.topic)+'</div>'+
+    (t.question?'<div class="mut" style="font-size:13px">❓ 用户在问：'+esc(t.question)+'</div>':'')+
+    (t.angle?'<div class="rationale">✍️ 切入角度：'+esc(t.angle)+'</div>':'')+'</div>').join('')
+    :'<div class="empty"><div class="big">💡</div>还没有选题。<br><span class="mut">选一个产品点"AI 归纳选题"，会从该产品近期需求贴里聚类出可排名/可转化的内容选题。</span></div>'
+  $('#app').innerHTML=shell('<p class="lead">把反复出现的用户需求，聚类成可以写文章/落地页去抢排名的选题。这是把社媒需求转成"24h 自动获客"的复利打法。</p>'+bar+cards)
+  $('#tp-go').onclick=topicsGo
+  $('#tp-filter').onchange=e=>{tpFilter=e.target.value;renderTopics()}
+}
+async function topicsGo(){
+  const product=$('#tp-product').value
+  const b=$('#tp-go');b.textContent='AI 归纳中…';b.disabled=true
+  const r=await api('/api/internal/social/topics',{method:'POST',body:JSON.stringify({product})})
+  toast(r.ok?('已生成 '+(r.added||0)+' 个选题'):('失败：'+(r.error||'未知')))
+  tpFilter=product;renderTopics()
+}
 
 // ── 草稿 ────────────────────────────────────────────────────────────────────
 async function renderDrafts(){

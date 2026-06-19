@@ -37,6 +37,12 @@ export interface ProductConfig {
     competitorHandles: string[]
     ownHandles: string[]
   }
+  /**
+   * Telegram 公开频道用户名（不含 @），监听其近期消息作为需求/竞品信号。
+   * 适合 wonix 这类"投手不在 Reddit、聚集在 TG 群/频道"的产品。留空=不监听。
+   * 注意：只能读「公开频道」(t.me/s/<name> 可预览的)；私有群读不到。
+   */
+  telegram?: string[]
 }
 
 // 关键词可随时增删调优；竞品 X 账号名写错会自动 404 忽略，安全。各产品 ownHandles 待补真实账号。
@@ -136,6 +142,8 @@ export const PRODUCTS: ProductConfig[] = [
     subreddits: ['PPC', 'FacebookAds', 'advertising', 'marketing', 'Affiliatemarketing', 'DigitalMarketing'],
     // ownHandles 待补：填入 wonix 自己的 X 账号名（不带 @）
     x: { competitorHandles: ['AdCreativeai', 'madgicx', 'creatopy', 'foreplay_co'], ownHandles: [] },
+    // ⚠️ 待补：填入真实的 iGaming 投手/联盟营销公开 TG 频道用户名（不含 @），例如行业资讯/素材分享频道
+    telegram: [],
   },
 ]
 

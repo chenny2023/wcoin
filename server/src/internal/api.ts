@@ -3,8 +3,9 @@ import { db } from '../db.ts'
 import { userFromRequest, isAdminEmail } from '../auth.ts'
 import { generateDraft } from './drafts.ts'
 import { runSocialIntelOnce, runCustomQuery } from './socialintel.ts'
-import { PRODUCTS } from './products.ts'
+import { PRODUCTS, productByKey } from './products.ts'
 import { PANEL_HTML } from './panel.ts'
+import { generateContent, openrouterEnabled } from '../content/openrouter.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 内部社媒情报 — 管理员鉴权 API + 面板。所有数据接口仅 admin 可访问。
@@ -80,6 +81,77 @@ export function registerSocialIntel(app: FastifyInstance): void {
       FROM social_intel WHERE ${sinceClause} AND kind='demand' AND status='new'
       ORDER BY intent DESC, ts DESC LIMIT 10`).all(since)
     return { days, byPlatform, byKind, byProduct, sentiment, topDemand, topCompetitor, trend, topOpportunities }
+  })
+
+  // A. 竞品痛点雷达：竞品相关贴里"高意图 + 负面情绪"的人 = 准备换供应商的潜在客户。
+  // painScore = intent + max(0,-sentiment)，越高越值得主动接触（用我们产品做替代方案）。
+  app.get('/api/internal/social/painradar', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const q = req.query as Record<string, string>
+    const where = ["kind='competitor'", "status != 'ignored'"]
+    const params: any[] = []
+    if (q.product) { where.push('product = ?'); params.push(q.product) }
+    const limit = Math.min(100, Number(q.limit) || 50)
+    const rows = db
+      .prepare(
+        `SELECT *, (intent + CASE WHEN sentiment < 0 THEN -sentiment ELSE 0 END) AS pain
+         FROM social_intel WHERE ${where.join(' AND ')}
+         ORDER BY pain DESC, ts DESC LIMIT ?`,
+      )
+      .all(...params, limit)
+    return { signals: rows }
+  })
+
+  // B. 选题建议：列出已存档选题
+  app.get('/api/internal/social/topics', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const q = req.query as Record<string, string>
+    const where = q.product ? 'WHERE product = ?' : ''
+    const rows = q.product
+      ? db.prepare(`SELECT * FROM social_topics ${where} ORDER BY created_ts DESC LIMIT 60`).all(q.product)
+      : db.prepare('SELECT * FROM social_topics ORDER BY created_ts DESC LIMIT 60').all()
+    return { topics: rows }
+  })
+
+  // B. 选题建议：用近期 demand 贴让 AI 归纳成 SEO/内容选题，存档并返回
+  app.post('/api/internal/social/topics', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const b = (req.body || {}) as { product?: string }
+    const product = String(b.product || '').trim()
+    const prod = productByKey(product)
+    if (!prod) return reply.code(400).send({ error: '请选择一个有效产品' })
+    if (!openrouterEnabled()) return reply.code(400).send({ error: 'OPENROUTER_API_KEY 未配置，无法生成选题' })
+    const rows = db
+      .prepare(
+        `SELECT title, body FROM social_intel WHERE product=? AND kind='demand'
+         ORDER BY intent DESC, ts DESC LIMIT 60`,
+      )
+      .all(product) as { title: string; body: string }[]
+    if (rows.length < 3) return reply.code(400).send({ error: '该产品的需求贴样本太少（<3），先多采集一些再生成' })
+
+    const sample = rows.map((r, i) => `${i + 1}. ${r.title}${r.body ? ' — ' + r.body.slice(0, 160) : ''}`).join('\n').slice(0, 6000)
+    const system =
+      'You are an SEO content strategist. Given real social-media posts where people express a need, ' +
+      'cluster them into distinct, high-intent CONTENT TOPICS our product could rank for and convert from. ' +
+      'Return ONLY JSON: {"topics":[{"topic":"...","question":"the recurring user question","angle":"how the article should be framed to convert","keyword":"primary search keyword"}]} (5-8 topics).'
+    const user = `Our product: ${prod.name} — ${prod.pitch}\n\nReal demand posts:\n${sample}`
+    const res = await generateContent(system, user)
+    const topics = (res?.data?.topics ?? []) as any[]
+    if (!Array.isArray(topics) || topics.length === 0) return reply.code(502).send({ error: 'AI 未返回有效选题，请重试' })
+
+    const now = Date.now()
+    const ins = db.prepare(
+      `INSERT INTO social_topics(product, topic, question, angle, keyword, demand_count, model, created_ts)
+       VALUES(?,?,?,?,?,?,?,?)`,
+    )
+    const tx = db.transaction(() => {
+      for (const t of topics.slice(0, 8)) {
+        ins.run(product, String(t.topic || '').slice(0, 200), String(t.question || '').slice(0, 300),
+          String(t.angle || '').slice(0, 500), String(t.keyword || '').slice(0, 120), rows.length, res?.model || '', now)
+      }
+    })
+    tx()
+    return { ok: true, added: Math.min(8, topics.length) }
   })
 
   // 信号列表（可按产品/类别/平台/最小意图分/状态/关键词过滤）

@@ -3,6 +3,7 @@ import { webFetch, webFetchProxied, webFetchUnlocked } from '../net.ts'
 import { unlockedFetch } from '../collectors/unlocker.ts'
 import { score as lexScore } from '../sentiment.ts'
 import { PRODUCTS } from './products.ts'
+import { maybeAlert, type AlertSignal } from './alerts.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 内部社媒情报采集器（团队内部）。复用 wcoin 现有的住宅代理 (net.ts) 与无 key 采集范式。
@@ -68,6 +69,26 @@ CREATE TABLE IF NOT EXISTS social_custom_query (
   active      INTEGER NOT NULL DEFAULT 1,
   last_run_ts INTEGER,
   created_ts  INTEGER NOT NULL
+);
+
+-- B. 需求聚类→选题建议：AI 把近期需求贴归纳成的内容/SEO 选题，按产品存档。
+CREATE TABLE IF NOT EXISTS social_topics (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  product     TEXT NOT NULL,
+  topic       TEXT NOT NULL,         -- 选题标题
+  question    TEXT,                  -- 反复出现的用户问题
+  angle       TEXT,                  -- 建议的文章切入角度
+  keyword     TEXT,                  -- 目标关键词
+  demand_count INTEGER DEFAULT 0,    -- 支撑该选题的需求贴数
+  model       TEXT,
+  created_ts  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_st_product ON social_topics(product, created_ts DESC);
+
+-- C. 黄金一小时提醒：已发过提醒的高意图机会贴，去重用。
+CREATE TABLE IF NOT EXISTS social_alert_sent (
+  signal_id TEXT PRIMARY KEY,
+  ts        INTEGER NOT NULL
 );
 `)
 
@@ -188,10 +209,42 @@ function parseTweets(html: string): { id: string; text: string; likes: number; r
   return out
 }
 
+// ── Telegram 公开频道：抓 t.me/s/<channel> 预览页的近期消息（与 collectors/telegram.ts 同范式）
+async function fetchTgChannel(channel: string): Promise<string | null> {
+  const url = `https://t.me/s/${encodeURIComponent(channel)}`
+  const init = { headers: { 'User-Agent': UA, Accept: 'text/html' }, signal: AbortSignal.timeout(25_000) }
+  try {
+    const unlocked = webFetchUnlocked(url, init) // null when no SCRAPER_API_KEY
+    const res = unlocked ? await unlocked : await webFetch(url, init)
+    if (res.ok) return await res.text()
+  } catch {
+    /* swallow */
+  }
+  return null
+}
+
+function parseTgMessages(html: string): { id: string; text: string; ts: number }[] {
+  const out: { id: string; text: string; ts: number }[] = []
+  // 每条消息块带 data-post="channel/123"，正文在 tgme_widget_message_text，时间在 <time datetime>
+  for (const m of html.matchAll(/data-post="([^"]+)"[\s\S]*?(?=data-post="|$)/g)) {
+    const block = m[0]
+    const id = m[1]
+    const textM = block.match(/tgme_widget_message_text[^>]*>([\s\S]*?)<\/div>/)
+    if (!textM) continue
+    const text = textM[1].replace(/<br\s*\/?>(?=)/g, ' ').replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ').replace(/\s+/g, ' ').trim()
+    if (text.length < 8) continue
+    const tM = block.match(/datetime="([^"]+)"/)
+    const ts = tM ? Date.parse(tM[1]) || 0 : 0
+    out.push({ id, text: text.slice(0, 2000), ts })
+  }
+  return out
+}
+
 // ── 单轮采集：遍历所有产品 × 平台 × 关键词 ────────────────────────────────────
 type Job =
   | { product: string; platform: 'reddit'; kind: 'brand' | 'competitor' | 'demand'; query: string; subreddits: string[] }
   | { product: string; platform: 'x'; kind: 'competitor' | 'brand'; query: string }
+  | { product: string; platform: 'telegram'; kind: 'demand'; query: string }
 
 function buildJobs(): Job[] {
   const jobs: Job[] = []
@@ -201,6 +254,7 @@ function buildJobs(): Job[] {
     }
     for (const h of p.x.competitorHandles) jobs.push({ product: p.key, platform: 'x', kind: 'competitor', query: h })
     for (const h of p.x.ownHandles) jobs.push({ product: p.key, platform: 'x', kind: 'brand', query: h })
+    for (const ch of p.telegram ?? []) jobs.push({ product: p.key, platform: 'telegram', kind: 'demand', query: ch })
   }
   // 已保存且启用的「自定义采集需求」——随同主调度一起轮询
   for (const c of activeCustomQueries()) jobs.push(c)
@@ -251,21 +305,49 @@ async function runRedditJob(j: Extract<Job, { platform: 'reddit' }>): Promise<nu
   consecutiveFails = 0
   const now = Date.now()
   let added = 0
+  const fresh: AlertSignal[] = []
   const tx = db.transaction(() => {
     for (const e of parseAtom(xml)) {
       const text = `${e.title} ${e.content}`
+      const intent = j.kind === 'demand' ? intentScore(text) : intentScore(text) * 0.5
+      const id = `reddit_${e.id}_${j.product}_${j.kind}`
       const r = insertSignal.run({
-        id: `reddit_${e.id}_${j.product}_${j.kind}`,
-        product: j.product, platform: 'reddit', kind: j.kind, query: j.query,
+        id, product: j.product, platform: 'reddit', kind: j.kind, query: j.query,
         author: e.author.slice(0, 120), title: e.title.slice(0, 300), body: e.content,
-        url: e.link, score: 0, sentiment: lexScore(text),
-        intent: j.kind === 'demand' ? intentScore(text) : intentScore(text) * 0.5,
-        ts: e.ts, collected_ts: now,
+        url: e.link, score: 0, sentiment: lexScore(text), intent, ts: e.ts, collected_ts: now,
       })
       added += r.changes
+      if (r.changes) fresh.push({ id, product: j.product, platform: 'reddit', kind: j.kind, title: e.title, url: e.link, intent })
     }
   })
   tx()
+  void maybeAlert(fresh) // C. 黄金一小时提醒（高意图 demand 才触发，内部去重）
+  return added
+}
+
+async function runTelegramJob(j: Extract<Job, { platform: 'telegram' }>): Promise<number> {
+  const html = await fetchTgChannel(j.query)
+  if (!html) { consecutiveFails++; return 0 }
+  consecutiveFails = 0
+  const now = Date.now()
+  let added = 0
+  const fresh: AlertSignal[] = []
+  const tx = db.transaction(() => {
+    for (const m of parseTgMessages(html)) {
+      const intent = intentScore(m.text)
+      const id = `tg_${m.id}_${j.product}`
+      const url = `https://t.me/${m.id}`
+      const r = insertSignal.run({
+        id, product: j.product, platform: 'telegram', kind: 'demand', query: j.query,
+        author: j.query, title: m.text.slice(0, 300), body: m.text,
+        url, score: 0, sentiment: lexScore(m.text), intent, ts: m.ts || now, collected_ts: now,
+      })
+      added += r.changes
+      if (r.changes) fresh.push({ id, product: j.product, platform: 'telegram', kind: 'demand', title: m.text.slice(0, 200), url, intent })
+    }
+  })
+  tx()
+  void maybeAlert(fresh)
   return added
 }
 
@@ -297,7 +379,10 @@ export async function runSocialIntelOnce(): Promise<void> {
   if (jobs.length === 0) return
   const j = jobs[cursor++]
   try {
-    const added = j.platform === 'reddit' ? await runRedditJob(j) : await runXJob(j)
+    const added =
+      j.platform === 'reddit' ? await runRedditJob(j)
+      : j.platform === 'telegram' ? await runTelegramJob(j)
+      : await runXJob(j)
     if (added) console.log(`[social-intel] ${j.product}/${j.platform}/${j.kind} "${j.query}": +${added}`)
   } catch (e) {
     consecutiveFails++
