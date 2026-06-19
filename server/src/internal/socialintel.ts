@@ -92,6 +92,13 @@ CREATE TABLE IF NOT EXISTS social_alert_sent (
 );
 `)
 
+// 迁移：social_intel.zh —— 每条信号的中文解读（AI 生成，后台批量回填）。
+// ALTER TABLE 不支持 IF NOT EXISTS，按 pragma 检测后再加。
+{
+  const cols = db.prepare('PRAGMA table_info(social_intel)').all() as { name: string }[]
+  if (!cols.some((c) => c.name === 'zh')) db.exec('ALTER TABLE social_intel ADD COLUMN zh TEXT')
+}
+
 const insertSignal = db.prepare(`
   INSERT OR IGNORE INTO social_intel
     (id, product, platform, kind, query, author, title, body, url, score, sentiment, intent, ts, collected_ts)

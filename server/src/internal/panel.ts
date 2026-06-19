@@ -95,6 +95,7 @@ export const PANEL_HTML = `<!doctype html>
   .meter b{font-size:11px;font-variant-numeric:tabular-nums}
   textarea.draft{width:100%;min-height:92px;margin-top:10px;line-height:1.5;resize:vertical}
   .rationale{font-size:12px;color:var(--warn);background:#1c1708;border:1px solid #463615;border-radius:8px;padding:6px 9px;margin-top:8px}
+  .zh{font-size:13px;color:#bfe3ff;background:#0c1726;border:1px solid #1f3a5c;border-radius:8px;padding:7px 10px;margin-top:8px;line-height:1.5}
 
   .login{max-width:360px;margin:9vh auto;text-align:center;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:34px 30px}
   .login .logo{width:46px;height:46px;font-size:22px;margin:0 auto 14px;border-radius:13px}
@@ -131,6 +132,7 @@ const intColor=v=>v>=0.7?'#ff5c5c':v>=0.45?'#ffb24a':v>=0.25?'#ffd479':'#5b6b86'
 function meter(v){v=v||0;return '<span class="meter"><span class="mt"><span class="mf" style="width:'+Math.round(v*100)+'%;background:'+intColor(v)+'"></span></span><b style="color:'+intColor(v)+'">'+v.toFixed(2)+'</b></span>'}
 function sentChip(v){v=v||0;const c=v>0.15?'pos':v<-0.15?'neg':'neu';const lab=v>0.15?'正面':v<-0.15?'负面':'中性';return '<span class="sent '+c+'">'+lab+' '+v.toFixed(2)+'</span>'}
 function kindPill(k){const m={demand:'需求',competitor:'竞品',brand:'品牌'};return '<span class="pill '+k+'">'+(m[k]||k)+'</span>'}
+function zhBlock(s){return '<div class="zh" id="zh-'+s.id+'">'+(s.zh?('🇨🇳 '+esc(s.zh)):'<button class="btn sm ghost" data-act="tr" data-id="'+s.id+'">🇨🇳 生成中文解读</button> <span class="dim" style="font-size:12px">（后台也在自动回填）</span>')+'</div>'}
 
 // ── 事件委托 ───────────────────────────────────────────────────────────────
 const H={}
@@ -258,6 +260,7 @@ async function renderSignals(){
     '<span class="right dim" style="font-size:12px">'+ago(s.ts)+' · '+esc(s.author||'')+' · "'+esc(s.query||'')+'"</span></div>'+
     '<div class="title">'+esc(s.title)+'</div>'+
     '<div class="body">'+esc((s.body||'').slice(0,360))+'</div>'+
+    zhBlock(s)+
     '<div class="crow" style="margin-top:10px"><a href="'+esc(s.url)+'" target="_blank">查看原贴 ↗</a>'+
     '<button class="btn sm pri right" data-act="mkdraft" data-id="'+s.id+'">生成推荐草稿</button>'+
     '<button class="btn sm ghost" data-act="ignore" data-id="'+s.id+'">忽略</button></div></div>').join('')
@@ -267,6 +270,7 @@ async function renderSignals(){
 }
 H.mkdraft=async(id,btn)=>{if(btn){btn.textContent='生成中…';btn.disabled=true}const r=await api('/api/internal/social/draft',{method:'POST',body:JSON.stringify({signalId:id})});toast(r.message||'完成');if(r.ok&&r.draftId){tab='drafts';render()}else if(btn){btn.textContent='生成推荐草稿';btn.disabled=false}}
 H.ignore=async id=>{await api('/api/internal/social/signal/'+id+'/status',{method:'POST',body:JSON.stringify({status:'ignored'})});toast('已忽略');renderSignals()}
+H.tr=async(id,btn)=>{if(btn){btn.textContent='生成中…';btn.disabled=true}const r=await api('/api/internal/social/translate',{method:'POST',body:JSON.stringify({signalId:id})});const box=$('#zh-'+id);if(r.ok&&box){box.innerHTML='🇨🇳 '+esc(r.zh)}else{toast(r.error||'生成失败');if(btn){btn.textContent='🇨🇳 生成中文解读';btn.disabled=false}}}
 
 // ── 竞品痛点雷达 ────────────────────────────────────────────────────────────
 let prFilter=''
@@ -283,6 +287,7 @@ async function renderPainRadar(){
     sentChip(s.sentiment)+'<span class="right dim" style="font-size:12px">'+ago(s.ts)+' · '+esc(s.author||'')+'</span></div>'+
     '<div class="title">'+esc(s.title)+'</div>'+
     '<div class="body">'+esc((s.body||'').slice(0,360))+'</div>'+
+    zhBlock(s)+
     '<div class="crow" style="margin-top:10px"><a href="'+esc(s.url)+'" target="_blank">查看原贴 ↗</a>'+
     '<button class="btn sm pri right" data-act="mkdraft" data-id="'+s.id+'">生成替代方案草稿</button>'+
     '<button class="btn sm ghost" data-act="ignore" data-id="'+s.id+'">忽略</button></div></div>').join('')
@@ -328,6 +333,7 @@ async function renderDrafts(){
     '<span class="pill prod">'+esc(pname(d.product))+'</span>'+meter(d.intent)+
     '<span class="right dim" style="font-size:11px">'+esc(d.model||'')+'</span></div>'+
     '<div class="title">'+esc(d.post_title)+'</div>'+
+    (d.post_zh?'<div class="zh">🇨🇳 '+esc(d.post_zh)+'</div>':'')+
     (d.rationale?'<div class="rationale">💡 '+esc(d.rationale)+'</div>':'')+
     '<textarea class="draft" id="dft-'+d.id+'">'+esc(d.draft)+'</textarea>'+
     '<div class="crow" style="margin-top:10px"><a href="'+esc(d.post_url)+'" target="_blank">去原贴回复 ↗</a>'+

@@ -6,6 +6,7 @@ import { runSocialIntelOnce, runCustomQuery } from './socialintel.ts'
 import { PRODUCTS, productByKey } from './products.ts'
 import { PANEL_HTML } from './panel.ts'
 import { generateContent, openrouterEnabled } from '../content/openrouter.ts'
+import { translateOne, translateBatch } from './translate.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 内部社媒情报 — 管理员鉴权 API + 面板。所有数据接口仅 admin 可访问。
@@ -189,7 +190,7 @@ export function registerSocialIntel(app: FastifyInstance): void {
     const status = q.status || 'pending'
     const rows = db
       .prepare(
-        `SELECT d.*, s.title AS post_title, s.url AS post_url, s.platform, s.kind, s.author, s.intent
+        `SELECT d.*, s.title AS post_title, s.url AS post_url, s.platform, s.kind, s.author, s.intent, s.zh AS post_zh
          FROM social_drafts d JOIN social_intel s ON s.id = d.signal_id
          WHERE d.status = ? ORDER BY d.created_ts DESC LIMIT 100`,
       )
@@ -222,6 +223,23 @@ export function registerSocialIntel(app: FastifyInstance): void {
     if (!b?.status || !allowed.includes(b.status)) return reply.code(400).send({ error: 'invalid status' })
     db.prepare('UPDATE social_intel SET status=? WHERE id=?').run(b.status, id)
     return { ok: true }
+  })
+
+  // 中文解读：为单条信号即时生成（面板"中文解读"按钮）
+  app.post('/api/internal/social/translate', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const b = req.body as { signalId?: string }
+    if (!b?.signalId) return reply.code(400).send({ error: 'signalId required' })
+    if (!openrouterEnabled()) return reply.code(400).send({ error: 'OPENROUTER_API_KEY 未配置' })
+    const zh = await translateOne(b.signalId)
+    return zh ? { ok: true, zh } : { ok: false, error: '生成失败' }
+  })
+
+  // 中文解读：手动触发一批回填
+  app.post('/api/internal/social/translate-batch', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const n = await translateBatch()
+    return { ok: true, translated: n }
   })
 
   // 手动触发一轮采集（管理员调试用）

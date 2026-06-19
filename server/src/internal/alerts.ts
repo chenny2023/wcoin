@@ -2,6 +2,7 @@ import { db } from '../db.ts'
 import { webFetch } from '../net.ts'
 import { sendEmail } from '../email.ts'
 import { productByKey } from './products.ts'
+import { translateOne } from './translate.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // C. 黄金一小时提醒：出现高意图机会贴时，立刻通过 Telegram + 邮件提醒团队，
@@ -59,10 +60,15 @@ const esc = (s: string) => (s || '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '
 async function notify(s: AlertSignal): Promise<void> {
   const pname = productByKey(s.product)?.name || s.product
   const panel = (process.env.PUBLIC_BASE_URL || 'https://wcoin.casino') + '/internal/social'
+  // 当场生成中文解读（best-effort，失败则只发原文）
+  let zh = ''
+  try { zh = (await translateOne(s.id)) || '' } catch { /* ignore */ }
+  const zhTg = zh ? `\n🇨🇳 ${esc(zh)}` : ''
+
   const tg =
     `🔥 <b>高意图机会贴</b> (intent ${s.intent.toFixed(2)})\n` +
     `产品：${esc(pname)} · 平台：${s.platform}\n` +
-    `${esc(s.title.slice(0, 200))}\n` +
+    `${esc(s.title.slice(0, 200))}` + zhTg + `\n` +
     `原贴：${esc(s.url)}\n面板：${panel}`
   await pushTelegram(tg)
 
@@ -71,8 +77,9 @@ async function notify(s: AlertSignal): Promise<void> {
     `<p>🔥 <b>高意图机会贴</b>（intent ${s.intent.toFixed(2)}）</p>` +
     `<p>产品：${esc(pname)}　平台：${s.platform}</p>` +
     `<p>${esc(s.title)}</p>` +
+    (zh ? `<p>🇨🇳 <b>中文解读：</b>${esc(zh)}</p>` : '') +
     `<p><a href="${esc(s.url)}">查看原贴 →</a>　|　<a href="${esc(panel)}">打开情报面板 →</a></p>`
-  const text = `[${pname}] intent ${s.intent.toFixed(2)} — ${s.title}\n${s.url}\n${panel}`
+  const text = `[${pname}] intent ${s.intent.toFixed(2)} — ${s.title}\n${zh ? '中文：' + zh + '\n' : ''}${s.url}\n${panel}`
   await sendEmail(to, { subject: `🔥 机会贴 · ${pname} (intent ${s.intent.toFixed(2)})`, html, text })
 }
 
