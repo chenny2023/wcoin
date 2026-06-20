@@ -231,10 +231,16 @@ async function renderOverview(){
       '<a href="'+esc(o.url)+'" target="_blank" style="flex:1;min-width:200px;color:var(--fg)">'+esc((o.title||'').slice(0,90))+'</a>'+
       '<button class="btn sm pri" data-act="mkdraft" data-id="'+o.id+'">生成草稿</button></div>').join(''):'<div class="dim" style="font-size:12px">暂无未处理的高意图机会</div>')+'</div>'
 
+  // 🩺 采集健康诊断：每平台 总数/近24h/dropped/最后采集，一眼看出哪个源死了
+  const hrows=(st.health||[]).map(h=>'<tr><td>'+esc(h.platform)+'</td><td class="tabnum">'+h.total+'</td><td class="tabnum" style="color:'+(h.last24h>0?'#5ff0b0':'#ff5b6e')+'">'+h.last24h+'</td><td class="tabnum dim">'+(h.dropped||0)+'</td><td class="dim" style="font-size:11px">'+(h.last_ts?ago(h.last_ts):'从未')+'</td></tr>').join('')
+  const health='<div class="panel"><h3>🩺 采集健康<span class="tag">近24h=0(红) 说明该源没采进来 · 待分类积压 '+(st.unclassified||0)+'</span></h3>'+
+    '<table class="tbl"><tr><th>平台</th><th>总数</th><th>近24h</th><th>已清理</th><th>最后采集</th></tr>'+
+    (hrows||'<tr><td colspan="5" class="dim">暂无</td></tr>')+'</table></div>'
+
   const head='<div class="crow" style="margin-bottom:14px"><p class="lead" style="margin:0">竞品动向 · 用户需求 · 推荐机会，一屏掌握。</p>'+
     '<select class="right" id="a-days"><option value="7"'+(aDays===7?' selected':'')+'>近 7 天</option><option value="14"'+(aDays===14?' selected':'')+'>近 14 天</option><option value="30"'+(aDays===30?' selected':'')+'>近 30 天</option></select></div>'
 
-  $('#app').innerHTML=shell(head+kpis+'<div class="grid2">'+spark+sentBar+'</div><div class="grid2">'+prodBars+platBars+'</div>'+opp+'<div class="grid2">'+demandTbl+compTbl+'</div>')
+  $('#app').innerHTML=shell(head+kpis+health+'<div class="grid2">'+spark+sentBar+'</div><div class="grid2">'+prodBars+platBars+'</div>'+opp+'<div class="grid2">'+demandTbl+compTbl+'</div>')
   $('#a-days').onchange=e=>{aDays=Number(e.target.value);render()}
 }
 

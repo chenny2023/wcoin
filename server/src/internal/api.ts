@@ -43,7 +43,17 @@ export function registerSocialIntel(app: FastifyInstance): void {
     const pending = (db.prepare("SELECT COUNT(*) n FROM social_drafts WHERE status='pending'").get() as any).n
     const last24 = (db.prepare('SELECT COUNT(*) n FROM social_intel WHERE collected_ts > ?').get(Date.now() - 86_400_000) as any).n
     const total = (db.prepare('SELECT COUNT(*) n FROM social_intel').get() as any).n
-    return { byProduct, pendingDrafts: pending, collected24h: last24, total }
+    // 采集健康诊断：每平台 总数/近24h/dropped/最后采集时间，+ 待分类积压
+    const health = db.prepare(
+      `SELECT platform,
+         COUNT(*) total,
+         SUM(CASE WHEN status='dropped' THEN 1 ELSE 0 END) dropped,
+         SUM(CASE WHEN collected_ts > ? THEN 1 ELSE 0 END) last24h,
+         MAX(collected_ts) last_ts
+       FROM social_intel GROUP BY platform ORDER BY total DESC`,
+    ).all(Date.now() - 86_400_000)
+    const unclassified = (db.prepare('SELECT COUNT(*) n FROM social_intel WHERE classified_ts IS NULL').get() as any).n
+    return { byProduct, pendingDrafts: pending, collected24h: last24, total, health, unclassified }
   })
 
   // 分析概览：跨平台/产品/类别的聚合，供「概览」页可视化
