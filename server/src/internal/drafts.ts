@@ -21,12 +21,10 @@ function deliveryRules(platform: string, play: string): string {
     )
   if (platform === 'reddit')
     return (
-      'PLATFORM = Reddit (STRICT anti-promo — comments with links or a product pitch get auto-removed, ' +
-      'especially from newer accounts). HARD RULES: do NOT include ANY url/link. Do NOT pitch or use marketing ' +
-      'language. The comment must stand on its own as genuinely useful help even if the product were never named. ' +
-      'You may reference the product by NAME at most ONCE, and ONLY with a brief honest disclosure like ' +
-      '"(disclosure: I work on it)". If naming it would read as promotional, DO NOT name it — instead end by ' +
-      'offering to share specifics if they reply or DM. Keep it short and conversational.'
+      'PLATFORM = Reddit PUBLIC comment (auto-moderation removes promo + links). OUTPUT PURE, GENUINELY USEFUL ' +
+      'HELP ONLY. Do NOT mention ANY product or brand name. Do NOT include ANY url or domain. No marketing ' +
+      'language, no "DM me", no disclosure-pitch. It must read as a helpful, credible comment that stands entirely ' +
+      'on its own — outreach happens separately via DM. Concise and human.'
     )
   if (platform === 'forum' || platform === 'telegram')
     return (
@@ -87,6 +85,24 @@ function systemFor(productKey: string, painType: string, platform: string, play:
   )
 }
 
+// 程序化清洗。strict(Reddit 公开评论)：剥掉 URL + 自有域名 + 品牌词（公开评论里零产品）。
+// 非 strict（私信/论坛/X 等允许带链接）：只规整空白，保留链接与品牌。
+function sanitize(text: string, strict: boolean): string {
+  let t = text
+  if (strict) {
+    t = t.replace(/\bhttps?:\/\/\S+/gi, '').replace(/\bwww\.\S+/gi, '')
+    t = t.replace(/\b(?:hirecx|wonix)\.ai\b/gi, '').replace(/\bwcoin\.casino\b/gi, '')
+    t = t.replace(/\b(?:hirecx|wonix|wcoin)\b/gi, '')
+    t = t.replace(/\(\s*(?:disclosure|disclaimer)[^)]*\)/gi, '') // 去掉 "(disclosure: ...)" 残留
+  }
+  return t
+    .replace(/\(\s*\)/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\s+([.,!?;:])/g, '$1')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 export async function generateDraft(signalId: string): Promise<{ ok: boolean; message: string; draftId?: number }> {
   const sig = db.prepare('SELECT * FROM social_intel WHERE id = ?').get(signalId) as any
   if (!sig) return { ok: false, message: 'signal not found' }
@@ -100,22 +116,23 @@ export async function generateDraft(signalId: string): Promise<{ ok: boolean; me
     return { ok: false, message: '不可解信号（封号/支付/牌照），按 spec 仅记录、不外发样片' }
   }
 
+  // Reddit 公开评论（非私信）= 纯价值，连产品 URL 都不喂给模型，降低它写进去的诱惑
+  const redditPublic = sig.platform === 'reddit' && sig.reco_play !== 'dm'
   const user = `Our product:
 - Name: ${product.name}
-- URL: ${product.url}
-- What it is: ${product.pitch}
+${redditPublic ? '' : `- URL: ${product.url}\n`}- What it is: ${product.pitch}
 
 The social-media post (platform: ${sig.platform}, actor: ${sig.actor_type || '?'}, tier: ${sig.intent_tier || '?'}, pain: ${sig.pain_type || '?'}):
 - Title: ${sig.title}
 - Body: ${sig.body || '(none)'}
-- Author: ${sig.author || '(unknown)'}
-- URL: ${sig.url}`
+- Author: ${sig.author || '(unknown)'}${redditPublic ? '' : `\n- URL: ${sig.url}`}`
 
   const res = await generateContent(systemFor(sig.product, sig.pain_type, sig.platform, sig.reco_play), user)
   if (!res) return { ok: false, message: 'AI 生成失败（OpenRouter 无响应）' }
   const d = res.data as { relevant?: boolean; reason?: string; comment?: string }
   const relevant = !!d.relevant
-  const comment = (d.comment || '').trim()
+  // 程序化兜底清洗：公开评论(尤其 Reddit)强制剥掉 URL / 自有域名 / 品牌词，模型漏写也清掉
+  const comment = sanitize((d.comment || '').trim(), redditPublic)
   const reason = (d.reason || '').trim()
 
   const now = Date.now()

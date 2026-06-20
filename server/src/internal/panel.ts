@@ -344,7 +344,7 @@ function draftCard(d){
     (d.post_zh?'<div class="zh">🇨🇳 '+esc(d.post_zh)+'</div>':'')+
     (d.rationale?'<div class="rationale">💡 '+esc(d.rationale)+'</div>':'')+
     '<div class="dim" style="font-size:11px;margin-top:8px">✍️ 已起草开场白（可改）：</div>'+
-    (d.reco_play==='dm'?'<div class="rationale" style="color:#9fe7c6;border-color:#1c5240;background:#0c2018">✉️ 走私信(DM)：不过 AutoModerator，可带链接+具体报价；但要像 1:1 真人、开头点出对方的帖子，别像群发模板。</div>':d.platform==='reddit'?'<div class="rationale" style="color:#ff9c7a;border-color:#5c2f1f;background:#22120c">⚠️ Reddit 公开评论：勿带链接/勿硬广（会被自动删）。纯给价值，产品最多提一次名+披露身份。用养过 karma 的号，别重复同一段文案。</div>':'')+
+    (d.reco_play==='dm'?'<div class="rationale" style="color:#9fe7c6;border-color:#1c5240;background:#0c2018">✉️ 走私信(DM)：不过 AutoModerator，可带链接+具体报价；但要像 1:1 真人、开头点出对方的帖子，别像群发模板。</div>':d.platform==='reddit'?'<div class="rationale" style="color:#ff9c7a;border-color:#5c2f1f;background:#22120c">⚠️ Reddit 公开评论：纯价值、不提产品、不带链接（系统已自动剥离），目的是建立信誉，转化走私信。用养过 karma 的号、别重复同一段文案、别发太频。</div>':'')+
     '<textarea class="draft" id="dft-'+d.id+'">'+esc(d.draft)+'</textarea>'+
     '<div class="crow" style="margin-top:10px"><a href="'+esc(d.post_url)+'" target="_blank">去原贴回复 ↗</a>'+
     '<button class="btn sm right" data-act="copy" data-id="'+d.id+'">📋 复制</button>'+
