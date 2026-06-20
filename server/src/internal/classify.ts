@@ -59,8 +59,11 @@ async function classifyProductBatch(product: string): Promise<number> {
   const r = rules(product)
   const system =
     `你是 iGaming 社交信号分类器，产品=${prod.name}（${prod.pitch}）。\n` +
-    `对每条帖子按规则分类。\nactor_type 取值: ${r.actors}\npain_type 取值: ${r.pains}\n${r.extra}\n${COMMON_EXCLUDE}\n` +
-    `intent_tier: hot=主动表达痛点/明确不满/高购买信号; warm=讨论选型求推荐; cold=泛泛相关。reco_play: 销售类高意向→dm 或 public_reply；wcoin→content；噪音/不可触达→discard。\n${SCHEMA_HINT}`
+    `对每条帖子分类（actor_type/intent_tier/pain_type/打分），并决定是否保留(keep)。\n` +
+    `actor_type 取值: ${r.actors}\npain_type 取值: ${r.pains}\n${r.extra}\n` +
+    `‼️ 保留规则（重要，倾向保留）：只要这条帖跟该产品的领域"沾边"（哪怕只是泛泛讨论、低意图、相邻话题），就 keep=true，用 intent_tier=cold 标记弱信号即可——我们宁可多看一条冷信号，也不愿漏掉。\n` +
+    `keep=false 只用于以下「真噪音」：${COMMON_EXCLUDE} 以及明显属于完全无关的其它行业。拿不准时一律 keep=true。\n` +
+    `intent_tier: hot=主动表达痛点/明确不满/高购买信号; warm=讨论选型求推荐; cold=泛泛相关或低意图(默认档)。reco_play: 销售类高意向→dm 或 public_reply；wcoin→content；噪音→discard。\n${SCHEMA_HINT}`
   const user = rows.map((x, i) => `[${i}] (${x.platform}) ${x.title}${x.body ? ' — ' + x.body.slice(0, 200) : ''}`).join('\n').slice(0, 7000)
 
   const res = await generateContent(system, user)
@@ -111,9 +114,24 @@ export async function classifyBatch(): Promise<number> {
   return total
 }
 
+// 一次性：旧版分类器误杀过多(~90%)，把已 dropped 的重置为待分类，用新宽松规则重判一遍。
+function reclassifyDroppedOnce(): void {
+  try {
+    const k = 'social_reclassify_lenient_v1'
+    const done = db.prepare('SELECT value FROM sync_state WHERE key=?').get(k)
+    if (done) return
+    const n = db.prepare("UPDATE social_intel SET classified_ts=NULL WHERE status='dropped'").run().changes
+    db.prepare('INSERT INTO sync_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(k, '1')
+    if (n) console.log(`[social-intel] 重判 ${n} 条旧 dropped 信号（新宽松规则）`)
+  } catch (e) {
+    console.warn('[social-intel] reclassify reset failed:', (e as Error).message)
+  }
+}
+
 export function startClassifier(): void {
   if ((process.env.SOCIAL_INTEL_ENABLED ?? '1') === '0') return
   if (!openrouterEnabled()) { console.log('[social-intel] 分类器未启用（无 OPENROUTER_API_KEY）'); return }
+  reclassifyDroppedOnce()
   console.log('[social-intel] 信号分类器已启动（对齐 spec + 清理不符合）')
   const loop = async () => {
     try { await classifyBatch() } catch (e) { console.warn('[social-intel] classify failed:', (e as Error).message) }
