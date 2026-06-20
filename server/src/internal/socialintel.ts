@@ -553,8 +553,9 @@ function markOk(p: string): void { platFails.set(p, 0); platUntil.delete(p) }
 
 // PullPush.io — 免费 keyless Reddit 全文搜索（Pushshift 继任者），原生 since 时间过滤，
 // 帖子+评论都能搜，比 search.rss 全且稳。api.pullpush.io 走直连（不在代理 host 列表）。
-async function pullpush(kind: 'submission' | 'comment', q: string, since: number): Promise<any[] | null> {
-  const url = `https://api.pullpush.io/reddit/search/${kind}/?q=${encodeURIComponent(q)}&size=100&since=${since}&sort=desc`
+async function pullpushPage(kind: 'submission' | 'comment', q: string, since: number, before?: number): Promise<any[] | null> {
+  const bp = before ? `&before=${before}` : ''
+  const url = `https://api.pullpush.io/reddit/search/${kind}/?q=${encodeURIComponent(q)}&size=100&since=${since}${bp}&sort=desc`
   try {
     const r = await webFetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: AbortSignal.timeout(25_000) })
     if (!r.ok) return null
@@ -562,6 +563,24 @@ async function pullpush(kind: 'submission' | 'comment', q: string, since: number
   } catch {
     return null
   }
+}
+// 深翻 180 天窗口：用 before 游标分页，多拉几页历史（不只最新 100），扩大唯一信号量。
+async function pullpush(kind: 'submission' | 'comment', q: string, since: number): Promise<any[] | null> {
+  const pages = Number(process.env.SOCIAL_PULLPUSH_PAGES) || 3
+  const all: any[] = []
+  let before: number | undefined
+  let gotAny = false
+  for (let i = 0; i < pages; i++) {
+    const rows = await pullpushPage(kind, q, since, before)
+    if (rows === null) break
+    gotAny = true
+    if (rows.length === 0) break
+    all.push(...rows)
+    const last = rows[rows.length - 1]?.created_utc
+    if (!last) break
+    before = Number(last) // 下一页取更早的
+  }
+  return gotAny ? all : null
 }
 
 async function runRedditJob(j: Extract<Job, { platform: 'reddit' }>): Promise<number> {
@@ -573,8 +592,8 @@ async function runRedditJob(j: Extract<Job, { platform: 'reddit' }>): Promise<nu
   let added = 0
   const now = Date.now()
 
-  if (subs === null && coms === null) {
-    // PullPush 不可用 → 回退到 search.rss
+  if ((subs?.length || 0) + (coms?.length || 0) === 0) {
+    // PullPush 不可用或返空 → 回退到 search.rss
     const xml = await redditSearch(j.query, j.subreddits)
     if (!xml) { markFail(j.platform); return 0 }
     markOk(j.platform)
