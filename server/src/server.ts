@@ -196,12 +196,21 @@ async function main() {
   // it could pass. Letting /api/health go green first, then indexing, avoids that.
   setTimeout(() => {
   startMonitor() // built-in disk / event-loop-lag / DB-size self-monitor (+ optional webhook)
-  startEvm() // ETH transfer indexer (public RPC)
+  // Emergency brake: COLLECTORS_PAUSED=1 skips the heavy on-chain indexers so the
+  // container boots IDLE and passes the healthcheck. Needed to recover when an
+  // extended outage has grown the catch-up gap so large that the boot storm starves
+  // the loop and every deploy fails (the cold-boot death spiral). Set it, deploy to
+  // get the site UP serving cached/persisted data, then clear it to resume indexing.
+  const collectorsPaused = process.env.COLLECTORS_PAUSED === '1'
+  if (collectorsPaused) console.warn('[boot] COLLECTORS_PAUSED=1 — heavy on-chain indexers OFF (idle recovery boot)')
+  if (!collectorsPaused) {
+    startEvm() // ETH transfer indexer (public RPC)
+    startNative() // native-coin (ETH) deposits — full-block scan, block-time priced
+    startSolana() // Solana indexer (SPL USDC/USDT + native SOL, historically priced)
+    startUtxo() // Bitcoin + Litecoin indexers (Esplora, historically priced)
+    startXrp() // XRP Ledger indexer (account_tx, historically priced)
+  }
   startPrices() // daily historical price series (SOL) for non-1:1 valuation
-  startNative() // native-coin (ETH) deposits — full-block scan, block-time priced
-  startSolana() // Solana indexer (SPL USDC/USDT + native SOL, historically priced)
-  startUtxo() // Bitcoin + Litecoin indexers (Esplora, historically priced)
-  startXrp() // XRP Ledger indexer (account_tx, historically priced)
   startLabels() // casino-wallet attribution harvester (Etherscan/Tronscan labels)
   startWayback() // etherscan-nametag attribution via Wayback snapshots (keyless)
   startCircus() // casino attribution via circus.fyi whale-feed → on-chain tx resolution
@@ -251,7 +260,7 @@ async function main() {
   // fails and the site goes down. Start them at ~+345s (45s outer + 300s here), well
   // after /api/health has gone green and the deploy is confirmed healthy. They
   // self-throttle once caught up.
-  setTimeout(() => {
+  if (!collectorsPaused) setTimeout(() => {
     startBackfill() // ETH deep historical backfill (walks back N days)
     if (config.tronMode === 'jsonrpc') {
       startTronRpc() // TRON via EVM-compat eth_getLogs (wide-scan + backfill) — heaviest
