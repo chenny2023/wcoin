@@ -519,6 +519,7 @@ async function twitterApiSearch(query: string): Promise<{ id: string; text: stri
     }
   }
   if (gotAny) twDiag = `X: 正常，最近"${query.slice(0, 24)}"返回 ${out.length} 条`
+  console.log('[social-intel][xdiag]', twDiag) // 唯一标记，便于从日志直接 grep X 状态
   return gotAny ? out : null
 }
 
