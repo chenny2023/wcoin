@@ -594,10 +594,11 @@ function buildJobs(): Job[] {
     for (const f of p.forums ?? []) jobs.push({ product: p.key, platform: 'forum', kind: 'demand', query: f.name, url: f.url })
     for (const app of p.shopifyApps ?? []) jobs.push({ product: p.key, platform: 'shopify', kind: 'competitor', query: app })
     for (const app of p.appleApps ?? []) jobs.push({ product: p.key, platform: 'appstore', kind: 'competitor', query: app })
-    // X 关键词搜索（twitterapi.io）——补 X 竞品监测/吐槽 + 需求。⚠️ 免费试用有额度，靠轮询自然控速。
+    // X 关键词搜索（twitterapi.io）——X 作为最有价值信号源：竞品/回复/需求/品牌全覆盖。
     if (twitterApiEnabled()) {
       for (const q of p.reddit.competitor) jobs.push({ product: p.key, platform: 'xsearch', kind: 'competitor', query: q })
       for (const h of p.x.competitorHandles) jobs.push({ product: p.key, platform: 'xsearch', kind: 'competitor', query: `to:${h}` }) // 竞品评论区吐槽
+      for (const q of p.reddit.brand) jobs.push({ product: p.key, platform: 'xsearch', kind: 'brand', query: q }) // 自有产品在 X 的提及
       if ((process.env.SOCIAL_X_DEMAND ?? '1') !== '0') for (const q of p.reddit.demand) jobs.push({ product: p.key, platform: 'xsearch', kind: 'demand', query: q }) // X 上的用户需求
     }
   }
