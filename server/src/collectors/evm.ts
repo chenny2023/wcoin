@@ -129,9 +129,9 @@ export async function runEvmOnce() {
     // transaction over all of them — each row touching 5 indexes on the 37M-row
     // table — froze the loop for ~90s+ on a cold cache (healthcheck 000). Chunking
     // + setImmediate keeps the loop responsive while indexing (matches tronrpc).
-    for (let i = 0; i < logs.length; i += 300) {
-      insert(logs.slice(i, i + 300))
-      if (i + 300 < logs.length) await new Promise((r) => setImmediate(r))
+    for (let i = 0; i < logs.length; i += 50) {
+      insert(logs.slice(i, i + 50))
+      if (i + 50 < logs.length) await new Promise((r) => setImmediate(r))
     }
     processed += logs.length
     stateSet('evm:lastBlock', to)

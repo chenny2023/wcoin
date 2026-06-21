@@ -111,10 +111,11 @@ async function getLogsRange(
 // synchronous better-sqlite3 transaction would block Node's single thread for
 // seconds and starve the HTTP server (API/healthcheck timeouts). Chunking +
 // setImmediate keeps the loop responsive while indexing.
-// Smaller chunk = shorter individual synchronous transaction, so if a write has to
-// wait on a litestream checkpoint lock the event-loop freeze is bounded per chunk
-// (we yield between chunks). 400 balances that against per-transaction overhead.
-const INSERT_CHUNK = 400
+// Small chunk so each synchronous insert transaction can't freeze the loop. On a cold
+// cache + the multi-GB table each row costs ~30ms (5 index updates on slow volume), so
+// 300 rows = ~9s freeze (broke the healthcheck during catch-up); 50 rows ≈ 1-2s and we
+// yield between chunks so /api/health stays responsive even mid-backfill-storm.
+const INSERT_CHUNK = 50
 async function insertLogs(
   logs: any[],
   byHex: Map<string, WatchRow>,

@@ -85,9 +85,9 @@ async function insertHistorical(logs: any[], byAddr: Map<string, WatchRow>, anch
   // synchronous transaction over all of them froze the loop ~90s+ on the 37M-row
   // table (cold cache). Chunk so the event loop stays responsive (matches tronrpc).
   let added = 0
-  for (let i = 0; i < logs.length; i += 300) {
-    added += tx(logs.slice(i, i + 300)) as number
-    if (i + 300 < logs.length) await new Promise((r) => setImmediate(r))
+  for (let i = 0; i < logs.length; i += 50) {
+    added += tx(logs.slice(i, i + 50)) as number
+    if (i + 50 < logs.length) await new Promise((r) => setImmediate(r))
   }
   return added
 }

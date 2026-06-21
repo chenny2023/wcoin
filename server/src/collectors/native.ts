@@ -117,9 +117,9 @@ async function scanNativeOnce(chainKey: string, asset: string, rpcs: string[], u
         }
       })
       // chunk + yield so a high-volume block can't freeze the loop (see evm.ts)
-      for (let i = 0; i < recs.length; i += 300) {
-        insert(recs.slice(i, i + 300))
-        if (i + 300 < recs.length) await new Promise((r) => setImmediate(r))
+      for (let i = 0; i < recs.length; i += 50) {
+        insert(recs.slice(i, i + 50))
+        if (i + 50 < recs.length) await new Promise((r) => setImmediate(r))
       }
       hits += recs.length
     }
