@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify'
-import { db, stmt, stateGet } from './db.ts'
+import { db, stmt, stateGet, stateSet } from './db.ts'
 import { bus, TransferEvent } from './bus.ts'
 import { aggregateEntities, aggregateBrands, maintainedPlayers } from './aggregate.ts'
 import { runDataQualityChecks, lastDataQuality } from './dataquality.ts'
@@ -117,15 +117,38 @@ export async function registerApi(app: FastifyInstance) {
   // never freezes the loop in one long synchronous block. statsCache/countsCache
   // get primed here too (computeStats is defined below; warm runs async after
   // registerApi finishes, so the reference is safe).
+  // Warm specs as {key, fn} so we can BOTH cache in-memory AND persist the last-good
+  // result to sync_state. The in-memory aggCache is lost on restart, so without
+  // persistence a fresh origin recomputes every aggregate cold (12-16s each) before
+  // it can serve — the post-deploy slow-first-hit window. Persisting + restoring on
+  // boot lets a cold origin serve last-known-good INSTANTLY while the warmer
+  // refreshes in the background (SWR). Top-tier = users never wait on a cold compute.
+  const warmSpecs: { key: string; fn: () => Promise<unknown> }[] = [
+    { key: 'ent:casino', fn: () => aggregateEntities('casino') },
+    { key: 'ent:all', fn: () => aggregateEntities('all') },
+    { key: 'brand:casino', fn: () => aggregateBrands('casino') },
+    { key: 'brand:all', fn: () => aggregateBrands('all') }, // Casinos page (By brand)
+    { key: 'coverage', fn: () => computeCoverage() },
+    { key: 'flow:casino', fn: () => computeFlow('casino') },
+    { key: 'series:7:all', fn: () => computeSeries(7, 'all') },
+    { key: 'series:30:all', fn: () => computeSeries(30, 'all') },
+  ]
+  // Restore persisted aggregates into the cache at boot (at:0 → marked stale so the
+  // first access triggers a background SWR refresh, but the user gets data NOW).
+  for (const s of warmSpecs) {
+    try {
+      const raw = stateGet('aggcache:' + s.key)
+      if (raw) aggCache.set(s.key, { data: JSON.parse(raw), at: 0, refreshing: false })
+    } catch {
+      /* corrupt/absent persisted entry — the warmer will recompute it */
+    }
+  }
   const warmTasks: (() => void | Promise<void>)[] = [
-    async () => aggCache.set('ent:casino', { data: await aggregateEntities('casino'), at: Date.now(), refreshing: false }),
-    async () => aggCache.set('ent:all', { data: await aggregateEntities('all'), at: Date.now(), refreshing: false }),
-    async () => aggCache.set('brand:casino', { data: await aggregateBrands('casino'), at: Date.now(), refreshing: false }),
-    async () => aggCache.set('brand:all', { data: await aggregateBrands('all'), at: Date.now(), refreshing: false }), // Casinos page (By brand) hits this
-    async () => aggCache.set('coverage', { data: await computeCoverage(), at: Date.now(), refreshing: false }),
-    async () => aggCache.set('flow:casino', { data: await computeFlow('casino'), at: Date.now(), refreshing: false }),
-    async () => aggCache.set('series:7:all', { data: await computeSeries(7, 'all'), at: Date.now(), refreshing: false }),
-    async () => aggCache.set('series:30:all', { data: await computeSeries(30, 'all'), at: Date.now(), refreshing: false }),
+    ...warmSpecs.map((s) => async () => {
+      const data = await s.fn()
+      aggCache.set(s.key, { data, at: Date.now(), refreshing: false })
+      try { stateSet('aggcache:' + s.key, JSON.stringify(data)) } catch { /* non-fatal */ }
+    }),
     async () => void (await computeStats()), // primes statsCache + the expensive count cache
   ]
   // Run the warm tasks SEQUENTIALLY with a yield between each, and never overlap a
