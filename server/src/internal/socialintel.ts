@@ -460,19 +460,28 @@ async function scThreads(query: string): Promise<{ id: string; text: string; use
 // key 在 env TWITTERAPI_KEY；免费试用有额度，故只搜竞品词、单页。无 key 时整组 xsearch 不排程。
 const TWAPI_KEY = () => process.env.TWITTERAPI_KEY || process.env.twitterapi || ''
 export const twitterApiEnabled = () => !!TWAPI_KEY()
+// X 诊断：记录 twitterapi 最近一次调用结果，显示到健康面板（不用 SSH 就能看到 X 为何不出数）
+export let twDiag = 'X: 尚未运行'
 async function twitterApiSearch(query: string): Promise<{ id: string; text: string; author: string; url: string; likes: number; rts: number; replies: number; ts: number }[] | null> {
   const key = TWAPI_KEY()
-  if (!key) return null
+  if (!key) { twDiag = 'X: 无 TWITTERAPI_KEY'; return null }
   const base = `https://api.twitterapi.io/twitter/tweet/advanced_search?query=${encodeURIComponent(query + ' -filter:retweets')}&queryType=Latest`
-  const pages = Number(process.env.SOCIAL_X_PAGES) || 1 // 免费试用速率低：默认不翻页（避免连发触发 429）
+  const pages = Number(process.env.SOCIAL_X_PAGES) || 1
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-  // 遇 429 退避重试（twitterapi 免费档速率很严），而不是直接判失败
+  // 遇 429 退避重试；并把最终状态写进 twDiag
   const getWithRetry = async (url: string): Promise<Response | null> => {
     for (let a = 0; a < 3; a++) {
-      const r = await webFetch(url, { headers: { 'X-API-Key': key, Accept: 'application/json' }, signal: AbortSignal.timeout(25_000) })
-      if (r.status !== 429) return r
-      await sleep(4000 * (a + 1))
+      try {
+        const r = await webFetch(url, { headers: { 'X-API-Key': key, Accept: 'application/json' }, signal: AbortSignal.timeout(25_000) })
+        if (r.status !== 429) { if (!r.ok) twDiag = `X: HTTP ${r.status}`; return r }
+        twDiag = 'X: 429 限流(重试中)'
+        await sleep(4000 * (a + 1))
+      } catch (e) {
+        twDiag = 'X: 网络错误 ' + (e as Error).message.slice(0, 60)
+        return null
+      }
     }
+    twDiag = 'X: 持续 429 限流'
     return null
   }
   const out: { id: string; text: string; author: string; url: string; likes: number; rts: number; replies: number; ts: number }[] = []
@@ -504,6 +513,7 @@ async function twitterApiSearch(query: string): Promise<{ id: string; text: stri
       break
     }
   }
+  if (gotAny) twDiag = `X: 正常，最近"${query.slice(0, 24)}"返回 ${out.length} 条`
   return gotAny ? out : null
 }
 
