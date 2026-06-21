@@ -453,6 +453,35 @@ async function scThreads(query: string): Promise<{ id: string; text: string; use
     .filter((p) => p.id && p.text)
 }
 
+// ── twitterapi.io：X 关键词搜索（ScrapeCreators 没有；补上 X 竞品监测/吐槽）──────
+// key 在 env TWITTERAPI_KEY；免费试用有额度，故只搜竞品词、单页。无 key 时整组 xsearch 不排程。
+const TWAPI_KEY = () => process.env.TWITTERAPI_KEY || process.env.twitterapi || ''
+export const twitterApiEnabled = () => !!TWAPI_KEY()
+async function twitterApiSearch(query: string): Promise<{ id: string; text: string; author: string; url: string; likes: number; rts: number; replies: number; ts: number }[] | null> {
+  const key = TWAPI_KEY()
+  if (!key) return null
+  const url = `https://api.twitterapi.io/twitter/tweet/advanced_search?query=${encodeURIComponent(query + ' -filter:retweets')}&queryType=Latest`
+  try {
+    const r = await webFetch(url, { headers: { 'X-API-Key': key, Accept: 'application/json' }, signal: AbortSignal.timeout(25_000) })
+    if (!r.ok) return null
+    const arr: any[] = ((await r.json()) as any).tweets ?? []
+    return arr
+      .map((t) => ({
+        id: String(t.id ?? ''),
+        text: t.text ?? t.full_text ?? '',
+        author: t.author?.userName ?? t.author?.screen_name ?? t.author?.name ?? '',
+        url: t.twitterUrl ?? t.url ?? '',
+        likes: Number(t.likeCount ?? 0),
+        rts: Number(t.retweetCount ?? 0),
+        replies: Number(t.replyCount ?? 0),
+        ts: Date.parse(t.createdAt ?? '') || 0,
+      }))
+      .filter((t) => t.id && t.text)
+  } catch {
+    return null
+  }
+}
+
 // ── Shopify 应用商店竞品负评（只抓 1-3★ = 商家吐槽竞品 = 置换机会）──────────────
 async function fetchShopifyReviews(slug: string): Promise<{ id: string; text: string }[] | null> {
   const url = `https://apps.shopify.com/${encodeURIComponent(slug)}/reviews?sort_by=newest&ratings%5B%5D=1&ratings%5B%5D=2&ratings%5B%5D=3`
@@ -487,6 +516,7 @@ type Job =
   | { product: string; platform: 'hn'; kind: Kind; query: string }
   | { product: string; platform: 'threads'; kind: Kind; query: string }
   | { product: string; platform: 'shopify'; kind: 'competitor'; query: string }
+  | { product: string; platform: 'xsearch'; kind: 'competitor'; query: string }
 
 function buildJobs(): Job[] {
   const jobs: Job[] = []
@@ -504,6 +534,8 @@ function buildJobs(): Job[] {
     for (const ch of p.telegram ?? []) jobs.push({ product: p.key, platform: 'telegram', kind: 'demand', query: ch })
     for (const f of p.forums ?? []) jobs.push({ product: p.key, platform: 'forum', kind: 'demand', query: f.name, url: f.url })
     for (const app of p.shopifyApps ?? []) jobs.push({ product: p.key, platform: 'shopify', kind: 'competitor', query: app })
+    // X 关键词搜索（twitterapi.io，仅竞品词、省额度）——补 X 竞品监测/吐槽
+    if (twitterApiEnabled()) for (const q of p.reddit.competitor) jobs.push({ product: p.key, platform: 'xsearch', kind: 'competitor', query: q })
   }
   // 已保存且启用的「自定义采集需求」——随同主调度一起轮询
   for (const c of activeCustomQueries()) jobs.push(c)
@@ -866,6 +898,29 @@ async function runShopifyJob(j: Extract<Job, { platform: 'shopify' }>): Promise<
   return added
 }
 
+async function runXSearchJob(j: Extract<Job, { platform: 'xsearch' }>): Promise<number> {
+  const tweets = await twitterApiSearch(j.query)
+  if (tweets === null) { markFail(j.platform); return 0 }
+  markOk(j.platform)
+  const now = Date.now()
+  let added = 0
+  const tx = db.transaction(() => {
+    for (const t of tweets) {
+      if (t.ts && t.ts < recentCutoff()) continue
+      const id = `x_${t.id}_${j.product}`
+      const r = insertSignal.run({
+        id, product: j.product, platform: 'x', kind: 'competitor', query: j.query,
+        author: t.author.slice(0, 120), title: t.text.replace(/\s+/g, ' ').slice(0, 300), body: t.text.slice(0, 2000),
+        url: t.url, score: t.likes + t.rts + t.replies, sentiment: senti(t.text), intent: intentScore(t.text) * 0.5,
+        ts: t.ts || now, collected_ts: now,
+      })
+      added += r.changes
+    }
+  })
+  tx()
+  return added
+}
+
 export async function runSocialIntelOnce(): Promise<void> {
   if (cursor >= jobs.length) { jobs = buildJobs(); cursor = 0 }
   if (jobs.length === 0) return
@@ -883,6 +938,7 @@ export async function runSocialIntelOnce(): Promise<void> {
       : j.platform === 'hn' ? await runHnJob(j)
       : j.platform === 'threads' ? await runThreadsJob(j)
       : j.platform === 'shopify' ? await runShopifyJob(j)
+      : j.platform === 'xsearch' ? await runXSearchJob(j)
       : await runXJob(j)
     if (added) console.log(`[social-intel] ${j.product}/${j.platform}/${j.kind} "${j.query}": +${added}`)
   } catch (e) {
