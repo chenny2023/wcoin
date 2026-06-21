@@ -625,6 +625,8 @@ function buildJobs(): Job[] {
 
 // 各平台轮流交错：避免"先把 Reddit 全跑完才轮到论坛/X/TG"——开机几分钟内即遍历所有源，
 // 且每次重启(游标归零)也能立刻覆盖到每个平台。
+// 各平台轮流交错；并按优先级排序——X 作为最有价值的源排在每轮最前，确保它最先、最稳地跑。
+const PLATFORM_PRIO = ['xsearch', 'x', 'shopify', 'appstore', 'reddit', 'bluesky', 'forum', 'threads', 'hn', 'telegram']
 function interleave(jobs: Job[]): Job[] {
   const buckets = new Map<string, Job[]>()
   for (const j of jobs) {
@@ -632,7 +634,12 @@ function interleave(jobs: Job[]): Job[] {
     if (!buckets.has(k)) buckets.set(k, [])
     buckets.get(k)!.push(j)
   }
-  const lists = [...buckets.values()]
+  const lists = [...buckets.entries()]
+    .sort((a, b) => {
+      const pa = PLATFORM_PRIO.indexOf(a[0]); const pb = PLATFORM_PRIO.indexOf(b[0])
+      return (pa < 0 ? 99 : pa) - (pb < 0 ? 99 : pb)
+    })
+    .map((e) => e[1])
   const max = Math.max(0, ...lists.map((l) => l.length))
   const out: Job[] = []
   for (let i = 0; i < max; i++) for (const l of lists) if (i < l.length) out.push(l[i])
