@@ -516,7 +516,7 @@ type Job =
   | { product: string; platform: 'hn'; kind: Kind; query: string }
   | { product: string; platform: 'threads'; kind: Kind; query: string }
   | { product: string; platform: 'shopify'; kind: 'competitor'; query: string }
-  | { product: string; platform: 'xsearch'; kind: 'competitor'; query: string }
+  | { product: string; platform: 'xsearch'; kind: Kind; query: string }
 
 function buildJobs(): Job[] {
   const jobs: Job[] = []
@@ -534,8 +534,12 @@ function buildJobs(): Job[] {
     for (const ch of p.telegram ?? []) jobs.push({ product: p.key, platform: 'telegram', kind: 'demand', query: ch })
     for (const f of p.forums ?? []) jobs.push({ product: p.key, platform: 'forum', kind: 'demand', query: f.name, url: f.url })
     for (const app of p.shopifyApps ?? []) jobs.push({ product: p.key, platform: 'shopify', kind: 'competitor', query: app })
-    // X 关键词搜索（twitterapi.io，仅竞品词、省额度）——补 X 竞品监测/吐槽
-    if (twitterApiEnabled()) for (const q of p.reddit.competitor) jobs.push({ product: p.key, platform: 'xsearch', kind: 'competitor', query: q })
+    // X 关键词搜索（twitterapi.io）——补 X 竞品监测/吐槽 + 需求。⚠️ 免费试用有额度，靠轮询自然控速。
+    if (twitterApiEnabled()) {
+      for (const q of p.reddit.competitor) jobs.push({ product: p.key, platform: 'xsearch', kind: 'competitor', query: q })
+      for (const h of p.x.competitorHandles) jobs.push({ product: p.key, platform: 'xsearch', kind: 'competitor', query: `to:${h}` }) // 竞品评论区吐槽
+      if ((process.env.SOCIAL_X_DEMAND ?? '1') !== '0') for (const q of p.reddit.demand) jobs.push({ product: p.key, platform: 'xsearch', kind: 'demand', query: q }) // X 上的用户需求
+    }
   }
   // 已保存且启用的「自定义采集需求」——随同主调度一起轮询
   for (const c of activeCustomQueries()) jobs.push(c)
@@ -904,20 +908,24 @@ async function runXSearchJob(j: Extract<Job, { platform: 'xsearch' }>): Promise<
   markOk(j.platform)
   const now = Date.now()
   let added = 0
+  const fresh: AlertSignal[] = []
   const tx = db.transaction(() => {
     for (const t of tweets) {
       if (t.ts && t.ts < recentCutoff()) continue
-      const id = `x_${t.id}_${j.product}`
+      const intent = j.kind === 'demand' ? intentScore(t.text) : intentScore(t.text) * 0.5
+      const id = `x_${t.id}_${j.product}_${j.kind}`
       const r = insertSignal.run({
-        id, product: j.product, platform: 'x', kind: 'competitor', query: j.query,
+        id, product: j.product, platform: 'x', kind: j.kind, query: j.query,
         author: t.author.slice(0, 120), title: t.text.replace(/\s+/g, ' ').slice(0, 300), body: t.text.slice(0, 2000),
-        url: t.url, score: t.likes + t.rts + t.replies, sentiment: senti(t.text), intent: intentScore(t.text) * 0.5,
+        url: t.url, score: t.likes + t.rts + t.replies, sentiment: senti(t.text), intent,
         ts: t.ts || now, collected_ts: now,
       })
       added += r.changes
+      if (r.changes && j.kind === 'demand') fresh.push({ id, product: j.product, platform: 'x', kind: j.kind, title: t.text.slice(0, 200), url: t.url, intent })
     }
   })
   tx()
+  void maybeAlert(fresh)
   return added
 }
 
