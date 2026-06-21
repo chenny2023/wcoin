@@ -243,10 +243,14 @@ async function main() {
   startTranslator() // 内部社媒情报：每条信号的中文解读后台批量回填（需 OPENROUTER_API_KEY）
   startClassifier() // 内部社媒情报：LLM 信号分类（actor/tier/pain/solvable）+ 清理不符合（需 OPENROUTER_API_KEY）
 
-  // Second wave (+90s): the HEAVY deep-backfill indexers. Their synchronous bulk
-  // inserts are what saturate the single Node loop on boot and make the API
-  // unresponsive — so we let the forward indexers + API warm up first, then start
-  // the catch-up. They also self-throttle once caught up.
+  // Second wave: the HEAVY deep-backfill indexers. Their bulk inserts (a catch-up can
+  // be tens of thousands of rows/tick across several chains) saturate the single Node
+  // loop on boot — on the multi-GB table even chunked inserts freeze the loop on a
+  // cold cache. Railway's healthcheck window is 300s (railway.json), so we MUST keep
+  // these out of it: a freeze during the window fails /api/health → the whole deploy
+  // fails and the site goes down. Start them at ~+345s (45s outer + 300s here), well
+  // after /api/health has gone green and the deploy is confirmed healthy. They
+  // self-throttle once caught up.
   setTimeout(() => {
     startBackfill() // ETH deep historical backfill (walks back N days)
     if (config.tronMode === 'jsonrpc') {
@@ -255,7 +259,7 @@ async function main() {
       startTron() // TRON via TronGrid REST polling (fallback, TRON_MODE=v1)
     }
     startEvmChains() // extra EVM chains (BSC, Base, Arbitrum, Optimism) — backfill each
-  }, 90_000)
+  }, 300_000)
   // Third wave (+180s): background player/first-seen maintenance. Starts LAST,
   // long after /api/health has gone green, so its first heavy pass never blocks
   // the deploy healthcheck (running it pre-listen crashed the deploy).
