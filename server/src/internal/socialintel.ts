@@ -1,5 +1,5 @@
 import { db } from '../db.ts'
-import { webFetch, webFetchProxied, webFetchUnlocked } from '../net.ts'
+import { webFetch, webFetchProxied, webFetchUnlocked, webFetchDirect } from '../net.ts'
 import { unlockedFetch } from '../collectors/unlocker.ts'
 import { score as lexScore } from '../sentiment.ts'
 import { PRODUCTS } from './products.ts'
@@ -369,14 +369,17 @@ function strHash(s: string): string {
 async function fetchBluesky(query: string): Promise<any[] | null> {
   const q = encodeURIComponent(query)
   const url = `https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts?q=${q}&limit=100&sort=latest`
-  try {
-    const res = await webFetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: AbortSignal.timeout(15_000) })
-    if (!res.ok) return null
-    const j = (await res.json()) as { posts?: any[] }
-    return j.posts ?? []
-  } catch {
-    return null
+  const init = { headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: AbortSignal.timeout(15_000) }
+  // public AppView 多半可直连；直连失败再走住宅（之前强制住宅一直 403/超时 → 0 行）
+  for (const get of [() => webFetchDirect(url, init), () => webFetch(url, init)]) {
+    try {
+      const res = await get()
+      if (res.ok) return ((await res.json()) as { posts?: any[] }).posts ?? []
+    } catch {
+      /* try next transport */
+    }
   }
+  return null
 }
 
 // ── Hacker News 全文搜索（无 key，Algolia；对 SaaS/技术选型人群最对口，利好 hirecx）
@@ -460,26 +463,38 @@ export const twitterApiEnabled = () => !!TWAPI_KEY()
 async function twitterApiSearch(query: string): Promise<{ id: string; text: string; author: string; url: string; likes: number; rts: number; replies: number; ts: number }[] | null> {
   const key = TWAPI_KEY()
   if (!key) return null
-  const url = `https://api.twitterapi.io/twitter/tweet/advanced_search?query=${encodeURIComponent(query + ' -filter:retweets')}&queryType=Latest`
-  try {
-    const r = await webFetch(url, { headers: { 'X-API-Key': key, Accept: 'application/json' }, signal: AbortSignal.timeout(25_000) })
-    if (!r.ok) return null
-    const arr: any[] = ((await r.json()) as any).tweets ?? []
-    return arr
-      .map((t) => ({
-        id: String(t.id ?? ''),
-        text: t.text ?? t.full_text ?? '',
-        author: t.author?.userName ?? t.author?.screen_name ?? t.author?.name ?? '',
-        url: t.twitterUrl ?? t.url ?? '',
-        likes: Number(t.likeCount ?? 0),
-        rts: Number(t.retweetCount ?? 0),
-        replies: Number(t.replyCount ?? 0),
-        ts: Date.parse(t.createdAt ?? '') || 0,
-      }))
-      .filter((t) => t.id && t.text)
-  } catch {
-    return null
+  const base = `https://api.twitterapi.io/twitter/tweet/advanced_search?query=${encodeURIComponent(query + ' -filter:retweets')}&queryType=Latest`
+  const pages = Number(process.env.SOCIAL_X_PAGES) || 2 // 放大 X：多翻几页
+  const out: { id: string; text: string; author: string; url: string; likes: number; rts: number; replies: number; ts: number }[] = []
+  let cursor = ''
+  let gotAny = false
+  for (let i = 0; i < pages; i++) {
+    const url = cursor ? `${base}&cursor=${encodeURIComponent(cursor)}` : base
+    try {
+      const r = await webFetch(url, { headers: { 'X-API-Key': key, Accept: 'application/json' }, signal: AbortSignal.timeout(25_000) })
+      if (!r.ok) break
+      const j = (await r.json()) as any
+      const arr: any[] = j.tweets ?? []
+      gotAny = true
+      for (const t of arr) {
+        const id = String(t.id ?? '')
+        const text = t.text ?? t.full_text ?? ''
+        if (!id || !text) continue
+        out.push({
+          id, text,
+          author: t.author?.userName ?? t.author?.screen_name ?? t.author?.name ?? '',
+          url: t.twitterUrl ?? t.url ?? '',
+          likes: Number(t.likeCount ?? 0), rts: Number(t.retweetCount ?? 0), replies: Number(t.replyCount ?? 0),
+          ts: Date.parse(t.createdAt ?? '') || 0,
+        })
+      }
+      if (!j.has_next_page || !j.next_cursor || arr.length === 0) break
+      cursor = j.next_cursor
+    } catch {
+      break
+    }
   }
+  return gotAny ? out : null
 }
 
 // ── Shopify 应用商店竞品负评（只抓 1-3★ = 商家吐槽竞品 = 置换机会）──────────────
@@ -505,6 +520,39 @@ async function fetchShopifyReviews(slug: string): Promise<{ id: string; text: st
   }
 }
 
+// ── Apple 应用商店竞品评论（无 key，iTunes RSS）。只取 1-3★ 负评=置换机会 ──────────
+const appleIdCache = new Map<string, number>()
+async function resolveAppleId(name: string): Promise<number | null> {
+  if (appleIdCache.has(name)) return appleIdCache.get(name)!
+  try {
+    const r = await webFetch(`https://itunes.apple.com/search?term=${encodeURIComponent(name)}&entity=software&limit=1&country=us`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(15_000) })
+    if (!r.ok) return null
+    const id = Number(((await r.json()) as any).results?.[0]?.trackId)
+    if (id) { appleIdCache.set(name, id); return id }
+  } catch { /* */ }
+  return null
+}
+async function fetchAppleReviews(name: string): Promise<{ id: string; text: string; rating: number }[] | null> {
+  const id = await resolveAppleId(name)
+  if (!id) return null
+  try {
+    const r = await webFetch(`https://itunes.apple.com/us/rss/customerreviews/id=${id}/sortBy=mostRecent/json`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(20_000) })
+    if (!r.ok) return null
+    const entries: any[] = ((await r.json()) as any).feed?.entry ?? []
+    const out: { id: string; text: string; rating: number }[] = []
+    for (const e of entries) {
+      const text = e?.content?.label
+      const rid = e?.id?.label
+      const rating = Number(e?.['im:rating']?.label ?? 0)
+      if (!text || !rid || !rating) continue // 跳过首条 app 元数据（无 rating）
+      out.push({ id: String(rid), text, rating })
+    }
+    return out
+  } catch {
+    return null
+  }
+}
+
 // ── 单轮采集：遍历所有产品 × 平台 × 关键词 ────────────────────────────────────
 type Kind = 'brand' | 'competitor' | 'demand'
 type Job =
@@ -517,6 +565,7 @@ type Job =
   | { product: string; platform: 'threads'; kind: Kind; query: string }
   | { product: string; platform: 'shopify'; kind: 'competitor'; query: string }
   | { product: string; platform: 'xsearch'; kind: Kind; query: string }
+  | { product: string; platform: 'appstore'; kind: 'competitor'; query: string }
 
 function buildJobs(): Job[] {
   const jobs: Job[] = []
@@ -534,6 +583,7 @@ function buildJobs(): Job[] {
     for (const ch of p.telegram ?? []) jobs.push({ product: p.key, platform: 'telegram', kind: 'demand', query: ch })
     for (const f of p.forums ?? []) jobs.push({ product: p.key, platform: 'forum', kind: 'demand', query: f.name, url: f.url })
     for (const app of p.shopifyApps ?? []) jobs.push({ product: p.key, platform: 'shopify', kind: 'competitor', query: app })
+    for (const app of p.appleApps ?? []) jobs.push({ product: p.key, platform: 'appstore', kind: 'competitor', query: app })
     // X 关键词搜索（twitterapi.io）——补 X 竞品监测/吐槽 + 需求。⚠️ 免费试用有额度，靠轮询自然控速。
     if (twitterApiEnabled()) {
       for (const q of p.reddit.competitor) jobs.push({ product: p.key, platform: 'xsearch', kind: 'competitor', query: q })
@@ -929,6 +979,30 @@ async function runXSearchJob(j: Extract<Job, { platform: 'xsearch' }>): Promise<
   return added
 }
 
+async function runAppStoreJob(j: Extract<Job, { platform: 'appstore' }>): Promise<number> {
+  const reviews = await fetchAppleReviews(j.query)
+  if (reviews === null) { markFail(j.platform); return 0 }
+  markOk(j.platform)
+  const appId = appleIdCache.get(j.query)
+  const now = Date.now()
+  let added = 0
+  const tx = db.transaction(() => {
+    for (const rv of reviews) {
+      if (rv.rating > 3) continue // 只要负评=潜在置换
+      const id = `appstore_${j.query}_${strHash(rv.id)}_${j.product}`
+      const r = insertSignal.run({
+        id, product: j.product, platform: 'appstore', kind: 'competitor', query: j.query,
+        author: j.query, title: rv.text.slice(0, 300), body: rv.text.slice(0, 2000),
+        url: appId ? `https://apps.apple.com/app/id${appId}?see-all=reviews` : '', score: 0,
+        sentiment: senti(rv.text), intent: 0.4, ts: now, collected_ts: now,
+      })
+      added += r.changes
+    }
+  })
+  tx()
+  return added
+}
+
 export async function runSocialIntelOnce(): Promise<void> {
   if (cursor >= jobs.length) { jobs = buildJobs(); cursor = 0 }
   if (jobs.length === 0) return
@@ -946,6 +1020,7 @@ export async function runSocialIntelOnce(): Promise<void> {
       : j.platform === 'hn' ? await runHnJob(j)
       : j.platform === 'threads' ? await runThreadsJob(j)
       : j.platform === 'shopify' ? await runShopifyJob(j)
+      : j.platform === 'appstore' ? await runAppStoreJob(j)
       : j.platform === 'xsearch' ? await runXSearchJob(j)
       : await runXJob(j)
     if (added) console.log(`[social-intel] ${j.product}/${j.platform}/${j.kind} "${j.query}": +${added}`)

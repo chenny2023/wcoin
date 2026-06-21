@@ -149,6 +149,13 @@ export function webFetch(url: string, init: FetchInit = {}) {
   return undiciFetch(url, { ...init, dispatcher: dispatcherFor(url) })
 }
 
+// Force a DIRECT fetch (no proxy), ignoring the residential routing. Some public
+// read APIs (e.g. Bluesky's public AppView) are reachable from datacenter and the
+// residential hop only adds 403s/timeouts — try direct first, residential as fallback.
+export function webFetchDirect(url: string, init: FetchInit = {}) {
+  return undiciFetch(url, init)
+}
+
 // Force a proxy for ANY url (the casino-directory crawler hits thousands of
 // arbitrary casino domains, many Cloudflare-walled). Routes through the
 // RESIDENTIAL pool (datacenter IPs get blocked), datacenter only as a fallback.

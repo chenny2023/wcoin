@@ -60,6 +60,11 @@ export interface ProductConfig {
    * 商家吐槽竞品 = 置换机会。kind=competitor，进分类器分桶。适合 hirecx。
    */
   shopifyApps?: string[]
+  /**
+   * Apple 应用商店竞品 app 名称（按名搜 trackId，再取 iTunes RSS 评论，只留 1-3★ 负评）。
+   * 无 key、稳定。kind=competitor。适合 hirecx（竞品客服 app 的差评=置换机会）。
+   */
+  appleApps?: string[]
 }
 
 // 关键词可随时增删调优；竞品 X 账号名写错会自动 404 忽略，安全。各产品 ownHandles 待补真实账号。
@@ -129,6 +134,8 @@ export const PRODUCTS: ProductConfig[] = [
     x: { competitorHandles: ['intercom', 'zendesk', 'ada_cx', 'decagon'], ownHandles: [] },
     // Shopify 竞品客服/聊天 app（只抓负评=置换机会）。slug 均实测可抓。
     shopifyApps: ['tidio-chat', 'helpcenter', 'inbox', 'reamaze', 'chatra', 'zendesk', 'livechat', 'chatway'],
+    // Apple 应用商店竞品客服 app（按名搜，只抓负评）。zendesk/tidio/intercom 实测各 ~49 评论。
+    appleApps: ['zendesk', 'tidio', 'intercom', 'gorgias', 'freshdesk', 'help scout', 'kustomer', 'crisp chat'],
     // 去噪：只有真正讲"客服/支持/在线销售对话"的帖才算 hirecx 需求（行业垂直里筛出 CS 话题）
     relevance: [
       'customer service', 'customer support', 'customer experience', 'support ticket', 'support tickets',
