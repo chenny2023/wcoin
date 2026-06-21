@@ -68,6 +68,15 @@ export function makeEvmChain(cfg: EvmChainCfg): EvmChain {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const json = (await res.json()) as any
         if (json.error) throw new Error(json.error.message || 'rpc error')
+        // Defensive: some public providers return a non-array result for eth_getLogs
+        // (null, an object, an error-ish payload). Returning that would make the caller's
+        // `[...deposits, ...withdrawals]` throw "not iterable" mid-loop and the forward
+        // loop could retry it tight enough to STARVE the event loop (this took the site
+        // down 2026-06-21). Treat it as a provider failure so we rotate to the next RPC,
+        // or — if all fail — throw cleanly so the caller backs off. Never return junk.
+        if (method === 'eth_getLogs' && !Array.isArray(json.result)) {
+          throw new Error('eth_getLogs returned a non-array result (bad provider)')
+        }
         return json.result
       } catch (e) {
         lastErr = e

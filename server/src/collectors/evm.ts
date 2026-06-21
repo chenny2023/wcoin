@@ -23,6 +23,8 @@ export async function rpc(
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const json = await res.json()
       if (json.error) throw new Error(json.error.message || 'rpc error')
+      // never return a non-array getLogs result (a bad provider) — the caller spreads it
+      if (method === 'eth_getLogs' && !Array.isArray(json.result)) throw new Error('eth_getLogs non-array result')
       return json.result
     } catch (e) {
       lastErr = e
