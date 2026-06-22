@@ -97,7 +97,7 @@ export const PRODUCTS: ProductConfig[] = [
     subreddits: ['gambling', 'CryptoCurrency', 'sportsbook', 'problemgambling'],
     x: { competitorHandles: ['casinoguru'], ownHandles: [] },
     // Threads 宽泛主题词（实测有返回；长尾短语恒为 0）。靠分类器再筛玩家/行业相关。
-    threadsTerms: ['online casino', 'crypto casino', 'casino', 'gambling', 'sportsbook', 'slots', 'stake casino', 'casino withdrawal'],
+    threadsTerms: ['online casino', 'casino', 'gambling', 'sportsbook', 'slots', 'betting'], // Threads 搜索对多词短语常返回 0，用宽泛单词；认证号优先 profile
   },
   {
     key: 'hirecx',

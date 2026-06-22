@@ -477,7 +477,8 @@ async function scTweets(handle: string): Promise<{ id: string; text: string; lik
 }
 
 // Threads 关键词搜索（ScrapeCreators）。返回归一化数组或 null。
-async function scThreads(query: string): Promise<{ id: string; text: string; user: string; likes: number; ts: number; url: string }[] | null> {
+// 注：搜索结果里作者带 is_verified（免费信号），不含粉丝数。verified 是 Threads KOL 的最强弱信号。
+async function scThreads(query: string): Promise<{ id: string; text: string; user: string; verified: boolean; likes: number; ts: number; url: string }[] | null> {
   const j = await scFetch('/v1/threads/search', { query })
   if (!j) return null
   const arr: any[] = j.posts ?? j.results ?? j.searchResults ?? j.data ?? (Array.isArray(j) ? j : [])
@@ -486,12 +487,13 @@ async function scThreads(query: string): Promise<{ id: string; text: string; use
       const post = p?.thread?.thread_items?.[0]?.post ?? p?.post ?? p?.node ?? p // 防御多种嵌套
       const text = post?.caption?.text ?? post?.text ?? ''
       const user = post?.user?.username ?? ''
+      const verified = !!post?.user?.is_verified
       const code = post?.code ?? ''
       const id = String(post?.id ?? post?.pk ?? code ?? '')
       const likes = Number(post?.like_count ?? 0)
       const ts = Number(post?.taken_at ?? 0) * 1000
       const url = post?.url ?? post?.canonical_url ?? (user && code ? `https://www.threads.net/@${user}/post/${code}` : '')
-      return { id, text, user, likes, ts, url }
+      return { id, text, user, verified, likes, ts, url }
     })
     .filter((p) => p.id && p.text)
 }
@@ -1027,12 +1029,22 @@ async function runThreadsJob(j: Extract<Job, { platform: 'threads' }>): Promise<
   })
   tx()
   // 潜在合作 KOL（Threads 最有价值的一块）：搜索结果不含粉丝数 → 对新作者补查 profile（耗 credit）。
-  // 优先查「本轮互动最高」的作者——他们更可能是大号 KOL，把有限额度花在刀刃上。
-  const cap = Number(process.env.SOCIAL_KOL_THREADS_LOOKUPS) || 5
+  // 关键：宽泛词会搜出大量小号/无关账号，profile 它们纯烧 credit 零产出。所以优先级：
+  // ① 认证号（is_verified＝Threads KOL 最强免费信号，几乎都是大号）② 其次按互动量。把额度花在刀刃上。
+  // credit 有限：只 profile「认证号」或「互动≥阈值的号」——宽泛词搜出的小号(几十粉)profile 纯烧 credit。
+  const cap = Number(process.env.SOCIAL_KOL_THREADS_LOOKUPS) || 3
+  const engFloor = Number(process.env.SOCIAL_KOL_THREADS_MIN_LIKES) || 20
   if (cap > 0) {
-    const byUser = new Map<string, number>()
-    for (const p of posts) if (p.user) byUser.set(p.user, Math.max(byUser.get(p.user) || 0, p.likes || 0))
-    const ranked = [...byUser.entries()].sort((a, b) => b[1] - a[1]).map((e) => e[0]) // 互动量降序
+    const byUser = new Map<string, { engage: number; verified: boolean }>()
+    for (const p of posts) {
+      if (!p.user) continue
+      const cur = byUser.get(p.user)
+      byUser.set(p.user, { engage: Math.max(cur?.engage || 0, p.likes || 0), verified: !!(cur?.verified || p.verified) })
+    }
+    const ranked = [...byUser.entries()]
+      .filter(([, v]) => v.verified || v.engage >= engFloor) // 认证 或 有起码的互动，才值得花 credit
+      .sort((a, b) => Number(b[1].verified) - Number(a[1].verified) || b[1].engage - a[1].engage) // 认证优先，再按互动
+      .map((e) => e[0])
     for (const h of threadsAuthorsToCheck(ranked, cap)) {
       const prof = await scThreadsProfile(h)
       if (!prof) continue
