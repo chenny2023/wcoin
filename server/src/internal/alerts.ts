@@ -1,19 +1,15 @@
 import { db } from '../db.ts'
 import { webFetch } from '../net.ts'
-import { sendEmail } from '../email.ts'
 import { productByKey } from './products.ts'
 import { translateOne } from './translate.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// C. 黄金一小时提醒：出现高意图机会贴时，立刻通过 Telegram + 邮件提醒团队，
-// 以便在帖子热度衰减前抢先回复。
+// C. 黄金一小时提醒：出现高意图机会贴时，立刻通过 Telegram 提醒团队，
+// 以便在帖子热度衰减前抢先回复。（团队要求：只发 TG，不发邮件）
 //
 // 触发阈值：intent ≥ SOCIAL_ALERT_INTENT（默认 0.7），kind=demand。
-// 渠道：
-//   - Telegram：配置 TELEGRAM_BOT_TOKEN + TELEGRAM_ALERT_CHAT_ID（用自己的 bot 推送到群/私聊）
-//   - 邮件：发往 SOCIAL_ALERT_EMAIL（默认管理员 chennywang@live.com）
-// 去重：social_alert_sent 表，每条机会贴只提醒一次。
-// 任一渠道未配置则静默跳过；都没配就只在库里登记不外发。
+// 渠道：Telegram —— 配置 TELEGRAM_BOT_TOKEN + TELEGRAM_ALERT_CHAT_ID（用自己的 bot 推送到群/私聊）。
+// 去重：social_alert_sent 表，每条机会贴只提醒一次。未配置 TG 则只在库里登记不外发。
 // ─────────────────────────────────────────────────────────────────────────────
 
 // 自建表（幂等）——不能依赖 socialintel.ts 的建表先于本模块执行：socialintel 反过来
@@ -65,22 +61,13 @@ async function notify(s: AlertSignal): Promise<void> {
   try { zh = (await translateOne(s.id)) || '' } catch { /* ignore */ }
   const zhTg = zh ? `\n🇨🇳 ${esc(zh)}` : ''
 
+  // 高意图机会贴只走 Telegram，不再发邮件（团队要求）
   const tg =
     `🔥 <b>高意图机会贴</b> (intent ${s.intent.toFixed(2)})\n` +
     `产品：${esc(pname)} · 平台：${s.platform}\n` +
     `${esc(s.title.slice(0, 200))}` + zhTg + `\n` +
     `原贴：${esc(s.url)}\n面板：${panel}`
   await pushTelegram(tg)
-
-  const to = process.env.SOCIAL_ALERT_EMAIL || process.env.ADMIN_EMAILS?.split(',')[0]?.trim() || 'chennywang@live.com'
-  const html =
-    `<p>🔥 <b>高意图机会贴</b>（intent ${s.intent.toFixed(2)}）</p>` +
-    `<p>产品：${esc(pname)}　平台：${s.platform}</p>` +
-    `<p>${esc(s.title)}</p>` +
-    (zh ? `<p>🇨🇳 <b>中文解读：</b>${esc(zh)}</p>` : '') +
-    `<p><a href="${esc(s.url)}">查看原贴 →</a>　|　<a href="${esc(panel)}">打开情报面板 →</a></p>`
-  const text = `[${pname}] intent ${s.intent.toFixed(2)} — ${s.title}\n${zh ? '中文：' + zh + '\n' : ''}${s.url}\n${panel}`
-  await sendEmail(to, { subject: `🔥 机会贴 · ${pname} (intent ${s.intent.toFixed(2)})`, html, text })
 }
 
 /** 对一批新采集到的信号，挑出高意图 demand 贴去重后提醒。返回实际发出的条数。 */
