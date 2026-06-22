@@ -206,6 +206,18 @@ CREATE TABLE IF NOT EXISTS arkham_casino (
 );
 CREATE INDEX IF NOT EXISTS idx_arkham_updated ON arkham_casino(updated_at);
 
+-- Arkham-attributed 7d volume PER CHAIN per casino entity. Our own indexer under-
+-- captures Tron-USDT + BTC casino flows (the chain distribution showed ETH ~96%);
+-- Arkham attributes those chains directly, so this is the BTC/Tron attribution source.
+CREATE TABLE IF NOT EXISTS arkham_chain_volume (
+  key   TEXT NOT NULL,                  -- arkham_casino.key
+  chain TEXT NOT NULL,                  -- ETH | TRON | BTC | SOL | BASE | ...
+  vol7d REAL NOT NULL,                  -- Σ transfer USD on this chain over 7d
+  ts    INTEGER NOT NULL,
+  PRIMARY KEY(key, chain)
+);
+CREATE INDEX IF NOT EXISTS idx_arkham_chainvol ON arkham_chain_volume(chain);
+
 -- reserve snapshots over time → solvency trend + drop detection (proof-of-reserves
 -- is only as good as its trend: a casino draining its wallets is the real signal).
 CREATE TABLE IF NOT EXISTS arkham_reserve_history (

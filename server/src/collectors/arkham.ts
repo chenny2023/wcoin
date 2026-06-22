@@ -146,9 +146,33 @@ const VOL_MAX_PAGES = 8 // up to 2000 recent transfers; the very largest entitie
 // from harvested wallets. Bounded paging keeps it within the rate limit; for the
 // highest-volume entities (Stake-scale) the window isn't fully covered, so the
 // figure is a floor — surfaced as such, never as an exact total.
-async function entityVolume7d(entityId: string): Promise<number | null> {
+// Map an Arkham transfer's chain string → our chain code. Arkham uses names like
+// "ethereum"/"tron"/"bitcoin"/"base". This is the BTC/Tron attribution: Arkham reports
+// those transfers, our own indexer barely does.
+function txChain(t: any): string | null {
+  const c = String(t.chain ?? t.blockchain ?? t.chainName ?? '').toLowerCase()
+  if (!c) return null
+  if (c === 'tron' || c === 'trx') return 'TRON'
+  if (c === 'bitcoin' || c === 'btc') return 'BTC'
+  if (c === 'solana' || c === 'sol') return 'SOL'
+  if (c === 'litecoin' || c === 'ltc') return 'LTC'
+  if (c === 'dogecoin' || c === 'doge') return 'DOGE'
+  if (c === 'ripple' || c === 'xrp') return 'XRP'
+  if (c === 'ethereum' || c === 'eth') return 'ETH'
+  if (c === 'base') return 'BASE'
+  if (c === 'arbitrum' || c === 'arbitrum_one' || c === 'arb') return 'ARB'
+  if (c === 'optimism' || c === 'op') return 'OP'
+  if (c === 'polygon' || c === 'matic' || c === 'pol') return 'POLYGON'
+  if (c === 'bsc' || c === 'binance_smart_chain' || c === 'bnb') return 'BSC'
+  if (c === 'avalanche' || c === 'avax') return 'AVAX'
+  return c.slice(0, 12).toUpperCase() // fallback: surface the raw chain rather than drop it
+}
+
+let loggedTxSample = false
+async function entityVolume7d(entityId: string): Promise<{ total: number; byChain: Record<string, number> } | null> {
   const since = Date.now() - VOL_WINDOW_MS
   let total = 0
+  const byChain: Record<string, number> = {}
   let sawAny = false
   for (let page = 0; page < VOL_MAX_PAGES; page++) {
     const res = arkhamFetch(
@@ -157,18 +181,23 @@ async function entityVolume7d(entityId: string): Promise<number | null> {
     )
     if (!res) return null
     const r = await res
-    if (r.status !== 200) return sawAny ? total : null // transient mid-sweep → keep what we have
+    if (r.status !== 200) return sawAny ? { total, byChain } : null // transient mid-sweep → keep what we have
     const list = ((await r.json()) as { transfers?: any[] }).transfers ?? []
     if (!list.length) break
     sawAny = true
+    if (!loggedTxSample && list[0]) { loggedTxSample = true; console.log('[arkham] transfer fields:', Object.keys(list[0]).join(',')) } // one-time: verify the chain field name
     for (const t of list) {
       const sym = t.tokenSymbol ?? t.token?.symbol ?? t.symbol ?? ''
       const usd = typeof t.historicalUSD === 'number' ? t.historicalUSD : typeof t.usd === 'number' ? t.usd : 0
-      if (isMainstream(sym) && Number.isFinite(usd) && usd > 0) total += usd
+      if (isMainstream(sym) && Number.isFinite(usd) && usd > 0) {
+        total += usd
+        const ch = txChain(t)
+        if (ch) byChain[ch] = (byChain[ch] ?? 0) + usd
+      }
     }
     if (list.length < 250) break // window exhausted
   }
-  return total
+  return { total, byChain }
 }
 
 // pull all-chain portfolio for a resolved entity → mainstream reserves USD
@@ -187,10 +216,21 @@ async function refreshOne(): Promise<boolean> {
       // same pass: trailing-7d cross-chain volume (Phase 2). Null on failure leaves
       // the prior value untouched would be ideal, but a single UPDATE is simpler —
       // we COALESCE so a transient null doesn't wipe a good reading.
-      const volume = await entityVolume7d(row.entity_id).catch(() => null)
+      const vol = await entityVolume7d(row.entity_id).catch(() => null)
+      const volume = vol?.total ?? null
       setMetrics.run({ key: row.key, reserves, volume, now })
       db.prepare('INSERT INTO arkham_reserve_history(key, reserves_usd, ts) VALUES(?, ?, ?)').run(row.key, reserves, now)
-      console.log(`[arkham] ${row.name}: reserves $${Math.round(reserves).toLocaleString()}${volume != null ? `, vol7d $${Math.round(volume).toLocaleString()}` : ''}`)
+      // store the per-chain breakdown — this is the BTC/Tron attribution payload.
+      if (vol && Object.keys(vol.byChain).length) {
+        const save = db.transaction(() => {
+          db.prepare('DELETE FROM arkham_chain_volume WHERE key=?').run(row.key)
+          const ins = db.prepare('INSERT INTO arkham_chain_volume(key, chain, vol7d, ts) VALUES(?,?,?,?)')
+          for (const [ch, v] of Object.entries(vol.byChain)) if (v > 0) ins.run(row.key, ch, v, now)
+        })
+        save()
+      }
+      const chainStr = vol ? Object.entries(vol.byChain).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([c, v]) => `${c} $${Math.round(v).toLocaleString()}`).join(' · ') : ''
+      console.log(`[arkham] ${row.name}: reserves $${Math.round(reserves).toLocaleString()}${volume != null ? `, vol7d $${Math.round(volume).toLocaleString()}` : ''}${chainStr ? ` [${chainStr}]` : ''}`)
     } else {
       console.warn(`[arkham] portfolio ${row.name}: HTTP ${r.status}`)
       setMetrics.run({ key: row.key, reserves: null, volume: null, now }) // advance so we don't loop on a bad entity

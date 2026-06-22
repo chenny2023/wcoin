@@ -1070,6 +1070,18 @@ export async function registerApi(app: FastifyInstance) {
     return { ...data, summary: `${data.results.length - fails}/${data.results.length} passed`, ok: fails === 0 }
   })
 
+  // diag: aggregated Arkham per-chain casino volume (the BTC/Tron attribution layer).
+  // Public read — same nature as the chain distribution. Lets us verify the real
+  // cross-chain split (incl. Tron/BTC) before wiring it into the daily report.
+  app.get('/api/diag/arkham-chains', async () => {
+    const rows = db
+      .prepare('SELECT chain, SUM(vol7d) v, COUNT(DISTINCT key) casinos FROM arkham_chain_volume GROUP BY chain ORDER BY v DESC')
+      .all() as { chain: string; v: number; casinos: number }[]
+    const tot = rows.reduce((s, r) => s + (r.v ?? 0), 0) || 1
+    const entities = (db.prepare('SELECT COUNT(DISTINCT key) n FROM arkham_chain_volume').get() as any).n
+    return { entities, chains: rows.map((r) => ({ chain: r.chain, vol7d: r.v, casinos: r.casinos, share: +((100 * (r.v ?? 0)) / tot).toFixed(1) })) }
+  })
+
   // enrichment queue (gated) — low-confidence brands kept as noindex pages, awaiting
   // on-chain/reserve/trust enrichment before promotion to indexable.
   app.get('/api/diag/enrichment', async (req, reply) => {
