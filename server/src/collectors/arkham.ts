@@ -321,6 +321,38 @@ export function startArkham() {
   setTimeout(loop, 30_000)
 }
 
+// Live debug: fetch one resolved entity's recent transfers and return the raw shape,
+// so we can confirm the per-chain field name + that the API responds (the verification
+// log rolls off the window). Bypasses the 6h refresh cadence entirely.
+export async function arkhamProbe(): Promise<any> {
+  const row = db.prepare("SELECT key, name, entity_id FROM arkham_casino WHERE entity_id IS NOT NULL AND entity_id != '' ORDER BY updated_at DESC LIMIT 1").get() as
+    | { key: string; name: string; entity_id: string }
+    | undefined
+  if (!row) return { error: 'no resolved entity' }
+  const res = arkhamFetch(`/transfers?base=${encodeURIComponent(row.entity_id)}&timeGte=${Date.now() - VOL_WINDOW_MS}&limit=5&sortKey=time&sortDir=desc`, {
+    signal: AbortSignal.timeout(20_000),
+  })
+  if (!res) return { error: 'arkhamFetch returned null (no key?)' }
+  const r = await res
+  if (r.status !== 200) return { entity: row.name, status: r.status }
+  const list = ((await r.json()) as { transfers?: any[] }).transfers ?? []
+  return {
+    entity: row.name,
+    count: list.length,
+    transferKeys: list[0] ? Object.keys(list[0]) : [],
+    samples: list.slice(0, 4).map((t: any) => ({
+      chain: t.chain,
+      blockchain: t.blockchain,
+      chainName: t.chainName,
+      network: t.network,
+      sym: t.tokenSymbol ?? t.token?.symbol ?? t.symbol,
+      usd: t.historicalUSD ?? t.usd,
+      mapped: txChain(t),
+    })),
+    rows: db.prepare('SELECT COUNT(*) n FROM arkham_chain_volume').get(),
+  }
+}
+
 export interface ArkhamMetric {
   reserves: number | null
   volume7d: number | null

@@ -12,6 +12,7 @@ import { twitchEnabled } from './collectors/twitch.ts'
 import { redditEnabled } from './collectors/reddit.ts'
 import { probeTier } from './collectors/unlocker.ts'
 import { arkhamFetch } from './net.ts'
+import { arkhamProbe } from './collectors/arkham.ts'
 import { getProfile } from './streamerprofiles.ts'
 import { newsEnabled } from './collectors/news.ts'
 import { telegramSubs } from './collectors/telegram.ts'
@@ -1081,6 +1082,9 @@ export async function registerApi(app: FastifyInstance) {
     const entities = (db.prepare('SELECT COUNT(DISTINCT key) n FROM arkham_chain_volume').get() as any).n
     return { entities, chains: rows.map((r) => ({ chain: r.chain, vol7d: r.v, casinos: r.casinos, share: +((100 * (r.v ?? 0)) / tot).toFixed(1) })) }
   })
+
+  // live debug: one Arkham /transfers fetch → raw transfer shape (confirm chain field).
+  app.get('/api/diag/arkham-probe', async () => arkhamProbe())
 
   // enrichment queue (gated) — low-confidence brands kept as noindex pages, awaiting
   // on-chain/reserve/trust enrichment before promotion to indexable.
