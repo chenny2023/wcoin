@@ -110,6 +110,10 @@ export async function generateDraft(signalId: string): Promise<{ ok: boolean; me
   if (!product) return { ok: false, message: `unknown product ${sig.product}` }
   if (!openrouterEnabled()) return { ok: false, message: 'OPENROUTER_API_KEY 未配置，无法自动生成草稿（可人工撰写）' }
 
+  // Shopify/App Store 评论无法回复 → 只作竞品情报分析，不生成回复草稿
+  if (sig.platform === 'shopify' || sig.platform === 'appstore') {
+    return { ok: false, message: '竞品评论源（无法回复），仅作竞品情报/分析，不生成草稿' }
+  }
   // spec：wonix 不可解信号（封号/支付/牌照）只记录，不发免费样片
   if (sig.product === 'wonix' && sig.solvable === 0) {
     db.prepare("UPDATE social_intel SET status='reviewed' WHERE id=?").run(signalId)

@@ -184,6 +184,7 @@ export function registerSocialIntel(app: FastifyInstance): void {
     if (q.product) { where.push('product = ?'); params.push(q.product) }
     if (q.kind) { where.push('kind = ?'); params.push(q.kind) }
     if (q.platform) { where.push('platform = ?'); params.push(q.platform) }
+    else { where.push("platform NOT IN ('shopify','appstore')") } // 评论源默认只进「竞品痛点」，不进信号流（不可回复）；按平台筛选仍可查看
     if (q.status) { where.push('status = ?'); params.push(q.status) }
     else { where.push("status NOT IN ('dropped','ignored')") } // 默认隐藏被分类器清理/忽略的
     if (q.tier) { where.push('intent_tier = ?'); params.push(q.tier) } // 热/温/冷

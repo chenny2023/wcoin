@@ -305,7 +305,9 @@ async function renderPainRadar(){
     '<div class="body">'+esc((s.body||'').slice(0,360))+'</div>'+
     zhBlock(s)+
     '<div class="crow" style="margin-top:10px"><a href="'+esc(s.url)+'" target="_blank">查看原贴 ↗</a>'+
-    '<button class="btn sm pri right" data-act="mkdraft" data-id="'+s.id+'">生成替代方案草稿</button>'+
+    ((s.platform==='shopify'||s.platform==='appstore')
+      ? '<span class="pill right" style="color:#9fe7c6;border-color:#1c5240">竞品情报 · 评论不可回复，仅供分析</span>'
+      : '<button class="btn sm pri right" data-act="mkdraft" data-id="'+s.id+'">生成替代方案草稿</button>')+
     '<button class="btn sm ghost" data-act="ignore" data-id="'+s.id+'">忽略</button></div></div>').join('')
     :'<div class="empty"><div class="big">⚔️</div>暂无竞品痛点信号。<br><span class="mut">需要竞品词采集到带负面情绪的帖子；补全 products.ts 竞品词、多采集几轮后这里会出现"准备换供应商"的人。</span></div>'
   $('#app').innerHTML=shell('<p class="lead">捞出对竞品不满、且在主动选型的人——这是转化率最高的人群。生成草稿会以"我们产品作为替代方案"切入。</p>'+bar+cards)
