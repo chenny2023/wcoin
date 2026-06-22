@@ -72,6 +72,11 @@ async function classifyProductBatch(product: string): Promise<number> {
   const ignoredBlock = ignoredEx.length
     ? `\n团队已"忽略"以下内容（判为无用）——对明显同主题/同套路的，设 keep=false：\n` + ignoredEx.map((t) => '- ' + t.slice(0, 80)).join('\n')
     : ''
+  // 正例学习：团队"已起草回复"(status=reviewed)的标题=高价值，倾向保留+给更高 tier，提升精准度
+  const draftedEx = (db.prepare("SELECT title FROM social_intel WHERE product=? AND status='reviewed' AND title!='' ORDER BY collected_ts DESC LIMIT 8").all(product) as { title: string }[]).map((x) => x.title)
+  const draftedBlock = draftedEx.length
+    ? `\n团队"已采纳并起草回复"以下内容（高价值正例）——对明显同类的，倾向 keep=true 且给更高 intent_tier：\n` + draftedEx.map((t) => '- ' + t.slice(0, 80)).join('\n')
+    : ''
 
   const r = rules(product)
   const system =
@@ -79,7 +84,7 @@ async function classifyProductBatch(product: string): Promise<number> {
     `对每条帖子分类（actor_type/intent_tier/pain_type/打分），并决定是否保留(keep)。\n` +
     `actor_type 取值: ${r.actors}\npain_type 取值: ${r.pains}\n${r.extra}\n` +
     `‼️ 保留规则（重要，倾向保留）：只要这条帖跟该产品的领域"沾边"（哪怕只是泛泛讨论、低意图、相邻话题），就 keep=true，用 intent_tier=cold 标记弱信号即可——我们宁可多看一条冷信号，也不愿漏掉。\n` +
-    `keep=false 只用于以下「真噪音」：${COMMON_EXCLUDE} 以及明显属于完全无关的其它行业。拿不准时一律 keep=true。${ignoredBlock}\n` +
+    `keep=false 只用于以下「真噪音」：${COMMON_EXCLUDE} 以及明显属于完全无关的其它行业。拿不准时一律 keep=true。${ignoredBlock}${draftedBlock}\n` +
     `intent_tier: hot=主动表达痛点/明确不满/高购买信号; warm=讨论选型求推荐; cold=泛泛相关或低意图(默认档)。reco_play: 销售类高意向→dm 或 public_reply；wcoin→content；噪音→discard。\n${SCHEMA_HINT}`
   const user = rows.map((x, i) => `[${i}] (${x.platform}) ${x.title}${x.body ? ' — ' + x.body.slice(0, 200) : ''}`).join('\n').slice(0, 7000)
 
