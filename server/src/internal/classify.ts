@@ -51,10 +51,27 @@ interface Cls { i: number; keep: boolean; actor_type: string; intent_tier: strin
 async function classifyProductBatch(product: string): Promise<number> {
   const prod = productByKey(product)
   if (!prod) return 0
-  const rows = db
-    .prepare(`SELECT id, platform, kind, title, body FROM social_intel WHERE product=? AND classified_ts IS NULL ORDER BY intent DESC, collected_ts DESC LIMIT ?`)
-    .all(product, BATCH) as { id: string; platform: string; kind: string; title: string; body: string }[]
-  if (rows.length === 0) return 0
+  const allRows = db
+    .prepare(`SELECT id, platform, kind, title, body, author FROM social_intel WHERE product=? AND classified_ts IS NULL ORDER BY intent DESC, collected_ts DESC LIMIT ?`)
+    .all(product, BATCH) as { id: string; platform: string; kind: string; title: string; body: string; author: string }[]
+  if (allRows.length === 0) return 0
+
+  const now = Date.now()
+  // 忽略学习①：被忽略≥2次的作者 → 直接丢，不进 LLM
+  const suppAuthors = new Set(
+    (db.prepare("SELECT value FROM social_suppress WHERE product=? AND kind='author' AND hits>=2").all(product) as { value: string }[]).map((x) => x.value.toLowerCase()),
+  )
+  const supp = allRows.filter((x) => x.author && suppAuthors.has(x.author.toLowerCase()))
+  const rows = allRows.filter((x) => !(x.author && suppAuthors.has(x.author.toLowerCase())))
+  if (rows.length === 0) {
+    if (supp.length) { const d = db.prepare("UPDATE social_intel SET status='dropped', classified_ts=? WHERE id=?"); db.transaction(() => supp.forEach((x) => d.run(now, x.id)))() }
+    return supp.length
+  }
+  // 忽略学习②：最近被忽略的标题作为"反例"喂给 LLM，让它把同类判 keep=false
+  const ignoredEx = (db.prepare("SELECT title FROM social_intel WHERE product=? AND status='ignored' AND title!='' ORDER BY classified_ts DESC LIMIT 12").all(product) as { title: string }[]).map((x) => x.title)
+  const ignoredBlock = ignoredEx.length
+    ? `\n团队已"忽略"以下内容（判为无用）——对明显同主题/同套路的，设 keep=false：\n` + ignoredEx.map((t) => '- ' + t.slice(0, 80)).join('\n')
+    : ''
 
   const r = rules(product)
   const system =
@@ -62,7 +79,7 @@ async function classifyProductBatch(product: string): Promise<number> {
     `对每条帖子分类（actor_type/intent_tier/pain_type/打分），并决定是否保留(keep)。\n` +
     `actor_type 取值: ${r.actors}\npain_type 取值: ${r.pains}\n${r.extra}\n` +
     `‼️ 保留规则（重要，倾向保留）：只要这条帖跟该产品的领域"沾边"（哪怕只是泛泛讨论、低意图、相邻话题），就 keep=true，用 intent_tier=cold 标记弱信号即可——我们宁可多看一条冷信号，也不愿漏掉。\n` +
-    `keep=false 只用于以下「真噪音」：${COMMON_EXCLUDE} 以及明显属于完全无关的其它行业。拿不准时一律 keep=true。\n` +
+    `keep=false 只用于以下「真噪音」：${COMMON_EXCLUDE} 以及明显属于完全无关的其它行业。拿不准时一律 keep=true。${ignoredBlock}\n` +
     `intent_tier: hot=主动表达痛点/明确不满/高购买信号; warm=讨论选型求推荐; cold=泛泛相关或低意图(默认档)。reco_play: 销售类高意向→dm 或 public_reply；wcoin→content；噪音→discard。\n${SCHEMA_HINT}`
   const user = rows.map((x, i) => `[${i}] (${x.platform}) ${x.title}${x.body ? ' — ' + x.body.slice(0, 200) : ''}`).join('\n').slice(0, 7000)
 
@@ -70,7 +87,6 @@ async function classifyProductBatch(product: string): Promise<number> {
   const items = (res?.data?.items ?? []) as Cls[]
   if (!Array.isArray(items)) return 0
 
-  const now = Date.now()
   const upd = db.prepare(
     `UPDATE social_intel SET actor_type=?, intent_tier=?, intent=?, pain_type=?, solvable=?, reco_play=?, confidence=?, status=?, classified_ts=? WHERE id=?`,
   )
@@ -100,10 +116,12 @@ async function classifyProductBatch(product: string): Promise<number> {
       }
       // 未返回的：标记已分类、低分，不丢（保守）
       rows.forEach((row, i) => { if (!seen.has(i)) db.prepare('UPDATE social_intel SET classified_ts=? WHERE id=?').run(now, row.id) })
+      // 被忽略作者命中的 → 直接丢（忽略学习①）
+      for (const x of supp) { db.prepare("UPDATE social_intel SET status='dropped', classified_ts=? WHERE id=?").run(now, x.id); dropped++ }
     })
     tx()
   })
-  if (kept || dropped) console.log(`[social-intel] 分类 ${product}: 留 ${kept} / 清 ${dropped}`)
+  if (kept || dropped) console.log(`[social-intel] 分类 ${product}: 留 ${kept} / 清 ${dropped}${supp.length ? ' (含抑制作者 ' + supp.length + ')' : ''}`)
   return kept + dropped
 }
 

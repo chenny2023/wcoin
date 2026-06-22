@@ -244,7 +244,30 @@ export function registerSocialIntel(app: FastifyInstance): void {
     const b = req.body as { status?: string }
     const allowed = ['new', 'reviewed', 'ignored']
     if (!b?.status || !allowed.includes(b.status)) return reply.code(400).send({ error: 'invalid status' })
+    // 忽略学习：记录该信号作者为抑制候选（同作者被忽略≥2次→以后自动丢）。标题留作分类器反例。
+    if (b.status === 'ignored') {
+      const sig = db.prepare('SELECT product, author FROM social_intel WHERE id=?').get(id) as { product: string; author: string } | undefined
+      if (sig?.author && sig.author.trim()) {
+        db.prepare(
+          `INSERT INTO social_suppress(product, kind, value, hits, created_ts) VALUES(?, 'author', ?, 1, ?)
+           ON CONFLICT(product, kind, value) DO UPDATE SET hits = hits + 1`,
+        ).run(sig.product, sig.author.trim(), Date.now())
+      }
+    }
     db.prepare('UPDATE social_intel SET status=? WHERE id=?').run(b.status, id)
+    return { ok: true }
+  })
+
+  // 抑制规则：列出
+  app.get('/api/internal/social/suppress', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const items = db.prepare('SELECT * FROM social_suppress ORDER BY hits DESC, created_ts DESC LIMIT 200').all()
+    return { items }
+  })
+  // 抑制规则：解除
+  app.delete('/api/internal/social/suppress/:id', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    db.prepare('DELETE FROM social_suppress WHERE id=?').run(Number((req.params as any).id))
     return { ok: true }
   })
 

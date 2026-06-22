@@ -285,7 +285,7 @@ async function renderSignals(){
   bindToolbar()
 }
 H.mkdraft=async(id,btn)=>{if(btn){btn.textContent='生成中…';btn.disabled=true}const r=await api('/api/internal/social/draft',{method:'POST',body:JSON.stringify({signalId:id})});toast(r.message||'完成');if(r.ok&&r.draftId){tab='drafts';render()}else if(btn){btn.textContent='生成推荐草稿';btn.disabled=false}}
-H.ignore=async id=>{await api('/api/internal/social/signal/'+id+'/status',{method:'POST',body:JSON.stringify({status:'ignored'})});toast('已忽略');renderSignals()}
+H.ignore=async id=>{await api('/api/internal/social/signal/'+id+'/status',{method:'POST',body:JSON.stringify({status:'ignored'})});toast('已忽略并记入学习（同类后续自动抑制）');renderSignals()}
 H.tr=async(id,btn)=>{if(btn){btn.textContent='生成中…';btn.disabled=true}const r=await api('/api/internal/social/translate',{method:'POST',body:JSON.stringify({signalId:id})});const box=$('#zh-'+id);if(r.ok&&box){box.innerHTML='🇨🇳 '+esc(r.zh)}else{toast(r.error||'生成失败');if(btn){btn.textContent='🇨🇳 生成中文解读';btn.disabled=false}}}
 
 // ── 竞品痛点雷达 ────────────────────────────────────────────────────────────
@@ -378,6 +378,7 @@ H.dstat=async raw=>{const i=raw.indexOf(':');const id=raw.slice(0,i),status=raw.
 // ── 自定义采集 ──────────────────────────────────────────────────────────────
 async function renderCustom(){
   const {items}=await api('/api/internal/social/custom')
+  const sup=await api('/api/internal/social/suppress')
   const opt=(v,l)=>'<option value="'+v+'">'+l+'</option>'
   const form='<div class="panel"><h3>➕ 新建采集需求</h3>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">'+
@@ -409,10 +410,20 @@ async function renderCustom(){
     '<p class="mut" style="font-size:13px;margin:0 0 10px">改了某产品的关键词/相关性后，可清掉它的旧数据，让采集器按新配置干净重采（仅删该产品，其他产品不动）。</p>'+
     '<div class="crow"><select id="pg-product">'+products.map(p=>opt2(p.key,p.name)).join('')+'</select>'+
     '<button class="btn bad" id="pg-go">清空该产品数据</button></div></div>'
-  $('#app').innerHTML=shell('<p class="lead">临时有新的情报方向？在这里填关键词即时采集，勾选保存后会被纳入定时轮询。结果进入"信号"页（按产品标签过滤）。</p>'+form+list+maint)
+  const sr=(sup.items||[])
+  const suprows=sr.length?sr.map(s=>
+    '<tr><td><span class="pill prod">'+esc(pname(s.product))+'</span></td>'+
+    '<td>'+esc(s.kind)+'</td><td><b>'+esc(s.value)+'</b></td>'+
+    '<td class="tabnum">'+s.hits+' 次'+(s.kind==='author'&&s.hits<2?' <span class="dim">(需≥2生效)</span>':'')+'</td>'+
+    '<td class="right"><button class="btn sm bad" data-act="unsupp" data-id="'+s.id+'">解除</button></td></tr>').join('')
+    :'<tr><td colspan="5" class="dim" style="text-align:center;padding:20px">还没有抑制规则。在「信号」页点"忽略"会自动学习：同一作者被忽略≥2次→以后自动丢；被忽略的内容也会作为反例，让分类器丢弃同类。</td></tr>'
+  const suppanel='<div class="panel"><h3>🚫 忽略学习 / 抑制规则<span class="tag">点"忽略"自动积累 · 可解除</span></h3>'+
+    '<table class="tbl"><tr><th>产品</th><th>类型</th><th>对象</th><th>忽略次数</th><th></th></tr>'+suprows+'</table></div>'
+  $('#app').innerHTML=shell('<p class="lead">临时有新的情报方向？在这里填关键词即时采集，勾选保存后会被纳入定时轮询。结果进入"信号"页（按产品标签过滤）。</p>'+form+list+suppanel+maint)
   $('#c-go').onclick=customGo
   $('#pg-go').onclick=purgeGo
 }
+H.unsupp=async id=>{await api('/api/internal/social/suppress/'+id,{method:'DELETE'});toast('已解除抑制');renderCustom()}
 async function purgeGo(){
   const product=$('#pg-product').value
   const name=(products.find(p=>p.key===product)||{}).name||product

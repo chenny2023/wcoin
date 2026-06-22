@@ -99,6 +99,18 @@ CREATE TABLE IF NOT EXISTS social_alert_sent (
   signal_id TEXT PRIMARY KEY,
   ts        INTEGER NOT NULL
 );
+
+-- 忽略学习：用户点"忽略"→ 记录抑制规则，后续同类自动丢。kind=author（按作者）。
+-- 被忽略信号的标题另作为"反例"喂给分类器（LLM 判定同类→drop），实现"类似内容别采"。
+CREATE TABLE IF NOT EXISTS social_suppress (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  product    TEXT NOT NULL,
+  kind       TEXT NOT NULL,          -- 'author'
+  value      TEXT NOT NULL,
+  hits       INTEGER NOT NULL DEFAULT 1,  -- 触发忽略的次数（author 需 >=2 才生效，防误伤）
+  created_ts INTEGER NOT NULL,
+  UNIQUE(product, kind, value)
+);
 `)
 
 // 迁移：social_intel 增补列（zh 中文解读 + spec 分类字段）。ALTER 不支持 IF NOT EXISTS，按 pragma 加。
