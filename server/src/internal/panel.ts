@@ -149,7 +149,7 @@ H.run=async()=>{toast('已触发采集…结果稍后刷新可见');await api('/
 
 // ── 登录（Whale Growth 团队验证码：点登录→验证码发到管理员邮箱→输入即可进）──────
 let codeSentTo=''
-H.reqcode=async(_,btn)=>{if(btn){btn.textContent='发送中…';btn.disabled=true}const r=await fetch('/api/internal/auth/send-code',{method:'POST',headers:{'Content-Type':'application/json'}});const j=await r.json();if(j.sent){codeSentTo=j.to||'';if(j.devCode)toast('开发验证码: '+j.devCode);else toast('验证码已发送到管理员邮箱');render(true)}else{toast(j.error||'发送失败');if(btn){btn.textContent='发送验证码登录';btn.disabled=false}}}
+H.reqcode=async(_,btn)=>{if(btn){btn.textContent='发送中…';btn.disabled=true}const r=await fetch('/api/internal/auth/send-code',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});const j=await r.json();if(j.sent){codeSentTo=j.to||'';if(j.devCode)toast('开发验证码: '+j.devCode);else toast('验证码已发送到管理员邮箱');render(true)}else{toast(j.error||'发送失败');if(btn){btn.textContent='发送验证码登录';btn.disabled=false}}}
 H.verify=async(_,btn)=>{const code=$('#code').value.trim();if(!code)return toast('请输入验证码');if(btn){btn.textContent='验证中…';btn.disabled=true}const r=await fetch('/api/internal/auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})});const j=await r.json();if(j.token){token=j.token;localStorage.setItem(TOKEN_KEY,token);render()}else{toast(j.error||'验证失败');if(btn){btn.textContent='登录';btn.disabled=false}}}
 H.backlogin=()=>render(false)
 function loginView(step){
