@@ -121,7 +121,244 @@ const $=s=>document.querySelector(s)
 const esc=s=>(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
 const ago=ts=>{if(!ts)return '';const m=(Date.now()-ts)/60000;if(m<1)return '刚刚';if(m<60)return Math.round(m)+'分钟前';if(m<1440)return Math.round(m/60)+'小时前';return Math.round(m/1440)+'天前'}
 const pname=k=>(products.find(p=>p.key===k)||{}).name||k
-function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(window._tt);window._tt=setTimeout(()=>t.classList.remove('show'),2600)}
+// ── i18n（中英文切换，给海外同事用）─────────────────────────────────────────────
+// 渲染层全是中文模板；切到 en 时用 MutationObserver 在每次 DOM 变更后翻译，多策略且不破坏中文数据。
+let lang=localStorage.getItem('wg_lang')||'zh'
+const EN={
+'系统从 X 关键词搜索中自动沉淀粉丝≥1000 的作者，再用 AI 筛出领域契合、靠谱(非薅羊毛/机器人)的 KOL。X 采集运行几小时后这里会陆续出现；也可切到「全部候选」看未筛选的原始库。Threads 需 ScrapeCreators 有额度。':'The system harvests X authors with ≥1000 followers, then AI picks niche-fit, credible KOLs (no giveaway/bot accounts). They appear a few hours after X collection runs; switch to “All candidates” for the raw pool. Threads needs ScrapeCreators credits.',
+'公开评论：纯价值、不提产品、不带链接（系统已自动剥离），目的是建立信誉，转化走私信。用养过 karma 的号、别重复同一段文案、别发太频。':'Public comment: pure value, no product, no links (auto-stripped) — build credibility; convert via DM. Use an aged-karma account, don’t reuse copy, don’t post too often.',
+'改了某产品的关键词/相关性后，可清掉它的旧数据，让采集器按新配置干净重采（仅删该产品，其他产品不动）。':'After changing a product’s keywords/relevance, you can purge its old data so the collector re-collects cleanly under the new config (only that product is deleted, others untouched).',
+'采集健康诊断：每平台 总数/近24h/dropped/最后采集，一眼看出哪个源死了':'Collection health: per-platform total / last-24h / dropped / last-run — spot a dead source at a glance',
+'竞品被用户吐槽什么 → 反哺我们把产品和服务做得更好（参考分析，不针对这些内容做评论）。':'What users complain about competitors → feeds back into improving our product & service (reference only — we don’t reply to these).',
+'把反复出现的用户需求，聚类成可以写文章/落地页去抢排名的选题。这是把社媒需求转成"24h 自动获客"的复利打法。':'Cluster recurring user demand into article/landing-page topics to rank for — turning social demand into a compounding “24/7 auto customer acquisition” play.',
+'审核 AI 起草的开场白 → 批准/改/丢 → 用真实账号发（不自动发）。销售与内容两条队列分开，按 spec 各走各的动作。':'Review AI-drafted openers → approve/edit/drop → post from a real account (never auto-posted). Sales and content queues are separate, each per spec.',
+'临时有新的情报方向？在这里填关键词即时采集，勾选保存后会被纳入定时轮询。结果进入"信号"页（按产品标签过滤）。':'New intel direction? Enter keywords here to collect now; tick save to add it to scheduled polling. Results land in Signals (filter by product).',
+'采集器每 ~2 分钟抓一条查询，刚部署需等几分钟；也可点右上角"手动采集"，或放宽筛选条件。':'The collector fetches one query every ~2 min; after a fresh deploy wait a few minutes, or click “Collect now” top-right, or loosen the filters.',
+'还没有洞察。选产品点"生成产品改进洞察"，AI 会把竞品被吐槽的点综合成改进建议。':'No insights yet. Pick a product and click “Generate improvement insights” — AI synthesizes competitor complaints into suggestions.',
+'选一个产品点"AI 归纳选题"，会从该产品近期需求贴里聚类出可排名/可转化的内容选题。':'Pick a product and click “Cluster topics” to derive rankable/convertible content topics from its recent demand posts.',
+'去"信号"/"竞品痛点"页对高意图信号点"生成开场白"。':'Go to Signals / Competitor pain and click “Generate opener” on a high-intent signal.',
+'还没有抑制规则。在「信号」页点"🚫 信号不符"会自动学习：同一作者被标≥2次→以后自动丢；被标内容也作为反例，让分类器丢弃同类。（"忽略"只是跳过，不记录）':'No suppression rules yet. On Signals, “🚫 Signal mismatch” auto-learns: an author flagged ≥2× is dropped thereafter; flagged content also becomes a negative example. (“Skip” just skips, not recorded.)',
+'✉️ 走私信(DM)：不过 AutoModerator，可带链接+具体报价；但要像 1:1 真人、开头点出对方的帖子，别像群发模板。':'✉️ Use DM: bypasses AutoModerator, may include a link + concrete offer; but sound 1:1 and human, open by referencing their post, not a mass template.',
+'⚠️ Reddit 公开评论：纯价值、不提产品、不带链接（系统已自动剥离），目的是建立信誉，转化走私信。用养过 karma 的号、别重复同一段文案、别发太频。':'⚠️ Reddit public comment: pure value, no product, no links (auto-stripped) — build credibility, convert via DM. Use an aged-karma account, don’t reuse copy, don’t post too often.',
+'暂无竞品吐槽。补全竞品词/竞品 app、多采集几轮后这里会有料。':'No competitor complaints yet. Add competitor terms/apps and collect a few more rounds.',
+'点下方按钮，验证码会发送到管理员邮箱，向管理员索取验证码即可登录。':'Click below — a code is sent to the admin mailbox; ask the admin for it to sign in.',
+'竞品动向 · 用户需求 · 推荐机会，一屏掌握。':'Competitor moves · user demand · outreach opportunities — all in one view.',
+'竞品洞察分析（供产品/服务改进参考，非外联）':'Competitor insight analysis (for product/service improvement, not outreach)',
+'限定子版块（可选，逗号分隔，仅Reddit）':'Limit subreddits (optional, comma-separated, Reddit only)',
+'还没有自定义需求。用上面的表单新建。':'No custom queries yet. Create one with the form above.',
+'内容不准确/不相关，记录后不再采集类似':'Inaccurate/irrelevant — record it and stop collecting similar',
+'已记录为信号不符，后续同类不再采集':'Recorded as signal-mismatch; similar content won’t be collected',
+'保存为定时需求（随调度持续轮询）':'Save as a scheduled query (kept polling by the scheduler)',
+'已触发采集…结果稍后刷新可见':'Collection triggered… refresh later to see results',
+'可信分(受众质量)0-100':'Credibility (audience quality) 0-100',
+'只读 · 仅供分析，不回复':'Read-only · analysis only, no reply',
+'请填写查询词（至少2字符）':'Enter a query (at least 2 characters)',
+'验证码已发送到管理员邮箱':'Code sent to the admin mailbox',
+'未处理 · 一键生成草稿':'Unhandled · one-click draft',
+'审核 AI 起草的开场白':'Review AI-drafted openers',
+'数据维护：清空并重新采集':'Maintenance: purge & re-collect',
+'团队内部 · 增长情报':'Internal · Growth Intel',
+'条数 · 环比上一周期':'count · vs last period',
+'暂无未处理的高意图机会':'No unhandled high-intent opportunities',
+'搜索标题/正文/作者…':'Search title/body/author…',
+'仅跳过这条，不记录学习':'Skip this one only, no learning recorded',
+'已起草开场白（可改）：':'Drafted opener (editable):',
+'信号不符 / 抑制规则':'Signal mismatch / suppression rules',
+'验证码发到管理员邮箱':'code sent to admin mailbox',
+'，向管理员索取后输入：':', ask the admin then enter:',
+'暂无符合条件的信号。':'No matching signals.',
+'卡片：原帖(带链接)':'card: original post (with link)',
+'启用中的随主调度轮询':'active ones polled by the main scheduler',
+'自动积累 · 可解除':'auto-accumulated · removable',
+'后台也在自动回填）':'(also auto-backfilled in the background)',
+'重新发送 / 返回':'Resend / Back',
+'启用(key已读)':'Enabled (key read)',
+'全部候选(含低分)':'All candidates (incl. low score)',
+'暂无潜在合作对象。':'No potential partners yet.',
+'例如：AI招聘选型':'e.g. AI hiring selection',
+'查询词 / X账号':'Query / X handle',
+'没有待审核草稿。':'No drafts to review.',
+'已跳过（不记录）':'Skipped (not recorded)',
+'潜在合作 KOL':'Potential partners (KOL)',
+'不合适，移出推荐':'Not a fit — remove from recommendations',
+'已生成合作 DM':'Collaboration DM generated',
+'生成产品改进洞察':'Generate improvement insights',
+'各竞品被吐槽排行':'Competitors ranked by complaints',
+'目标+可发送动作':'target + sendable action',
+'通用 / 自定义':'Generic / Custom',
+'已保存的采集需求':'Saved collection queries',
+'重对齐关键词后用':'use after realigning keywords',
+'不可解·仅记录':'Unsolvable · record only',
+'发送验证码登录':'Send code to sign in',
+'概览 / 分析':'Overview / Analytics',
+'可推荐自有产品':'can recommend our products',
+'最高意图机会贴':'Top high-intent opportunities',
+'对方未开放私信':'DMs not open',
+'生成合作 DM':'Generate collaboration DM',
+'为产品生成选题':'Generate topics for product',
+'已复制到剪贴板':'Copied to clipboard',
+'清空该产品数据':'Purge this product’s data',
+'生成中文解读':'Generate Chinese gloss',
+'请输入验证码':'Enter the code',
+'等待人工发布':'awaiting manual posting',
+'各产品信号量':'Signals per product',
+'高意图机会词':'High-intent opportunity terms',
+'竞品讨论热度':'Competitor discussion heat',
+'近 14 天':'Last 14 days','近 30 天':'Last 30 days','近 7 天':'Last 7 days',
+'已起草/批准':'Drafted/Approved',
+'生成推荐草稿':'Generate draft',
+'已标记已联系':'Marked as contacted',
+'产品改进洞察':'Product improvement insights',
+'痛点类型分布':'Pain-type distribution',
+'原始吐槽证据':'Raw complaint evidence',
+'还没有选题。':'No topics yet.',
+'已起草开场白':'Opener drafted',
+'暂无销售草稿':'No sales drafts',
+'暂无内容草稿':'No content drafts',
+'批准/改/丢':'Approve/Edit/Drop',
+'新建采集需求':'New collection query',
+'关键词搜索）':'keyword search)',
+'账号时间线）':'account timeline)',
+'需≥2生效)':'needs ≥2 to apply)',
+'开发验证码':'Dev code',
+'自定义采集':'Custom',
+'新采集信号':'newly collected',
+'需求/机会':'Demand/Opportunity',
+'竞品相关贴':'competitor posts',
+'按平均意图':'by avg intent',
+'已生成草稿':'Draft generated',
+'仅靠谱推荐':'Credible picks only',
+'已移出推荐':'Removed from recommendations',
+'竞品被吐槽':'Competitor complaints',
+'竞品/来源':'Competitor/Source',
+'去原贴回复':'Reply on original',
+'生成开场白':'Generate opener',
+'已标记发布':'Marked posted',
+'已解除抑制':'Suppression removed',
+'需要登录':'Sign-in required',
+'公开回帖':'Public reply',
+'发送中…':'Sending…',
+'发送失败':'Send failed',
+'验证中…':'Verifying…',
+'验证失败':'Verification failed',
+'位验证码':'-digit code',
+'潜在合作':'Partners',
+'竞品洞察':'Competitor insight',
+'选题建议':'Topics',
+'手动采集':'Collect now',
+'加载失败':'Load failed',
+'暂无数据':'No data',
+'全部历史':'all-time',
+'竞品讨论':'Competitor talk',
+'待审草稿':'Pending drafts',
+'采集趋势':'Collection trend',
+'情绪分布':'Sentiment',
+'平台分布':'Platform mix',
+'平均情绪':'Avg sentiment',
+'生成草稿':'Draft',
+'采集健康':'Collection health',
+'近24h':'last 24h',
+'最后采集':'Last run',
+'全部产品':'All products',
+'全部分层':'All tiers',
+'全部类别':'All kinds',
+'全部平台':'All platforms',
+'全部状态':'All statuses',
+'信号不符':'Signal mismatch',
+'意图优先':'Intent first',
+'最新优先':'Newest first',
+'查看原贴':'View original',
+'赌场达人':'Casino influencer',
+'不可私信':'No DM',
+'代表帖：':'Top post: ',
+'全部候选':'All candidates',
+'生成失败':'Generation failed',
+'竞品排行':'Competitor ranking',
+'分析中…':'Analyzing…',
+'归纳选题':'Cluster topics',
+'归纳中…':'Clustering…',
+'销售队列':'Sales queue',
+'内容队列':'Content queue',
+'中立回帖':'neutral reply',
+'内容日历':'content calendar',
+'竞品痛点':'Competitor pain',
+'归属产品':'Product',
+'立即采集':'Collect now',
+'忽略次数':'Flags',
+'确定清空':'Confirm purge of',
+'清空中…':'Purging…',
+'采集中…':'Collecting…',
+'已保存）':'saved)',
+'分钟前':'m ago',
+'小时前':'h ago',
+'运营商':'Operator',
+'总信号':'Total signals',
+'关键词':'Keyword',
+'竞品词':'Competitor term',
+'已清理':'Cleaned',
+'未处理':'Unhandled',
+'已跳过':'Skipped',
+'客服圈':'Support',
+'已联系':'Contacted',
+'不合适':'Not a fit',
+'候选库':'Pool',
+'已认证':'Verified',
+'契合：':'Fit: ',
+'已入围':'Shortlisted',
+'已生成':'Generated',
+'条洞察':' insight(s)',
+'失败：':'Failed: ',
+'个选题':' topic(s)',
+'已发送':'Sent',
+'已通过':'Approved',
+'已弃用':'Dismissed',
+'备注名':'Label',
+'已清空':'Purged',
+'已删除':'Deleted',
+'刚刚':'just now',
+'天前':'d ago',
+'正面':'Pos','负面':'Neg','中性':'Neutral',
+'需求':'Demand','竞品':'Competitor','品牌':'Brand',
+'联盟':'Affiliate','投手':'Media buyer','玩家':'Player','行业':'Industry','噪音':'Noise',
+'私信':'DM','诊断':'Diagnostic','内容':'Content','丢弃':'Discard','可解':'Solvable',
+'登录':'Sign in','概览':'Overview','信号':'Signals','草稿':'Drafts','退出':'Logout',
+'暂无':'None','意图':'Intent','条数':'Count','情绪':'Sentiment','环比':'WoW','从未':'never',
+'平台':'Platform','总数':'Total','评论':'reviews','论坛':'Forum','应用':'Apply','忽略':'Skip',
+'完成':'Done','币圈':'Crypto','其它':'Other','候选':'Candidate','入围':'Shortlisted',
+'信用':'Cred','推荐':'Recommended','认证':'Verified','关注':'Following','发文':'Posts',
+'主页':'Profile','原帖':'Original','未知':'unknown','批准':'Approve',
+'复制':'Copy','类别':'Kind','未跑':'never run','停用':'Disable','启用':'Enable',
+'上次':'Last','解除':'Remove','类型':'Type','对象':'Target',
+'新增':'added','失败':'Failed',
+'🔥 热':'🔥 Hot','🌤 温':'🌤 Warm','❄ 冷':'❄ Cold',
+'✅是':'✅Yes','❌否':'❌No',
+'高':'High','中':'Med','低':'Low',
+'条证据':' evidence','条需求支撑':' demand signals',
+'💡 对我们的启示：':'💡 Implication for us: ','⚠️ 竞品短板：':'⚠️ Competitor gap: ','❓ 用户在问：':'❓ Users ask: ','✍️ 切入角度：':'✍️ Angle: ',
+'近24h=0(红) 说明该源没采进来 · 待分类积压':'last-24h=0 (red) = source collected nothing · unclassified backlog',
+'X启用(key已读):':'X enabled (key read):','正常':'OK',
+}
+const _ek=Object.keys(EN).filter(k=>EN[k]!==''&&k.length>=2).sort((a,b)=>b.length-a.length)
+const PREFIX=['💡 对我们的启示：','⚠️ 竞品短板：','❓ 用户在问：','✍️ 切入角度：','代表帖：','近24h=0(红) 说明该源没采进来 · 待分类积压']
+const han=s=>/[一-鿿]/.test(s||'')
+function L(str){if(lang!=='en'||!str)return str;const tr=str.trim();if(EN[tr])return str.replace(tr,EN[tr]);let s=str;for(const k of _ek)if(s.indexOf(k)>=0)s=s.split(k).join(EN[k]);return s}
+function _node(n){const v=n.nodeValue;if(!v||!han(v))return;const tr=v.trim();if(!tr)return
+  if(EN[tr]){n.nodeValue=v.replace(tr,EN[tr]);return}
+  const m=tr.match(/^([^一-鿿]*)([一-鿿].*)$/);if(m&&EN[m[2]]){n.nodeValue=v.replace(m[2],EN[m[2]]);return}
+  for(const p of PREFIX)if(tr.indexOf(p)===0){n.nodeValue=v.replace(p,EN[p]||p);return}
+  if(tr.length<=22&&!(n.parentElement&&n.parentElement.closest('.title,.body,.zh,.rationale,textarea'))){let s=v;for(const k of _ek)if(s.indexOf(k)>=0)s=s.split(k).join(EN[k]);n.nodeValue=s}
+}
+function applyLang(){if(lang!=='en')return;const r=$('#app');if(!r)return
+  const w=document.createTreeWalker(r,NodeFilter.SHOW_TEXT,null);const ns=[];while(w.nextNode())ns.push(w.currentNode)
+  ns.forEach(_node)
+  r.querySelectorAll('[placeholder]').forEach(e=>{if(han(e.placeholder))e.placeholder=L(e.placeholder)})
+  r.querySelectorAll('[title]').forEach(e=>{if(han(e.title))e.title=L(e.title)})}
+let _obs
+function startObs(){const app=$('#app');if(!app||_obs)return
+  _obs=new MutationObserver(()=>{if(lang!=='en')return;_obs.disconnect();try{applyLang()}finally{_obs.observe(app,{childList:true,subtree:true,characterData:true})}})
+  _obs.observe(app,{childList:true,subtree:true,characterData:true})}
+
+function toast(m){const t=$('#toast');t.textContent=L(m);t.classList.add('show');clearTimeout(window._tt);window._tt=setTimeout(()=>t.classList.remove('show'),2600)}
 
 async function api(path,opts={}){
   const r=await fetch(path,{...opts,headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,...(opts.headers||{})}})
@@ -146,6 +383,7 @@ document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if
 H.go=k=>{tab=k;render()}
 H.logout=()=>{token='';localStorage.removeItem(TOKEN_KEY);render()}
 H.run=async()=>{toast('已触发采集…结果稍后刷新可见');await api('/api/internal/social/run',{method:'POST'})}
+H.lang=()=>{lang=lang==='zh'?'en':'zh';localStorage.setItem('wg_lang',lang);document.documentElement.lang=lang;render()}
 
 // ── 登录（Whale Growth 团队验证码：点登录→验证码发到管理员邮箱→输入即可进）──────
 let codeSentTo=''
@@ -168,6 +406,7 @@ function shell(inner){
   return '<header><div class="brand"><div class="logo">🐳</div>Whale Growth</div>'+
     '<div class="nav">'+nav+'</div><div class="spacer"></div>'+
     '<button class="btn ghost sm" data-act="run">⟳ 手动采集</button>'+
+    '<button class="btn ghost sm" data-act="lang" title="中文 / English">🌐 '+(lang==='en'?'中文':'EN')+'</button>'+
     '<button class="btn ghost sm" data-act="logout">退出</button></header><main>'+inner+'</main>'
 }
 function skeleton(){$('#app').innerHTML=shell('<div class="skel"></div><div class="skel"></div><div class="skel"></div>')}
@@ -521,6 +760,8 @@ H.crun=async id=>{toast('采集中…');const r=await api('/api/internal/social/
 H.ctoggle=async id=>{await api('/api/internal/social/custom/'+id+'/toggle',{method:'POST'});renderCustom()}
 H.cdel=async id=>{await api('/api/internal/social/custom/'+id,{method:'DELETE'});toast('已删除');renderCustom()}
 
+document.documentElement.lang=lang
+startObs()
 render()
 </script>
 </body></html>`
