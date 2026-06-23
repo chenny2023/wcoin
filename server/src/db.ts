@@ -218,6 +218,18 @@ CREATE TABLE IF NOT EXISTS arkham_chain_volume (
 );
 CREATE INDEX IF NOT EXISTS idx_arkham_chainvol ON arkham_chain_volume(chain);
 
+-- Per-chain RESERVES from Arkham's (working, non-429) portfolio endpoint — the
+-- authoritative cross-chain split (BTC/Tron/SOL included) that the daily chain
+-- distribution uses. Reserves can't be wash-traded, unlike indexed volume.
+CREATE TABLE IF NOT EXISTS arkham_chain_reserves (
+  key   TEXT NOT NULL,                  -- arkham_casino.key
+  chain TEXT NOT NULL,                  -- ETH | TRON | BTC | SOL | BASE | ...
+  usd   REAL NOT NULL,                  -- Σ mainstream reserve USD on this chain
+  ts    INTEGER NOT NULL,
+  PRIMARY KEY(key, chain)
+);
+CREATE INDEX IF NOT EXISTS idx_arkham_chainres ON arkham_chain_reserves(chain);
+
 -- reserve snapshots over time → solvency trend + drop detection (proof-of-reserves
 -- is only as good as its trend: a casino draining its wallets is the real signal).
 CREATE TABLE IF NOT EXISTS arkham_reserve_history (

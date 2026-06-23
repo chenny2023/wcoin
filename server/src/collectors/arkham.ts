@@ -149,8 +149,9 @@ const VOL_MAX_PAGES = 8 // up to 2000 recent transfers; the very largest entitie
 // Map an Arkham transfer's chain string → our chain code. Arkham uses names like
 // "ethereum"/"tron"/"bitcoin"/"base". This is the BTC/Tron attribution: Arkham reports
 // those transfers, our own indexer barely does.
-function txChain(t: any): string | null {
-  const c = String(t.chain ?? t.blockchain ?? t.chainName ?? '').toLowerCase()
+// Map an Arkham chain string (transfer field OR portfolio key) → our chain code.
+function chainCode(raw: string): string | null {
+  const c = String(raw ?? '').toLowerCase()
   if (!c) return null
   if (c === 'tron' || c === 'trx') return 'TRON'
   if (c === 'bitcoin' || c === 'btc') return 'BTC'
@@ -166,6 +167,31 @@ function txChain(t: any): string | null {
   if (c === 'bsc' || c === 'binance_smart_chain' || c === 'bnb') return 'BSC'
   if (c === 'avalanche' || c === 'avax') return 'AVAX'
   return c.slice(0, 12).toUpperCase() // fallback: surface the raw chain rather than drop it
+}
+
+function txChain(t: any): string | null {
+  return chainCode(String(t.chain ?? t.blockchain ?? t.chainName ?? ''))
+}
+
+// Per-chain reserves from the (working, non-429) portfolio endpoint. Arkham's
+// portfolio is keyed by chain → token → {symbol, usd}; summing mainstream USD per
+// chain gives an AUTHORITATIVE cross-chain reserve split (BTC/Tron/SOL included)
+// without needing addresses or the rate-limited transfers endpoint.
+function sumReservesByChain(portfolio: Record<string, Record<string, any>>): Record<string, number> {
+  const byChain: Record<string, number> = {}
+  for (const chain in portfolio) {
+    const code = chainCode(chain)
+    if (!code) continue
+    const toks = portfolio[chain]
+    if (!toks || typeof toks !== 'object') continue
+    let sum = 0
+    for (const id in toks) {
+      const t = toks[id]
+      if (t && isMainstream(t.symbol) && typeof t.usd === 'number' && Number.isFinite(t.usd)) sum += t.usd
+    }
+    if (sum > 0) byChain[code] = (byChain[code] ?? 0) + sum
+  }
+  return byChain
 }
 
 let loggedTxSample = false
@@ -212,15 +238,29 @@ async function refreshOne(): Promise<boolean> {
     if (!res) return false
     const r = await res
     if (r.status === 200) {
-      const reserves = sumReserves((await r.json()) as any)
-      // same pass: trailing-7d cross-chain volume (Phase 2). Null on failure leaves
-      // the prior value untouched would be ideal, but a single UPDATE is simpler —
-      // we COALESCE so a transient null doesn't wipe a good reading.
+      const pf = (await r.json()) as any
+      const reserves = sumReserves(pf)
+      // AUTHORITATIVE per-chain reserve split from the same (working) portfolio
+      // response — this is the BTC/Tron/SOL cross-chain attribution that the daily
+      // chain distribution uses. No extra API call, no addresses, no 429.
+      const reservesByChain = sumReservesByChain(pf)
+      // same pass: trailing-7d cross-chain volume (Phase 2). Rate-limited (429) for
+      // most entities, so treated as best-effort; the per-chain RESERVES above are
+      // the reliable signal.
       const vol = await entityVolume7d(row.entity_id).catch(() => null)
       const volume = vol?.total ?? null
       setMetrics.run({ key: row.key, reserves, volume, now })
       db.prepare('INSERT INTO arkham_reserve_history(key, reserves_usd, ts) VALUES(?, ?, ?)').run(row.key, reserves, now)
-      // store the per-chain breakdown — this is the BTC/Tron attribution payload.
+      // persist per-chain reserves (replace this entity's prior rows atomically)
+      if (Object.keys(reservesByChain).length) {
+        const saveR = db.transaction(() => {
+          db.prepare('DELETE FROM arkham_chain_reserves WHERE key=?').run(row.key)
+          const ins = db.prepare('INSERT INTO arkham_chain_reserves(key, chain, usd, ts) VALUES(?,?,?,?)')
+          for (const [ch, v] of Object.entries(reservesByChain)) if (v > 0) ins.run(row.key, ch, v, now)
+        })
+        saveR()
+      }
+      // best-effort per-chain VOLUME (only populates when /transfers isn't 429)
       if (vol && Object.keys(vol.byChain).length) {
         const save = db.transaction(() => {
           db.prepare('DELETE FROM arkham_chain_volume WHERE key=?').run(row.key)
@@ -229,8 +269,8 @@ async function refreshOne(): Promise<boolean> {
         })
         save()
       }
-      const chainStr = vol ? Object.entries(vol.byChain).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([c, v]) => `${c} $${Math.round(v).toLocaleString()}`).join(' · ') : ''
-      console.log(`[arkham] ${row.name}: reserves $${Math.round(reserves).toLocaleString()}${volume != null ? `, vol7d $${Math.round(volume).toLocaleString()}` : ''}${chainStr ? ` [${chainStr}]` : ''}`)
+      const chainStr = Object.entries(reservesByChain).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([c, v]) => `${c} $${Math.round(v).toLocaleString()}`).join(' · ')
+      console.log(`[arkham] ${row.name}: reserves $${Math.round(reserves).toLocaleString()}${chainStr ? ` [${chainStr}]` : ''}${volume != null ? `, vol7d $${Math.round(volume).toLocaleString()}` : ''}`)
     } else {
       console.warn(`[arkham] portfolio ${row.name}: HTTP ${r.status}`)
       setMetrics.run({ key: row.key, reserves: null, volume: null, now }) // advance so we don't loop on a bad entity

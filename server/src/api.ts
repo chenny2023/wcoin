@@ -1083,6 +1083,17 @@ export async function registerApi(app: FastifyInstance) {
     return { entities, chains: rows.map((r) => ({ chain: r.chain, vol7d: r.v, casinos: r.casinos, share: +((100 * (r.v ?? 0)) / tot).toFixed(1) })) }
   })
 
+  // authoritative cross-chain RESERVE split (Arkham portfolio, non-429). This is
+  // the BTC/Tron/SOL attribution that fixes the ETH-skewed indexed-volume chart.
+  app.get('/api/diag/arkham-chain-reserves', async () => {
+    const rows = db
+      .prepare('SELECT chain, SUM(usd) v, COUNT(DISTINCT key) casinos FROM arkham_chain_reserves GROUP BY chain ORDER BY v DESC')
+      .all() as { chain: string; v: number; casinos: number }[]
+    const tot = rows.reduce((s, r) => s + (r.v ?? 0), 0) || 1
+    const entities = (db.prepare('SELECT COUNT(DISTINCT key) n FROM arkham_chain_reserves').get() as any).n
+    return { entities, total: tot, chains: rows.map((r) => ({ chain: r.chain, usd: r.v, casinos: r.casinos, share: +((100 * (r.v ?? 0)) / tot).toFixed(1) })) }
+  })
+
   // live debug: one Arkham /transfers fetch → raw transfer shape (confirm chain field).
   app.get('/api/diag/arkham-probe', async () => arkhamProbe())
 
