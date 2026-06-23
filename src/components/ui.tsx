@@ -7,21 +7,17 @@ import { CountUp } from './motion'
 export function Logo({ size = 30, withText = true }: { size?: number; withText?: boolean }) {
   return (
     <div className="flex items-center gap-2.5 select-none">
-      <div
-        className="relative grid place-items-center rounded-xl ring-gold"
-        style={{
-          width: size,
-          height: size,
-          background: 'radial-gradient(circle at 30% 25%, #ffe27a, #f5b100 55%, #b87b00)',
-        }}
-      >
-        <span
-          className="font-display font-bold text-ink-950"
-          style={{ fontSize: size * 0.52, lineHeight: 1 }}
-        >
-          W
-        </span>
-      </div>
+      {/* The exact same asset as the browser-tab favicon (public/coin.svg), so the
+          in-site mark and the tab icon can never drift apart. */}
+      <img
+        src="/coin.svg"
+        alt="WCOIN.CASINO"
+        width={size}
+        height={size}
+        draggable={false}
+        className="shrink-0"
+        style={{ width: size, height: size }}
+      />
       {withText && (
         <div className="leading-none">
           <span className="font-display text-[17px] font-bold tracking-tight">
