@@ -45,6 +45,10 @@ CREATE TABLE IF NOT EXISTS app_analysis (
 );
 `)
 try { db.exec('ALTER TABLE app_watch ADD COLUMN description TEXT') } catch { /* 列已存在 */ }
+// 可复刻性（vibe coding 机会筛选）：1=逻辑不复杂、小团队+AI 编码可快速复刻；0=不适合。
+for (const col of ['buildable INTEGER', 'app_type TEXT', 'build_reason TEXT', 'build_ts INTEGER']) {
+  try { db.exec(`ALTER TABLE app_analysis ADD COLUMN ${col}`) } catch { /* 列已存在 */ }
+}
 
 const MAX_RATING = () => Number(process.env.APPWATCH_MAX_RATING) || 3.5
 const MIN_RATINGS = () => Number(process.env.APPWATCH_MIN_RATING_COUNT) || 10
@@ -142,18 +146,19 @@ export async function refreshAppWatch(): Promise<{ ok: boolean; kept: number }> 
   return { ok: true, kept }
 }
 
-export interface AppWatchFilter { store?: string; country?: string; chart?: string; sort?: string; limit?: number }
+export interface AppWatchFilter { store?: string; country?: string; chart?: string; sort?: string; limit?: number; buildable?: boolean }
 export function listAppWatch(f: AppWatchFilter): { items: any[]; countries: string[]; lastUpdated: number } {
   const where: string[] = ['w.store = ?']
   const params: any[] = [f.store || 'appstore']
   if (f.country) { where.push('w.country = ?'); params.push(f.country) }
   if (f.chart) { where.push('w.chart = ?'); params.push(f.chart) }
+  if (f.buildable) where.push('a.buildable = 1') // 仅"可 vibe coding 复刻"的（已分类且判可复刻）
   const order =
     f.sort === 'rating' ? 'w.rating ASC, w.rank ASC' // 最差评分优先
     : f.sort === 'reviews' ? 'w.rating_count DESC' // 评分数最多（影响面最大）
     : 'w.rank ASC' // 默认：榜单名次（流量/营收最大）优先
   const items = db
-    .prepare(`SELECT w.*, a.summary, a.complaints, a.opportunity, a.analyzed_ts
+    .prepare(`SELECT w.*, a.summary, a.complaints, a.opportunity, a.analyzed_ts, a.buildable, a.app_type, a.build_reason
       FROM app_watch w LEFT JOIN app_analysis a ON a.app_id = w.app_id
       WHERE ${where.join(' AND ')} ORDER BY ${order} LIMIT ?`)
     .all(...params, Math.min(f.limit || 200, 500))
@@ -203,7 +208,8 @@ export async function analyzeApp(appId: string): Promise<{ ok: boolean; message:
   db.prepare(`INSERT INTO app_analysis(app_id, name, summary, complaints, opportunity, model, analyzed_ts)
     VALUES(?,?,?,?,?,?,?) ON CONFLICT(app_id) DO UPDATE SET name=excluded.name, summary=excluded.summary, complaints=excluded.complaints, opportunity=excluded.opportunity, model=excluded.model, analyzed_ts=excluded.analyzed_ts`)
     .run(appId, row.name, (d.summary || '').slice(0, 400), (d.complaints || '').slice(0, 600), (d.opportunity || '').slice(0, 600), res?.model || '', now)
-  return { ok: true, message: '已生成分析', analysis: { summary: d.summary, complaints: d.complaints, opportunity: d.opportunity, analyzed_ts: now } }
+  const b = db.prepare('SELECT buildable, app_type, build_reason FROM app_analysis WHERE app_id=?').get(appId) as { buildable: number; app_type: string; build_reason: string } | undefined
+  return { ok: true, message: '已生成分析', analysis: { summary: d.summary, complaints: d.complaints, opportunity: d.opportunity, analyzed_ts: now, buildable: b?.buildable, app_type: b?.app_type, build_reason: b?.build_reason } }
 }
 
 // 后台批量：优先分析「榜单名次靠前 + 还没分析过」的 app（量大，慢慢补）。
@@ -220,6 +226,57 @@ export async function analyzeAppsBatch(): Promise<number> {
   }
   if (done) console.log(`[appwatch] AI 分析 ${done} 个 app`)
   return done
+}
+
+// ── 可复刻性分类（vibe coding 机会筛选）──────────────────────────────────────────
+// 只看 名称+类别+商店简介（不抓评论，快且广，覆盖全榜）。判断该 app 是否"小团队+AI 编码可快速复刻"，
+// 排除政府/公共服务、重度研发(深科技/强监管基建/AAA/需大团队)。结果写 app_analysis（与差评分析共表）。
+export async function classifyBuildabilityBatch(): Promise<number> {
+  if (!openrouterEnabled()) return 0
+  const n = Number(process.env.APPWATCH_BUILD_BATCH) || 15
+  const rows = db.prepare(`SELECT DISTINCT w.app_id, w.name, w.genre, w.description FROM app_watch w
+    LEFT JOIN app_analysis a ON a.app_id = w.app_id
+    WHERE a.build_ts IS NULL ORDER BY w.rank ASC LIMIT ?`).all(n) as
+    { app_id: string; name: string; genre: string; description: string }[]
+  if (rows.length === 0) return 0
+  const system =
+    '你在帮一个用 AI 辅助编码(vibe coding)快速做产品的小团队筛选"可复刻"的 app 机会。\n' +
+    '对每个 app 判断 buildable：\n' +
+    'buildable=true：逻辑相对简单、小团队几周内 + AI 编码能做出可用版本（如：工具/效率、内容/资讯、清单/笔记、简单社交/社区、模板化电商、轻量小游戏、订阅打卡、AI 套壳应用等）。\n' +
+    'buildable=false：① 政府/公共服务/政务/银行牌照/运营商类；② 重度研发——深科技(AI 训练/算法壁垒)、强监管金融基建、地图/导航大数据、AAA/大型 3D 游戏、硬件依赖、需大团队长期投入或海量内容/数据网络效应的。\n' +
+    'type 用一个短词标注类别（如 工具/内容/社交/电商/游戏/金融/政府/出行/AI工具/教育/健康 等）。\n' +
+    '只返回 JSON：{"items":[{"i":序号,"buildable":true/false,"type":"...","reason":"一句话中文理由"}]}'
+  const user = rows.map((x, i) => `[${i}] ${x.name}（类别:${x.genre || '?'}）简介:${(x.description || '(无)').slice(0, 200)}`).join('\n').slice(0, 7000)
+  const res = await generateContent(system, user)
+  const items = (res?.data?.items ?? []) as { i: number; buildable: boolean; type: string; reason: string }[]
+  if (!Array.isArray(items)) return 0
+  const now = Date.now()
+  const up = db.prepare(`INSERT INTO app_analysis(app_id, name, buildable, app_type, build_reason, build_ts)
+    VALUES(?,?,?,?,?,?) ON CONFLICT(app_id) DO UPDATE SET buildable=excluded.buildable, app_type=excluded.app_type, build_reason=excluded.build_reason, build_ts=excluded.build_ts`)
+  let done = 0
+  const seen = new Set<number>()
+  const tx = db.transaction(() => {
+    for (const it of items) {
+      const row = rows[it.i]; if (!row) continue
+      seen.add(it.i)
+      up.run(row.app_id, row.name, it.buildable === true ? 1 : 0, (it.type || '').slice(0, 24), (it.reason || '').slice(0, 300), now)
+      done++
+    }
+    // 未返回的也标记 build_ts，避免反复重试同一批（buildable 置 0/未知）
+    rows.forEach((row, i) => { if (!seen.has(i)) up.run(row.app_id, row.name, 0, '', '', now) })
+  })
+  for (let a = 0; a < 4; a++) { try { tx(); break } catch (e) { if (!/locked|busy/i.test((e as Error).message) || a === 3) throw e; await sleep(800 * (a + 1)) } }
+  if (done) console.log(`[appwatch] 可复刻性分类 ${done} 个 app`)
+  return done
+}
+
+export function startBuildClassifier(): void {
+  if ((process.env.APPWATCH_ENABLED ?? '1') === '0' || !openrouterEnabled()) return
+  const loop = async () => {
+    try { await classifyBuildabilityBatch() } catch (e) { console.warn('[appwatch] build-classify failed:', (e as Error).message) }
+    setTimeout(loop, Number(process.env.APPWATCH_BUILD_MS) || 45_000)
+  }
+  setTimeout(loop, 150_000)
 }
 
 export function startAppAnalyzer(): void {

@@ -361,7 +361,7 @@ export function registerSocialIntel(app: FastifyInstance): void {
   app.get('/api/internal/social/appwatch', async (req, reply) => {
     if (!requireAdmin(req, reply)) return
     const q = req.query as Record<string, string>
-    return listAppWatch({ store: q.store || 'appstore', country: q.country || undefined, chart: q.chart || 'free', sort: q.sort || 'rank', limit: q.limit ? Number(q.limit) : 200 })
+    return listAppWatch({ store: q.store || 'appstore', country: q.country || undefined, chart: q.chart || 'free', sort: q.sort || 'rank', limit: q.limit ? Number(q.limit) : 200, buildable: q.buildable === '1' })
   })
   app.post('/api/internal/social/appwatch/refresh', async (req, reply) => {
     if (!requireAdmin(req, reply)) return
