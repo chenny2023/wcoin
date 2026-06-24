@@ -5,6 +5,7 @@ import { runSocialIntelOnce, runCustomQuery, twDiag, twitterApiEnabled, scCredit
 import { PRODUCTS, productByKey } from './products.ts'
 import { PANEL_HTML } from './panel.ts'
 import { gzipSync } from 'node:zlib'
+import { createHash } from 'node:crypto'
 // 面板是静态外壳，启动时预压一次，按 Accept-Encoding 直发 gzip（无新依赖，省 ~75% 传输）
 const PANEL_BUF = Buffer.from(PANEL_HTML)
 const PANEL_GZ = gzipSync(PANEL_BUF, { level: 9 })
@@ -27,6 +28,24 @@ function requireAdmin(req: FastifyRequest, reply: FastifyReply): boolean {
 
 export function registerSocialIntel(app: FastifyInstance): void {
   registerWgAuth(app) // Whale Growth 团队验证码登录（/api/internal/auth/*）
+
+  // 数据接口 ETag/条件请求：内容哈希做 ETag，未变直接 304（空体）。
+  // 面板每 25s 轮询 stats/analytics/kols，数据慢变 → 多数请求命中 304，省传输。无新依赖。
+  app.addHook('onSend', async (req, reply, payload) => {
+    if (req.method !== 'GET') return payload
+    if (!String(req.url).startsWith('/api/internal/social/')) return payload
+    if (reply.statusCode !== 200) return payload
+    if (typeof payload !== 'string' && !Buffer.isBuffer(payload)) return payload
+    const buf = Buffer.isBuffer(payload) ? payload : Buffer.from(payload as string)
+    const tag = 'W/"' + createHash('sha1').update(buf).digest('base64').slice(0, 24) + '"'
+    reply.header('ETag', tag)
+    if (!reply.hasHeader('Cache-Control')) reply.header('Cache-Control', 'no-cache')
+    if (req.headers['if-none-match'] === tag) {
+      reply.code(304)
+      return ''
+    }
+    return payload
+  })
 
   // 面板（HTML 外壳无需鉴权；下面的数据接口才校验 token）
   app.get('/internal/social', async (req, reply) => {

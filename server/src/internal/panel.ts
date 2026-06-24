@@ -260,6 +260,18 @@ export const PANEL_HTML = `<!doctype html>
   .drill .drill-b{color:var(--mut);line-height:1.65;margin-bottom:11px}
   .drill .drill-b .pill{margin:2px 2px 0 0;display:inline-block}
   .drill .btn{margin:0 6px 0 0}
+
+  /* ── 风格铺到其余 tab（全局精修，自动应用到 信号/KOL/观察室/洞察/选题/草稿/采集）── */
+  .panel h3::before{content:"";width:3px;height:14px;border-radius:2px;background:var(--grad);box-shadow:0 0 8px #8b5cff99;flex:0 0 auto}
+  .toolbar{background:linear-gradient(180deg,rgba(20,27,48,.72),rgba(12,17,30,.72));backdrop-filter:blur(10px);box-shadow:inset 0 1px 0 #ffffff0c}
+  .card::before{content:"";position:absolute;left:0;top:11px;bottom:11px;width:2px;border-radius:0 2px 2px 0;background:var(--grad);opacity:0;transition:opacity .18s,box-shadow .18s}
+  .card:hover::before{opacity:.95;box-shadow:0 0 11px #8b5cffcc}
+  .empty{background:linear-gradient(180deg,var(--panel2),var(--panel))}
+  .empty .big{filter:drop-shadow(0 0 16px #8b5cff66)}
+  .tbl th{border-bottom-color:#2a3656}
+  .tbl tr:hover td{background:#101a2e}
+  .title{font-family:var(--font-disp);letter-spacing:.1px}
+  .barfill{box-shadow:0 0 8px #8b5cff66}
 </style></head>
 <body>
 <div id="app"></div>
