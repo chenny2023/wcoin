@@ -235,7 +235,44 @@ function ChainBars({ rows }: { rows: any[] }) {
           )
         })}
       </div>
-      <p className="mt-3 text-[11px] text-white/35">Share view normalises chains so smaller networks stay readable when one chain dominates.</p>
+      <p className="mt-3 text-[11px] text-white/35">
+        Indexed on-chain activity from labelled casino wallets — weighted toward chains where public
+        name-tags are richest (ETH), so it reflects our <em>coverage</em>, not the true market split.
+        For the authoritative cross-chain picture, see Reserves by chain above.
+      </p>
+    </Card>
+  )
+}
+
+// Authoritative cross-chain distribution: per-chain RESERVES attributed by Arkham
+// across every chain (BTC/Tron/SOL fairly represented), unlike the coverage-skewed
+// indexed-volume chart. Reserves can't be wash-traded → the headline chain view.
+function ReservesByChain({ rows }: { rows: any[] }) {
+  if (!rows?.length) return null
+  const total = rows.reduce((s, r) => s + (r.usd || 0), 0) || 1
+  return (
+    <Card className="p-5">
+      <div className="mb-1 flex items-center justify-between">
+        <h3 className="font-display text-base font-semibold">Reserves by chain</h3>
+        <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-300/80">Arkham-attributed</span>
+      </div>
+      <p className="mb-4 text-[11px] text-white/35">Where tracked operators actually hold funds across chains — authoritative attribution, not wash-tradeable.</p>
+      <div className="space-y-2.5">
+        {rows.slice(0, 9).map((c) => {
+          const share = (c.usd || 0) / total
+          return (
+            <div key={c.chain} className="flex items-center gap-3">
+              <div className="w-20 shrink-0">
+                <ChainPill chain={c.chain} />
+              </div>
+              <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/5">
+                <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-emerald-600" style={{ width: `${Math.max(2, share * 100)}%` }} />
+              </div>
+              <span className="w-28 shrink-0 text-right text-sm font-semibold tabular-nums text-white/70">{(share * 100).toFixed(1)}% · {fmtUsd(c.usd)}</span>
+            </div>
+          )
+        })}
+      </div>
     </Card>
   )
 }
@@ -591,8 +628,10 @@ export default function Daily() {
 
             <div className="grid gap-6 lg:grid-cols-2">
               <MoversTable rows={p?.topMovers ?? []} />
-              <ChainBars rows={p?.chainVolume ?? []} />
+              <ReservesByChain rows={p?.chainReserves ?? []} />
             </div>
+
+            <ChainBars rows={p?.chainVolume ?? []} />
 
             <div className="grid gap-6 lg:grid-cols-2">
               <WhaleGroups groups={p?.whaleGroups ?? []} events={p?.whales ?? []} />

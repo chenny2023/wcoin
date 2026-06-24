@@ -85,6 +85,15 @@ export async function generateMarketSnapshot(): Promise<void> {
   )) as { chain: string; v: number }[]
   const vol24ByChain = new Map(chainRows24.map((c) => [c.chain, c.v ?? 0]))
 
+  // AUTHORITATIVE cross-chain split: per-chain RESERVES from Arkham's portfolio
+  // (the indexed per-chain VOLUME above is ETH-skewed by our labeling coverage;
+  // reserves are attributed by Arkham across every chain incl. BTC/Tron/SOL, and
+  // can't be wash-traded). Small table (~33 entities) → direct read.
+  const chainReserveRows = db
+    .prepare('SELECT chain, SUM(usd) v, COUNT(DISTINCT key) casinos FROM arkham_chain_reserves GROUP BY chain ORDER BY v DESC')
+    .all() as { chain: string; v: number; casinos: number }[]
+  const totChainReserves = chainReserveRows.reduce((s, c) => s + (c.v ?? 0), 0) || 1
+
   // recent verified whale transfers (worker; indexed by usd)
   const whales = (await workerAll(
     `SELECT label, chain, usd, direction, ts FROM transfers WHERE category='casino' AND ts>=? AND usd>=50000 ${NOT_UNATTR} ORDER BY ts DESC LIMIT 40`,
@@ -161,6 +170,9 @@ export async function generateMarketSnapshot(): Promise<void> {
       .map((b) => ({ label: b.brand, vol24h: b.volume24h ?? 0, vol7d: b.volume7d ?? 0, net7d: b.net7d ?? 0, change24h: b.change24h ?? null, repSignal: b.trust ?? null, trust: b.trust ?? null, confidence: b.confidence ?? 'medium' })),
     topReserves: reserveRows.slice(0, 8).map((b) => ({ label: b.brand, reserves: b.reserves, level: coverageLevel(b), confidence: b.confidence ?? 'medium', coverage: b.reserveCoverage ?? null })),
     chainVolume: chainRows.map((c) => ({ chain: c.chain, vol7d: c.v ?? 0, vol24h: vol24ByChain.get(c.chain) ?? 0 })),
+    // authoritative cross-chain reserve split (Arkham-attributed) — the headline
+    // chain distribution; BTC/Tron/SOL fairly represented, not coverage-skewed.
+    chainReserves: chainReserveRows.map((c) => ({ chain: c.chain, usd: c.v ?? 0, share: (c.v ?? 0) / totChainReserves, casinos: c.casinos })),
     // aggregated whale groups (default display) + raw events (expand) — see queries above
     whaleGroups: whaleGroups.map((g) => ({ label: g.label, chain: g.chain, direction: g.direction, count: g.cnt, total: g.total, largest: g.largest })),
     whales: whales.map((w) => ({ label: w.label, chain: w.chain, usd: w.usd, direction: w.direction, ts: w.ts })),
