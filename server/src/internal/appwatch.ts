@@ -153,7 +153,10 @@ export async function refreshAppWatch(): Promise<{ ok: boolean; kept: number }> 
 // ScrapingBee 抓 google.com 系需 custom_google=true（每次 20 credits），故国家数/频率保守、可配。
 const SB_KEY = () => (process.env.scrapingbee || process.env.SCRAPINGBEE_API_KEY || '').trim()
 export const playEnabled = () => !!SB_KEY()
-const PLAY_COUNTRIES = () => (process.env.SOCIAL_PLAY_COUNTRIES || 'us,gb,jp,kr,br,in').split(',').map((c) => c.trim().toLowerCase()).filter(Boolean)
+// 与 App Store 对齐：默认用同一组目标国家（COUNTRIES()，10 国）；可用 SOCIAL_PLAY_COUNTRIES 单独覆盖。
+const PLAY_COUNTRIES = () => process.env.SOCIAL_PLAY_COUNTRIES
+  ? process.env.SOCIAL_PLAY_COUNTRIES.split(',').map((c) => c.trim().toLowerCase()).filter(Boolean)
+  : COUNTRIES()
 const PLAY_CATEGORIES = () => (process.env.SOCIAL_PLAY_CATEGORIES || 'APPLICATION,GAME').split(',').map((c) => c.trim()).filter(Boolean)
 const PLAY_LIMIT = () => Number(process.env.SOCIAL_PLAY_LIMIT) || 120
 
