@@ -1488,15 +1488,13 @@ function getPage(path: string): { html: string } | null {
 
 // dynamic sitemap merging the static core URLs + every generated SEO page
 function buildSitemap(): string {
+  // Only public, server-rendered pages belong here. The /app/* dashboard routes are
+  // login-gated SPA shells (no unique SSR content — identical title/h1), so submitting
+  // them wastes crawl budget and risks a thin/duplicate-content signal. Their public,
+  // indexable equivalents are the SSR SEO pages (/casino/*, /rankings/*, /reports/*, …).
   const core = [
     { loc: '/', freq: 'hourly', pr: '1.0' },
     { loc: '/daily', freq: 'hourly', pr: '0.9' },
-    { loc: '/app/casinos', freq: 'hourly', pr: '0.8' },
-    { loc: '/app/sentiment', freq: 'hourly', pr: '0.8' },
-    { loc: '/app/markets', freq: 'hourly', pr: '0.7' },
-    { loc: '/app/directory', freq: 'daily', pr: '0.7' },
-    { loc: '/app/streamers', freq: 'hourly', pr: '0.6' },
-    { loc: '/app/blockchain', freq: 'hourly', pr: '0.6' },
   ]
   // only indexable lifecycle states belong in the sitemap; limited_public_noindex /
   // internal_only / archived pages are accessible on-site but excluded from search.
