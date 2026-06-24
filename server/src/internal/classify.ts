@@ -51,8 +51,9 @@ interface Cls { i: number; keep: boolean; actor_type: string; intent_tier: strin
 async function classifyProductBatch(product: string): Promise<number> {
   const prod = productByKey(product)
   if (!prod) return 0
+  // LinkedIn 先全文补全(enriched_ts)再分类——DDG 片段太薄，精准规则会误杀；未补全前留 'new' 可见。
   const allRows = db
-    .prepare(`SELECT id, platform, kind, title, body, author FROM social_intel WHERE product=? AND classified_ts IS NULL ORDER BY intent DESC, collected_ts DESC LIMIT ?`)
+    .prepare(`SELECT id, platform, kind, title, body, author FROM social_intel WHERE product=? AND classified_ts IS NULL AND NOT (platform='linkedin' AND enriched_ts IS NULL) ORDER BY intent DESC, collected_ts DESC LIMIT ?`)
     .all(product, BATCH) as { id: string; platform: string; kind: string; title: string; body: string; author: string }[]
   if (allRows.length === 0) return 0
 
