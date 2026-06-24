@@ -11,7 +11,10 @@ export const OPENROUTER_KEY = () => env.OPENROUTER_API_KEY ?? ''
 const BASE = () => env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1'
 const TEXT_MODEL = () => env.OPENROUTER_TEXT_MODEL ?? 'x-ai/grok-4.3'
 const TEXT_FALLBACK = () => env.OPENROUTER_TEXT_MODEL_FALLBACK ?? 'x-ai/grok-4.20'
-const IMAGE_MODEL = () => env.OPENROUTER_IMAGE_MODEL ?? 'x-ai/grok-imagine-image-quality'
+// 配图走 xAI 直连（OpenRouter 没有 grok 图像模型）。需 XAI_API_KEY；模型默认 grok 图像，可用 XAI_IMAGE_MODEL 覆盖。
+const XAI_KEY = () => env.XAI_API_KEY ?? ''
+const XAI_IMAGE_BASE = () => env.XAI_IMAGE_BASE_URL ?? 'https://api.x.ai/v1'
+const XAI_IMAGE_MODEL = () => env.XAI_IMAGE_MODEL ?? 'grok-2-image'
 const APP_NAME = () => env.OPENROUTER_APP_NAME ?? 'WCOIN.CASINO'
 const SITE_URL = () => env.OPENROUTER_SITE_URL ?? 'https://wcoin.casino'
 
@@ -89,22 +92,24 @@ export async function generateContent(system: string, user: string): Promise<{ d
   return null
 }
 
-// Generate an image. Returns a data/URL string or null. (OpenRouter image models
-// vary in response shape; we read the common `images`/`data` fields defensively.)
-export async function generateImage(prompt: string, aspect = '1:1'): Promise<string | null> {
-  if (!openrouterEnabled()) return null
+export const imageEnabled = () => !!XAI_KEY()
+// 生成配图：走 xAI 直连（grok image）。返回 URL 或 data: base64，失败/未配 key 返回 null（文案照常）。
+// aspect 仅作签名兼容——grok 图像返回固定尺寸，不传 size。
+export async function generateImage(prompt: string, _aspect = '1:1'): Promise<string | null> {
+  const key = XAI_KEY()
+  if (!key) return null // 未配 XAI_API_KEY → 不出图（grok 图像在 xAI 直连，OpenRouter 无此模型）
   try {
-    const res = await webFetch(`${BASE()}/images/generations`, {
+    const res = await webFetch(`${XAI_IMAGE_BASE()}/images/generations`, {
       method: 'POST',
-      headers: headers(),
-      body: JSON.stringify({ model: IMAGE_MODEL(), prompt, n: 1, size: aspect === '16:9' ? '1792x1024' : '1024x1024' }),
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: XAI_IMAGE_MODEL(), prompt: String(prompt).slice(0, 1024), n: 1, response_format: 'url' }),
       signal: AbortSignal.timeout(120_000),
     })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const j = (await res.json()) as any
-    return j?.data?.[0]?.url ?? j?.data?.[0]?.b64_json ?? j?.images?.[0]?.url ?? null
+    if (!res.ok) { console.warn(`[content] xai image HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`); return null }
+    const d = ((await res.json()) as any)?.data?.[0]
+    return d?.url ? d.url : d?.b64_json ? `data:image/png;base64,${d.b64_json}` : null
   } catch (e) {
-    console.warn('[content] image gen failed:', (e as Error).message)
+    console.warn('[content] xai image failed:', (e as Error).message)
     return null
   }
 }
