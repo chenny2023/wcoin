@@ -240,6 +240,26 @@ export const PANEL_HTML = `<!doctype html>
   /* 主操作按钮：渐变流动 + 悬停辉光脉冲 */
   .btn.pri{background:linear-gradient(120deg,#8b5cff,#3fe0ff,#8b5cff);background-size:200% auto;animation:hueShift 5s linear infinite}
   .livedot .live{box-shadow:0 0 10px var(--good)}
+
+  /* ── 健康/风险表盘 ──────────────────────────────────────────────── */
+  .gauge{display:flex;align-items:center;gap:15px;padding:2px 2px 13px;border-bottom:1px solid var(--line);margin-bottom:12px}
+  .gauge svg{flex:0 0 auto}
+  .gauge-meta{font-size:12px;color:var(--mut)}
+  .gauge-meta .gm-row{display:flex;align-items:center;gap:6px;margin:3px 0}
+  .gauge-meta .gm-row.warn{color:var(--warn)}
+  .gauge-meta .gm-row b{color:var(--fg);font-variant-numeric:tabular-nums;font-family:var(--font-mono)}
+  .gm-dot{width:8px;height:8px;border-radius:50%;box-shadow:0 0 7px currentColor}
+  .gauge-meta .gm-sub{font-size:10px;color:var(--dim);margin-top:4px;letter-spacing:.3px}
+  /* ── 节点下钻弹层 ──────────────────────────────────────────────── */
+  .drill{position:fixed;z-index:70;display:none;width:252px;background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--acc2);
+    border-radius:13px;padding:13px 14px 12px;box-shadow:0 18px 50px #000b,0 0 0 1px #8b5cff22;font-size:12px}
+  .drill.on{display:block;animation:fadeUp .16s ease}
+  .drill .drill-x{position:absolute;top:7px;right:9px;background:transparent;border:0;color:var(--mut);cursor:pointer;font-size:13px;line-height:1}
+  .drill .drill-x:hover{color:var(--fg)}
+  .drill .drill-h{font-family:var(--font-disp);font-weight:700;font-size:13px;margin-bottom:7px;padding-right:16px}
+  .drill .drill-b{color:var(--mut);line-height:1.65;margin-bottom:11px}
+  .drill .drill-b .pill{margin:2px 2px 0 0;display:inline-block}
+  .drill .btn{margin:0 6px 0 0}
 </style></head>
 <body>
 <div id="app"></div>
@@ -343,7 +363,7 @@ const EN={
 '不可解·仅记录':'Unsolvable · record only',
 '发送验证码登录':'Send code to sign in',
 '概览 / 分析':'Overview / Analytics',
-'🐋 鲸群拓扑':'🐋 Whale Swarm','⚡ 增长管道':'⚡ Growth Pipeline','采集 Collect':'Collect','分类 Classify':'Classify','起草 Draft':'Draft','KOL 候选':'KOL Pool','机会':'opps','手动采集':'Collect now','实时数据':'Live',
+'🐋 鲸群拓扑':'🐋 Whale Swarm','⚡ 增长管道':'⚡ Growth Pipeline','采集 Collect':'Collect','分类 Classify':'Classify','起草 Draft':'Draft','KOL 候选':'KOL Pool','机会':'opps','手动采集':'Collect now','实时数据':'Live','点击节点下钻':'click a node to drill in','健康度':'Health','待分类积压':'Backlog','看该平台信号 →':'View platform signals →','看该产品信号 →':'View product signals →','查看 KOL 候选 →':'Open KOL pool →','机会信号':'Opportunity','打开原帖':'Open post',
 '可推荐自有产品':'can recommend our products',
 '最高意图机会贴':'Top high-intent opportunities',
 '对方未开放私信':'DMs not open',
@@ -553,6 +573,9 @@ function metaPills(s){let h='';if(s.actor_type&&s.actor_type!=='noise')h+='<span
 const H={}
 document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if(!el)return;const a=el.dataset.act;if(H[a]){e.preventDefault();H[a](el.dataset.id,el)}})
 H.go=k=>{tab=k;render()}
+H.drillclose=()=>{const d=document.getElementById('swarmDrill');if(d)d.classList.remove('on')}
+H.goplat=p=>{filters={...filters,platform:p,kind:'',product:'',q:''};const d=document.getElementById('swarmDrill');if(d)d.classList.remove('on');tab='signals';render()}
+H.goprod=p=>{filters={...filters,product:p,platform:'',q:''};const d=document.getElementById('swarmDrill');if(d)d.classList.remove('on');tab='signals';render()}
 H.logout=()=>{token='';localStorage.removeItem(TOKEN_KEY);render()}
 H.run=async()=>{toast('已触发采集…结果稍后刷新可见');await api('/api/internal/social/run',{method:'POST'})}
 H.lang=()=>{lang=lang==='zh'?'en':'zh';localStorage.setItem('wg_lang',lang);document.documentElement.lang=lang;render()}
@@ -591,7 +614,7 @@ function skeleton(){$('#app').innerHTML=shell('<div class="skel"></div><div clas
 async function render(loginStep){
   if(!token){loginView(loginStep);return}
   if(!products.length){try{const p=await api('/api/internal/social/products');products=p.products||[]}catch(e){return}}
-  if(tab!=='overview'&&_swarmStop){_swarmStop();_swarmStop=null} // 离开概览停掉拓扑动画
+  if(tab!=='overview'){if(_swarmStop){_swarmStop();_swarmStop=null}if(_ovPoll){clearInterval(_ovPoll);_ovPoll=null}} // 离开概览：停拓扑动画 + 停实时轮询
   skeleton()
   try{
     if(tab==='overview')await renderOverview()
@@ -612,7 +635,7 @@ function bars(rows,labFn){const max=Math.max(1,...rows.map(r=>r.n));return rows.
   '<span class="num tabnum">'+r.n+'</span></div>').join('')||'<div class="dim" style="font-size:12px">暂无数据</div>'}
 
 // ── 鲸群拓扑（canvas 力导向图，真实数据）─────────────────────────────────────────
-let _swarmStop=null
+let _swarmStop=null,_ovPoll=null
 // 预渲染辉光精灵：每种颜色只生成一次，绘制时 drawImage 缩放——避免每帧 createRadialGradient（性能关键）
 const _spriteCache={}
 function _glowSprite(col){const k='g'+col;if(_spriteCache[k])return _spriteCache[k];const s=64,oc=document.createElement('canvas');oc.width=oc.height=s;const o=oc.getContext('2d');const g=o.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);g.addColorStop(0,col);g.addColorStop(.4,col+'4d');g.addColorStop(1,col+'00');o.fillStyle=g;o.fillRect(0,0,s,s);return _spriteCache[k]=oc}
@@ -626,10 +649,10 @@ function initSwarm(canvas,tip,data){
   const N=[],byId={},E=[];const add=n=>{N.push(n);byId[n.id]=n;return n}
   const rnd=()=>({x:w/2+(Math.sin(N.length*12.9)*0.5+0.5-0.5)*w*0.6,y:h/2+(Math.cos(N.length*7.3)*0.5)*h*0.6,vx:0,vy:0})
   const core=add({id:'core',type:'core',r:15,label:'Whale Growth',x:w/2,y:h/2,vx:0,vy:0})
-  ;(data.products||[]).forEach(p=>{const n=add({id:'p_'+p.key,type:'product',r:11,label:p.name,meta:(p.n||0)+' 信号',...rnd()});E.push([n,core,85])})
-  ;(data.platforms||[]).forEach(p=>{const n=add({id:'pl_'+p.platform,type:'platform',r:7+Math.min(6,Math.log10((p.n||1))*3),label:p.platform,meta:(p.n||0)+' 条',...rnd()});E.push([n,core,130])})
-  ;(data.whales||[]).forEach(k=>{const r=6+Math.min(12,Math.log10((k.followers||1)+1)*2.5);const tgt=byId['p_'+k.fit_product]||core;const n=add({id:'w_'+k.handle,type:'whale',r,label:'@'+k.handle,meta:(k.name?k.name+' · ':'')+fmtN(k.followers||0)+'粉 · 信用'+(k.cred_score||0),...rnd()});E.push([n,tgt,72])})
-  ;(data.signals||[]).forEach(s=>{const tgt=byId['pl_'+s.platform]||core;const n=add({id:'s_'+s.id,type:'signal',r:3+(s.intent||0)*4,label:(s.title||'').slice(0,60),meta:s.platform+' · 意图'+((s.intent||0).toFixed(2)),...rnd()});E.push([n,tgt,55])})
+  ;(data.products||[]).forEach(p=>{const n=add({id:'p_'+p.key,type:'product',r:11,label:p.name,meta:(p.n||0)+' 信号',prod:p.key,...rnd()});E.push([n,core,85])})
+  ;(data.platforms||[]).forEach(p=>{const n=add({id:'pl_'+p.platform,type:'platform',r:7+Math.min(6,Math.log10((p.n||1))*3),label:p.platform,meta:(p.n||0)+' 条',plat:p.platform,...rnd()});E.push([n,core,130])})
+  ;(data.whales||[]).forEach(k=>{const r=6+Math.min(12,Math.log10((k.followers||1)+1)*2.5);const tgt=byId['p_'+k.fit_product]||core;const n=add({id:'w_'+k.handle,type:'whale',r,label:'@'+k.handle,meta:(k.name?k.name+' · ':'')+fmtN(k.followers||0)+'粉 · 信用'+(k.cred_score||0),kol:k,...rnd()});E.push([n,tgt,72])})
+  ;(data.signals||[]).forEach(s=>{const tgt=byId['pl_'+s.platform]||core;const n=add({id:'s_'+s.id,type:'signal',r:3+(s.intent||0)*4,label:(s.title||'').slice(0,60),meta:s.platform+' · 意图'+((s.intent||0).toFixed(2)),sig:s,...rnd()});E.push([n,tgt,55])})
   const COL={core:'#ffffff',product:'#c96bff',platform:'#3fe0ff',whale:'#ffb24a',signal:'#8b5cff'}
   let hover=null,t=0,raf=0,energy=1,onScreen=true
   function stepSim(){
@@ -667,10 +690,20 @@ function initSwarm(canvas,tip,data){
   const onLeave=()=>{hover=null;tip.classList.remove('on')}
   const onResize=()=>{const s=size();w=s.w;h=s.h;energy=Math.max(energy,0.5)}
   const onVis=()=>sync()
+  // 点击节点 → 下钻弹层（带操作）
+  function hit(ev){const r=canvas.getBoundingClientRect();const mx=ev.clientX-r.left,my=ev.clientY-r.top;let best=null,bd=1e9;for(const n of N){const dx=n.x-mx,dy=n.y-my,d=Math.sqrt(dx*dx+dy*dy);if(d<n.r+7&&d<bd){bd=d;best=n}}return best}
+  function drillHTML(n){const x='<button class="drill-x" data-act="drillclose">✕</button>';
+    if(n.type==='whale'){const k=n.kol||{};return x+'<div class="drill-h" style="color:#ffb24a">🐋 '+esc(n.label)+'</div><div class="drill-b">'+esc(k.name||'未知')+'<br>'+fmtN(k.followers||0)+' 粉丝 · 信用 '+(k.cred_score||0)+' · 契合 '+esc(pname(k.fit_product))+'</div><button class="btn sm pri" data-act="go" data-id="kol">查看 KOL 候选 →</button>'}
+    if(n.type==='signal'){const s=n.sig||{};return x+'<div class="drill-h" style="color:#9b7bff">📍 机会信号 · 意图 '+((s.intent||0).toFixed(2))+'</div><div class="drill-b">'+esc((s.title||'').slice(0,120))+'<br><span class="pill plat">'+esc(s.platform||'')+'</span><span class="pill prod">'+esc(pname(s.product))+'</span></div>'+(s.url?'<a class="btn sm" href="'+esc(s.url)+'" target="_blank">打开原帖</a>':'')+'<button class="btn sm pri" data-act="mkdraft" data-id="'+esc(String(s.id))+'">生成草稿</button>'}
+    if(n.type==='platform')return x+'<div class="drill-h" style="color:#3fe0ff">🌐 平台 · '+esc(n.label)+'</div><div class="drill-b">'+esc(n.meta||'')+'</div><button class="btn sm pri" data-act="goplat" data-id="'+esc(n.plat||n.label)+'">看该平台信号 →</button>'
+    if(n.type==='product')return x+'<div class="drill-h" style="color:#c96bff">📦 产品 · '+esc(n.label)+'</div><div class="drill-b">'+esc(n.meta||'')+'</div><button class="btn sm pri" data-act="goprod" data-id="'+esc(n.prod||'')+'">看该产品信号 →</button>'
+    return x+'<div class="drill-h">'+esc(n.label)+'</div>'}
+  function onClick(ev){const d=document.getElementById('swarmDrill');if(!d)return;const n=hit(ev);if(!n||n.type==='core'){d.classList.remove('on');return}d.innerHTML=drillHTML(n);d.style.left=Math.min(ev.clientX+16,innerWidth-266)+'px';d.style.top=Math.min(ev.clientY+10,innerHeight-150)+'px';d.classList.add('on')}
+  function onDocClick(e){if(e.target.closest('#swarmDrill')||e.target.closest('#swarm'))return;const d=document.getElementById('swarmDrill');if(d)d.classList.remove('on')}
   let io=null;if('IntersectionObserver' in window){io=new IntersectionObserver(es=>{onScreen=es[0].isIntersecting;sync()},{threshold:0.01});io.observe(canvas)}
-  canvas.addEventListener('mousemove',onMove);canvas.addEventListener('mouseleave',onLeave);addEventListener('resize',onResize);document.addEventListener('visibilitychange',onVis)
+  canvas.addEventListener('mousemove',onMove);canvas.addEventListener('mouseleave',onLeave);canvas.addEventListener('click',onClick);addEventListener('resize',onResize);document.addEventListener('visibilitychange',onVis);document.addEventListener('click',onDocClick)
   sync()
-  _swarmStop=()=>{pause();if(io)io.disconnect();canvas.removeEventListener('mousemove',onMove);canvas.removeEventListener('mouseleave',onLeave);removeEventListener('resize',onResize);document.removeEventListener('visibilitychange',onVis)}
+  _swarmStop=()=>{pause();if(io)io.disconnect();canvas.removeEventListener('mousemove',onMove);canvas.removeEventListener('mouseleave',onLeave);canvas.removeEventListener('click',onClick);removeEventListener('resize',onResize);document.removeEventListener('visibilitychange',onVis);document.removeEventListener('click',onDocClick)}
 }
 async function renderOverview(){
   // 三个独立接口并行拉取，首屏更快（原来串行 3 个 RTT → 现在 1 个 RTT）
@@ -680,14 +713,19 @@ async function renderOverview(){
     api('/api/internal/social/kols').catch(()=>({items:[],stats:{}}))
   ])
   const s=a.sentiment||{pos:0,neg:0,neu:0};const stot=(s.pos||0)+(s.neg||0)+(s.neu||0)||1
-  const demandN=(a.byKind.find(k=>k.kind==='demand')||{}).n||0
-  const compN=(a.byKind.find(k=>k.kind==='competitor')||{}).n||0
-  const kpis='<div class="kpis">'+
-    '<div class="kpi accent"><span class="k-ic">📈</span><div class="k-lbl">总信号</div><div class="k-val tabnum">'+st.total+'</div><div class="k-sub">全部历史</div></div>'+
+  // ── 可复用构建器：首屏渲染 + 25s 实时轮询 共用同一套 HTML ──────────────────
+  const buildKpis=(a,st)=>{const demandN=(a.byKind.find(k=>k.kind==='demand')||{}).n||0,compN=(a.byKind.find(k=>k.kind==='competitor')||{}).n||0;return '<div class="kpis">'+
+    '<div class="kpi accent"><span class="k-ic">📈</span><div class="k-lbl">总信号</div><div class="k-val tabnum">'+(st.total||0)+'</div><div class="k-sub">全部历史</div></div>'+
     '<div class="kpi"><span class="k-ic">🕐</span><div class="k-lbl">近 '+aDays+' 天</div><div class="k-val tabnum">'+a.byProduct.reduce((x,r)=>x+r.n,0)+'</div><div class="k-sub">新采集信号</div></div>'+
     '<div class="kpi"><span class="k-ic">🎯</span><div class="k-lbl">需求/机会</div><div class="k-val tabnum">'+demandN+'</div><div class="k-sub">可推荐自有产品</div></div>'+
     '<div class="kpi"><span class="k-ic">⚔️</span><div class="k-lbl">竞品讨论</div><div class="k-val tabnum">'+compN+'</div><div class="k-sub">竞品相关贴</div></div>'+
-    '<div class="kpi"><span class="k-ic">✍️</span><div class="k-lbl">待审草稿</div><div class="k-val tabnum">'+st.pendingDrafts+'</div><div class="k-sub">等待人工发布</div></div></div>'
+    '<div class="kpi"><span class="k-ic">✍️</span><div class="k-lbl">待审草稿</div><div class="k-val tabnum">'+(st.pendingDrafts||0)+'</div><div class="k-sub">等待人工发布</div></div></div>'}
+  const buildGauge=(st)=>{const hl=st.health||[];const tot=hl.length||1;const healthy=hl.filter(h=>h.last24h>0).length;const pctH=Math.round(healthy/tot*100);const backlog=st.unclassified||0;const col=pctH>=70?'#28e0a0':pctH>=40?'#ffc24a':'#ff5b7a';const R=34,C=2*Math.PI*R,arc=C*0.75,fg=arc*pctH/100;
+    return '<div class="gauge"><svg width="90" height="90" viewBox="0 0 92 92"><g transform="rotate(135 46 46)"><circle cx="46" cy="46" r="34" fill="none" stroke="#1a2336" stroke-width="8" stroke-dasharray="'+arc.toFixed(1)+' '+C.toFixed(1)+'" stroke-linecap="round"/><circle cx="46" cy="46" r="34" fill="none" stroke="'+col+'" stroke-width="8" stroke-dasharray="'+fg.toFixed(1)+' '+C.toFixed(1)+'" stroke-linecap="round" style="filter:drop-shadow(0 0 5px '+col+'aa)"/></g><text x="46" y="44" text-anchor="middle" font-size="21" font-weight="800" fill="'+col+'" font-family="Space Grotesk,sans-serif">'+pctH+'</text><text x="46" y="59" text-anchor="middle" font-size="9" fill="#8a98ad">健康度</text></svg>'+
+    '<div class="gauge-meta"><div class="gm-row"><span class="gm-dot" style="color:'+col+';background:'+col+'"></span>采集源 <b>'+healthy+'/'+tot+'</b> 正常</div><div class="gm-row'+(backlog>200?' warn':'')+'">待分类积压 <b>'+backlog+'</b></div><div class="gm-sub">⟳ 每 25s 自动刷新</div></div></div>'}
+  const buildPipe=(st,kr)=>{const kstats=kr.stats||{};const classified=Math.max(0,(st.total||0)-(st.unclassified||0));const steps=[['🛰️','采集 Collect',st.total||0,st.total||0],['🧠','分类 Classify',classified,st.total||0],['✍️','起草 Draft',st.pendingDrafts||0,Math.max(st.pendingDrafts||0,1)],['🐋','KOL 候选',kstats.recommended||0,Math.max(kstats.total||0,1)],['🤝','已联系',kstats.contacted||0,Math.max(kstats.recommended||0,1)]];return steps.map(x=>{const pc=Math.round(Math.min(1,x[2]/(x[3]||1))*100);return '<div class="pstep"><div class="pico">'+x[0]+'</div><div class="pmid"><div class="pt">'+x[1]+'</div><div class="pbar"><i style="width:'+pc+'%"></i></div></div><div class="pn">'+fmtN(x[2])+'</div><span class="pdot" style="background:'+(x[2]>0?'var(--good)':'var(--dim)')+'"></span></div>'}).join('')}
+  const buildHealthInner=(st)=>{const hrows=(st.health||[]).map(h=>'<tr><td>'+esc(h.platform)+'</td><td class="tabnum">'+h.total+'</td><td class="tabnum" style="color:'+(h.last24h>0?'#5ff0b0':'#ff5b6e')+'">'+h.last24h+'</td><td class="tabnum dim">'+(h.dropped||0)+'</td><td class="dim" style="font-size:11px">'+(h.last_ts?ago(h.last_ts):'从未')+'</td></tr>').join('');return '<div class="rationale" style="margin:0 0 10px">🐦 '+esc(st.twDiag||'')+'　|　X启用(key已读): '+(st.xEnabled?'✅是':'❌否')+(typeof st.scCredits==='number'&&st.scCredits>=0?'　|　🧵 Threads credits: '+(st.scCredits<150?'<b style="color:var(--bad)">'+st.scCredits+' (low)</b>':st.scCredits)+(st.liDiag?'　|　🔗 '+esc(st.liDiag):''):'')+'</div><table class="tbl"><tr><th>平台</th><th>总数</th><th>近24h</th><th>已清理</th><th>最后采集</th></tr>'+(hrows||'<tr><td colspan="5" class="dim">暂无</td></tr>')+'</table>'}
+  const kpis='<div id="ov-kpis">'+buildKpis(a,st)+'</div>'
 
   const tmax=Math.max(1,...a.trend.map(t=>t.n))
   const spark='<div class="panel"><h3>📅 采集趋势<span class="tag">近 '+aDays+' 天</span></h3><div class="spark">'+
@@ -719,28 +757,31 @@ async function renderOverview(){
       '<a href="'+esc(o.url)+'" target="_blank" style="flex:1;min-width:200px;color:var(--fg)">'+esc((o.title||'').slice(0,90))+'</a>'+
       '<button class="btn sm pri" data-act="mkdraft" data-id="'+o.id+'">生成草稿</button></div>').join(''):'<div class="dim" style="font-size:12px">暂无未处理的高意图机会</div>')+'</div>'
 
-  // 🩺 采集健康诊断：每平台 总数/近24h/dropped/最后采集，一眼看出哪个源死了
-  const hrows=(st.health||[]).map(h=>'<tr><td>'+esc(h.platform)+'</td><td class="tabnum">'+h.total+'</td><td class="tabnum" style="color:'+(h.last24h>0?'#5ff0b0':'#ff5b6e')+'">'+h.last24h+'</td><td class="tabnum dim">'+(h.dropped||0)+'</td><td class="dim" style="font-size:11px">'+(h.last_ts?ago(h.last_ts):'从未')+'</td></tr>').join('')
-  const health='<div class="panel"><h3>🩺 采集健康<span class="tag">近24h=0(红) 说明该源没采进来 · 待分类积压 '+(st.unclassified||0)+'</span></h3>'+
-    '<div class="rationale" style="margin:0 0 10px">🐦 '+esc(st.twDiag||'')+'　|　X启用(key已读): '+(st.xEnabled?'✅是':'❌否')+(typeof st.scCredits==='number'&&st.scCredits>=0?'　|　🧵 Threads credits: '+(st.scCredits<150?'<b style="color:var(--bad)">'+st.scCredits+' (low)</b>':st.scCredits)+(st.liDiag?'　|　🔗 '+esc(st.liDiag):''):'')+'</div>'+
-    '<table class="tbl"><tr><th>平台</th><th>总数</th><th>近24h</th><th>已清理</th><th>最后采集</th></tr>'+
-    (hrows||'<tr><td colspan="5" class="dim">暂无</td></tr>')+'</table></div>'
+  // 🩺 采集健康诊断：每平台 总数/近24h/dropped/最后采集（内层 ov-health 走实时轮询刷新）
+  const health='<div class="panel"><h3>🩺 采集健康<span class="tag">近24h=0(红) 说明该源没采进来</span></h3><div id="ov-health">'+buildHealthInner(st)+'</div></div>'
 
-  // 增长管道（真实计数）+ 鲸群拓扑数据
-  const kstats=kr.stats||{}
-  const classified=Math.max(0,(st.total||0)-(st.unclassified||0))
-  const steps=[['🛰️','采集 Collect',st.total||0,st.total||0],['🧠','分类 Classify',classified,st.total||0],['✍️','起草 Draft',st.pendingDrafts||0,Math.max(st.pendingDrafts||0,1)],['🐋','KOL 候选',kstats.recommended||0,Math.max(kstats.total||0,1)],['🤝','已联系',kstats.contacted||0,Math.max(kstats.recommended||0,1)]]
-  const pipeHTML=steps.map(s=>{const pc=Math.round(Math.min(1,s[2]/(s[3]||1))*100);return '<div class="pstep"><div class="pico">'+s[0]+'</div><div class="pmid"><div class="pt">'+s[1]+'</div><div class="pbar"><i style="width:'+pc+'%"></i></div></div><div class="pn">'+fmtN(s[2])+'</div><span class="pdot" style="background:'+(s[2]>0?'var(--good)':'var(--dim)')+'"></span></div>'}).join('')
+  // 鲸群拓扑数据（节点可点击下钻）
   const swdata={products:(a.byProduct||[]).map(p=>({key:p.product,name:pname(p.product),n:p.n})),platforms:a.byPlatform||[],whales:(kr.items||[]).slice(0,24),signals:(a.topOpportunities||[]).slice(0,30)}
-  const hero='<div class="hero"><div class="glass"><div class="hero-h">🐋 鲸群拓扑 <span class="tag">'+swdata.whales.length+' KOL · '+swdata.signals.length+' 机会</span></div><canvas class="swarm" id="swarm"></canvas></div>'+
-    '<div class="glass"><div class="hero-h">⚡ 增长管道 <span class="live"></span></div><div class="pipe">'+pipeHTML+'</div></div></div><div class="swarmtip" id="swarmtip"></div>'
+  const hero='<div class="hero"><div class="glass"><div class="hero-h">🐋 鲸群拓扑 <span class="tag">'+swdata.whales.length+' KOL · '+swdata.signals.length+' 机会 · 点击节点下钻</span></div><canvas class="swarm" id="swarm"></canvas></div>'+
+    '<div class="glass"><div class="hero-h">⚡ 增长管道 <span class="live"></span></div><div id="ov-gauge">'+buildGauge(st)+'</div><div class="pipe" id="ov-pipe">'+buildPipe(st,kr)+'</div></div></div><div class="swarmtip" id="swarmtip"></div><div class="drill" id="swarmDrill"></div>'
   const head='<div class="crow" style="margin-bottom:14px"><p class="lead" style="margin:0">竞品动向 · 用户需求 · 推荐机会，一屏掌握。</p>'+
     '<select class="right" id="a-days"><option value="7"'+(aDays===7?' selected':'')+'>近 7 天</option><option value="14"'+(aDays===14?' selected':'')+'>近 14 天</option><option value="30"'+(aDays===30?' selected':'')+'>近 30 天</option></select></div>'
 
   $('#app').innerHTML=shell(head+kpis+hero+health+'<div class="grid2">'+spark+sentBar+'</div><div class="grid2">'+prodBars+platBars+'</div>'+opp+'<div class="grid2">'+demandTbl+compTbl+'</div>')
   $('#a-days').onchange=e=>{aDays=Number(e.target.value);render()}
   try{initSwarm($('#swarm'),$('#swarmtip'),swdata)}catch(e){/* 拓扑渲染失败不影响其余 */}
-  try{animateCounts('.kpi .k-val,.pstep .pn')}catch(e){}
+  try{animateCounts('#ov-kpis .k-val,#ov-pipe .pn')}catch(e){}
+  // 实时轮询（25s）：静默刷新 KPI / 管道 / 健康表盘 / 采集健康，不重建拓扑、不打断 hover
+  if(_ovPoll)clearInterval(_ovPoll)
+  _ovPoll=setInterval(async()=>{
+    if(tab!=='overview'||document.hidden)return
+    try{const [a2,st2,kr2]=await Promise.all([api('/api/internal/social/analytics?days='+aDays),api('/api/internal/social/stats'),api('/api/internal/social/kols').catch(()=>({items:[],stats:{}}))])
+      const setH=(id,html)=>{const el=document.getElementById(id);if(el)el.innerHTML=html}
+      setH('ov-kpis',buildKpis(a2,st2));setH('ov-gauge',buildGauge(st2));setH('ov-pipe',buildPipe(st2,kr2));setH('ov-health',buildHealthInner(st2))
+      animateCounts('#ov-kpis .k-val,#ov-pipe .pn')
+      const ld=$('.hero-h .live');if(ld){ld.style.animation='none';void ld.offsetWidth;ld.style.animation=''}
+    }catch(e){}
+  },25000)
 }
 
 // ── 信号 ────────────────────────────────────────────────────────────────────
