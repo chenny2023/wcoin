@@ -221,9 +221,9 @@ export async function scoreKolsBatch(): Promise<number> {
 
   const prodLines = PRODUCTS.map((p) => `- ${p.key}: ${p.name} — ${p.pitch}`).join('\n')
   const system =
-    `你在为 iGaming 团队筛选「可合作的 KOL/达人」。我们有三款产品：\n${prodLines}\n` +
-    `目标受众：wcoin=加密赌场玩家(适合赌场博主/crypto/degen 类达人做推广)；hirecx=赌场运营商/客服负责人(适合运营/CX/iGaming B2B 声音做销售合作)；wonix=效果广告投手/联盟(适合投放/UA/affiliate 达人做销售合作)。\n` +
-    `对每个账号判定：fit_product=三者中最匹配的一个 key；fit_score=0-1 该账号受众与该产品的契合度(其粉丝里有多少是我们的潜在用户)；` +
+    `你在为 iGaming 团队筛选「可合作的 KOL/达人」。我们有以下产品：\n${prodLines}\n` +
+    `目标受众：wcoin=加密赌场玩家(适合赌场博主/crypto/degen 类达人做推广)；wcoingame=加密赌场/体育博彩玩家(适合赌场主播/slots 直播/crypto degen 达人做玩家拉新推广)；hirecx=赌场运营商/客服负责人(适合运营/CX/iGaming B2B 声音做销售合作)；wonix=效果广告投手/联盟(适合投放/UA/affiliate 达人做销售合作)。\n` +
+    `对每个账号判定：fit_product=以上产品中最匹配的一个 key；fit_score=0-1 该账号受众与该产品的契合度(其粉丝里有多少是我们的潜在用户)；` +
     `fit_role= media_buyer|affiliate|casino_influencer|operator|cx|crypto|industry|other；` +
     `is_scam=true 当账号像 giveaway/airdrop/薅羊毛/机器人/卖粉/纯币圈喊单/与我们三个领域完全无关。reason=一句话中文理由。\n` +
     `宁缺毋滥：与三领域都不沾边的给 fit_score<0.3。只返回 JSON：{"items":[{"i":序号,"fit_product":"...","fit_score":0-1,"fit_role":"...","is_scam":true|false,"reason":"..."}]}`
@@ -374,6 +374,8 @@ export async function generateKolDm(id: string): Promise<{ ok: boolean; message:
   const collab =
     product.key === 'wcoin'
       ? '推广合作：邀请其向自己的加密赌场玩家受众介绍 wcoin.casino(链上偿付能力/赌场安全数据)，可谈付费推广/联盟分成。'
+      : product.key === 'wcoingame'
+      ? '玩家拉新推广：邀请其向自己的加密赌场/博彩玩家受众推广 wcoingame(加密「直播体育 + iGaming」平台)，可谈 CPA/收入分成(RevShare)/联盟返佣/定制活动码。'
       : product.key === 'hirecx'
         ? '销售/渠道合作：其受众里有赌场运营商/客服负责人，邀请其推荐或转介 hirecx(AI 客服团队)，可谈联盟/返佣/联合内容。'
         : '销售/渠道合作：其受众里有投手/联盟，邀请其推荐或共创关于 wonix(AI 广告创意伙伴)的内容，可谈联盟/返佣。'

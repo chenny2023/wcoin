@@ -76,6 +76,17 @@ function systemFor(productKey: string, painType: string, platform: string, play:
       'want_switch → migration via industry template + a trial shift to de-risk. The product is hirecx.ai; mention ' +
       'it only as the delivery rules allow; speak the "hire a team / personas" language, not "buy a bot". ' + common
     )
+  if (productKey === 'wcoingame')
+    return (
+      'You are a real crypto-gambling player sharing where you actually play. wcoingame.com is an established (2+ years) ' +
+      'crypto "Live Sports & iGaming" platform — crypto deposits/withdrawals, sportsbook + casino (slots / live). ' +
+      'The poster is a player looking for a crypto casino, unhappy with their current one, or asking for recommendations ' +
+      '(pain: ' + (painType || 'unknown') + '). Write a short, genuine peer reply that (1) answers their actual question first ' +
+      '(what to look for: withdrawal speed, provably fair, KYC limits, realistic bonus terms), and (2) shares your own ' +
+      'experience, naturally mentioning wcoingame.com as one you have used — honest and balanced, NOT a hard sell or ad. ' +
+      'NEVER reply to problem-gambling / addiction / self-exclusion posts → set relevant=false. The product is wcoingame.com; ' +
+      'mention it only as the delivery rules allow. ' + common
+    )
   return ( // wcoin — content queue
     'You are a knowledgeable, neutral iGaming/crypto-casino analyst. The poster asks about casino safety, ' +
     'rankings, comparisons, legitimacy or payouts. Write a genuinely neutral, helpful reply that offers a ' +
@@ -91,8 +102,8 @@ function sanitize(text: string, strict: boolean): string {
   let t = text
   if (strict) {
     t = t.replace(/\bhttps?:\/\/\S+/gi, '').replace(/\bwww\.\S+/gi, '')
-    t = t.replace(/\b(?:hirecx|wonix)\.ai\b/gi, '').replace(/\bwcoin\.casino\b/gi, '')
-    t = t.replace(/\b(?:hirecx|wonix|wcoin)\b/gi, '')
+    t = t.replace(/\b(?:hirecx|wonix)\.ai\b/gi, '').replace(/\bwcoin\.casino\b/gi, '').replace(/\bwcoingame\.com\b/gi, '')
+    t = t.replace(/\bwcoingame\b/gi, '').replace(/\b(?:hirecx|wonix|wcoin)\b/gi, '')
     t = t.replace(/\(\s*(?:disclosure|disclaimer)[^)]*\)/gi, '') // 去掉 "(disclosure: ...)" 残留
   }
   return t

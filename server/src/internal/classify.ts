@@ -1,6 +1,6 @@
 import { db } from '../db.ts'
 import { generateContent, openrouterEnabled } from '../content/openrouter.ts'
-import { productByKey } from './products.ts'
+import { productByKey, PRODUCTS } from './products.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 信号分类器（对齐 igaming-social-signal-spec）。用 LLM 给每条信号判定 spec 的结构化字段，
@@ -35,6 +35,12 @@ function rules(product: string): { actors: string; pains: string; extra: string 
     actors: 'operator(运营商/客服或运营负责人) | affiliate | industry | player | noise（玩家纯吐槽 casino 本身=排除）',
     pains: 'dumb(蠢/答非所问/听不懂) | expensive(贵/收费不合理) | integration(接入难/API差) | not_gambling_native(不懂KYC/出款/bonus) | want_switch(想换/找更好的) | selecting(正在选型求推荐) | none',
     extra: 'HireCX=竞品置换：核心(hot)=已在用某 AI 客服且明确不满；温(warm)=正在选型/求推荐 iGaming AI 客服；冷(cold)=人工客服成本高还没上AI。排除：玩家单纯吐槽 casino（与 AI 客服无关）→ keep=false。',
+  }
+  if (product === 'wcoingame') return {
+    actors: 'player(加密赌场/体育博彩玩家=目标) | high_roller(高额玩家) | streamer(赌场主播) | affiliate | industry | noise',
+    pains: 'looking_for_casino(找新赌场/求推荐) | unhappy_current(对现赌场不满/出款慢/想换) | bonus_hunting(找优惠/free spins/rakeback) | crypto_gambling(想用加密货币赌) | comparison(对比赌场 A vs B) | none',
+    extra: 'wcoingame=自家加密赌场(目标=拉玩家来玩)。hot=正在找新赌场/对现赌场不满想换;warm=泛聊加密赌博/找bonus/对比;cold=潜在兴趣。reco：reddit 用 public_reply/content(玩家场景不发 dm)。' +
+      '⚠️ 严格 keep=false：问题赌博/戒赌求助/上瘾/输光求助(problemgambling)、未成年、纯行业B2B(运营商/牌照/合规归 wcoin/hirecx)。',
   }
   return { // wcoin
     actors: 'player(高级玩家) | industry(行业人) | operator | affiliate | noise',
@@ -137,7 +143,7 @@ async function classifyProductBatch(product: string): Promise<number> {
 export async function classifyBatch(): Promise<number> {
   if (!openrouterEnabled()) return 0
   let total = 0
-  for (const p of ['hirecx', 'wonix', 'wcoin']) total += await classifyProductBatch(p)
+  for (const p of PRODUCTS.map((x) => x.key)) total += await classifyProductBatch(p) // 全产品（含新增）自动纳入分类
   return total
 }
 
