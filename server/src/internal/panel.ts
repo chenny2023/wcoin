@@ -613,6 +613,10 @@ function bars(rows,labFn){const max=Math.max(1,...rows.map(r=>r.n));return rows.
 
 // ── 鲸群拓扑（canvas 力导向图，真实数据）─────────────────────────────────────────
 let _swarmStop=null
+// 预渲染辉光精灵：每种颜色只生成一次，绘制时 drawImage 缩放——避免每帧 createRadialGradient（性能关键）
+const _spriteCache={}
+function _glowSprite(col){const k='g'+col;if(_spriteCache[k])return _spriteCache[k];const s=64,oc=document.createElement('canvas');oc.width=oc.height=s;const o=oc.getContext('2d');const g=o.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);g.addColorStop(0,col);g.addColorStop(.4,col+'4d');g.addColorStop(1,col+'00');o.fillStyle=g;o.fillRect(0,0,s,s);return _spriteCache[k]=oc}
+function _partSprite(rgb){const k='p'+rgb;if(_spriteCache[k])return _spriteCache[k];const s=32,oc=document.createElement('canvas');oc.width=oc.height=s;const o=oc.getContext('2d');const g=o.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);g.addColorStop(0,'rgba('+rgb+',.9)');g.addColorStop(1,'rgba('+rgb+',0)');o.fillStyle=g;o.fillRect(0,0,s,s);return _spriteCache[k]=oc}
 function initSwarm(canvas,tip,data){
   if(_swarmStop){_swarmStop();_swarmStop=null}
   if(!canvas)return
@@ -627,25 +631,25 @@ function initSwarm(canvas,tip,data){
   ;(data.whales||[]).forEach(k=>{const r=6+Math.min(12,Math.log10((k.followers||1)+1)*2.5);const tgt=byId['p_'+k.fit_product]||core;const n=add({id:'w_'+k.handle,type:'whale',r,label:'@'+k.handle,meta:(k.name?k.name+' · ':'')+fmtN(k.followers||0)+'粉 · 信用'+(k.cred_score||0),...rnd()});E.push([n,tgt,72])})
   ;(data.signals||[]).forEach(s=>{const tgt=byId['pl_'+s.platform]||core;const n=add({id:'s_'+s.id,type:'signal',r:3+(s.intent||0)*4,label:(s.title||'').slice(0,60),meta:s.platform+' · 意图'+((s.intent||0).toFixed(2)),...rnd()});E.push([n,tgt,55])})
   const COL={core:'#ffffff',product:'#c96bff',platform:'#3fe0ff',whale:'#ffb24a',signal:'#8b5cff'}
-  let hover=null,t=0,raf=0
+  let hover=null,t=0,raf=0,energy=1,onScreen=true
   function stepSim(){
     for(let i=0;i<N.length;i++){const a=N[i];for(let j=i+1;j<N.length;j++){const b=N[j];let dx=a.x-b.x,dy=a.y-b.y;let d2=dx*dx+dy*dy||1;if(d2<24000){const d=Math.sqrt(d2),f=200/d2;dx/=d;dy/=d;a.vx+=dx*f;a.vy+=dy*f;b.vx-=dx*f;b.vy-=dy*f}}}
     for(const e of E){const a=e[0],b=e[1];let dx=b.x-a.x,dy=b.y-a.y;const d=Math.sqrt(dx*dx+dy*dy)||1,f=(d-e[2])*0.012;dx/=d;dy/=d;a.vx+=dx*f;a.vy+=dy*f;b.vx-=dx*f;b.vy-=dy*f}
-    for(const n of N){if(n.type==='core'){n.x=w/2;n.y=h/2;n.vx=0;n.vy=0;continue}n.vx+=(w/2-n.x)*0.0016;n.vy+=(h/2-n.y)*0.0016;n.vx*=0.85;n.vy*=0.85;n.x+=n.vx;n.y+=n.vy;n.x=Math.max(n.r,Math.min(w-n.r,n.x));n.y=Math.max(n.r,Math.min(h-n.r,n.y))}
+    let en=0;for(const n of N){if(n.type==='core'){n.x=w/2;n.y=h/2;n.vx=0;n.vy=0;continue}n.vx+=(w/2-n.x)*0.0016;n.vy+=(h/2-n.y)*0.0016;n.vx*=0.85;n.vy*=0.85;n.x+=n.vx;n.y+=n.vy;n.x=Math.max(n.r,Math.min(w-n.r,n.x));n.y=Math.max(n.r,Math.min(h-n.r,n.y));en+=n.vx*n.vx+n.vy*n.vy}
+    energy=en/(N.length||1)
   }
   function draw(){
     ctx.setTransform(DPR,0,0,DPR,0,0);ctx.clearRect(0,0,w,h)
     ctx.globalCompositeOperation='lighter' // 叠加发光，bloom 质感
-    // 连线（渐变）+ 流动光粒
+    // 连线（纯色）+ 流动光粒（精灵贴图，零渐变分配）
     for(const e of E){const a=e[0],b=e[1];const wh=a.type==='whale';
-      const lg=ctx.createLinearGradient(a.x,a.y,b.x,b.y);lg.addColorStop(0,wh?'rgba(255,178,74,.30)':'rgba(110,168,255,.20)');lg.addColorStop(1,'rgba(120,200,255,.02)');
-      ctx.strokeStyle=lg;ctx.lineWidth=wh?1.3:0.8;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()
-      const pc=wh?'255,210,110':'130,210,255';
-      for(let k=0;k<2;k++){const fp=((t*0.6+(a.x+a.y)+k*35)%70)/70;const fx=a.x+(b.x-a.x)*fp,fy=a.y+(b.y-a.y)*fp;const pr=(wh?2.2:1.6)*3;const pg=ctx.createRadialGradient(fx,fy,0,fx,fy,pr);pg.addColorStop(0,'rgba('+pc+',.85)');pg.addColorStop(1,'rgba('+pc+',0)');ctx.fillStyle=pg;ctx.beginPath();ctx.arc(fx,fy,pr,0,7);ctx.fill()}}
+      ctx.strokeStyle=wh?'rgba(255,178,74,.22)':'rgba(110,168,255,.14)';ctx.lineWidth=wh?1.3:0.8;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()
+      const sp=_partSprite(wh?'255,210,110':'130,210,255'),pr=(wh?2.2:1.6)*3;
+      for(let k=0;k<2;k++){const fp=((t*0.6+(a.x+a.y)+k*35)%70)/70;const fx=a.x+(b.x-a.x)*fp,fy=a.y+(b.y-a.y)*fp;ctx.drawImage(sp,fx-pr,fy-pr,pr*2,pr*2)}}
     // 中枢脉冲环
     for(let i=0;i<3;i++){const rr=(t*0.9+i*42)%126;const al=Math.max(0,1-rr/126)*0.22;ctx.strokeStyle='rgba(150,180,255,'+al+')';ctx.lineWidth=1.3;ctx.beginPath();ctx.arc(core.x,core.y,rr,0,7);ctx.stroke()}
-    // 节点辉光
-    for(const n of N){const c=COL[n.type];const pr=n.type==='whale'?n.r+Math.sin(t*0.05+n.x*0.1)*1.8:n.r+(n.type==='signal'?Math.sin(t*0.09+n.y)*0.7:0);const g=ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,pr*2.5);g.addColorStop(0,c);g.addColorStop(.4,c+'4d');g.addColorStop(1,c+'00');ctx.fillStyle=g;ctx.beginPath();ctx.arc(n.x,n.y,pr*2.5,0,7);ctx.fill()}
+    // 节点辉光（精灵贴图）
+    for(const n of N){const sp=_glowSprite(COL[n.type]);const pr=n.type==='whale'?n.r+Math.sin(t*0.05+n.x*0.1)*1.8:n.r+(n.type==='signal'?Math.sin(t*0.09+n.y)*0.7:0);const R=pr*2.5;ctx.drawImage(sp,n.x-R,n.y-R,R*2,R*2)}
     // 实心核 + 高光环（正常混合）
     ctx.globalCompositeOperation='source-over'
     for(const n of N){const c=COL[n.type];const pr=n.type==='whale'?n.r+Math.sin(t*0.05+n.x*0.1)*1.8:n.r;ctx.fillStyle=c;ctx.beginPath();ctx.arc(n.x,n.y,pr,0,7);ctx.fill();
@@ -654,17 +658,27 @@ function initSwarm(canvas,tip,data){
       if(n===hover||n.type==='core'||n.type==='product'){ctx.fillStyle='#eaf0fb';ctx.font='600 11px Inter,-apple-system,sans-serif';ctx.textAlign='center';ctx.shadowColor='#000';ctx.shadowBlur=6;ctx.fillText(String(n.label).slice(0,18),n.x,n.y-pr-6);ctx.shadowBlur=0}}
     t++
   }
-  const loop=()=>{stepSim();stepSim();draw();raf=requestAnimationFrame(loop)};loop()
-  function onMove(ev){const r=canvas.getBoundingClientRect();const mx=ev.clientX-r.left,my=ev.clientY-r.top;let best=null,bd=1e9;for(const n of N){const dx=n.x-mx,dy=n.y-my,d=Math.sqrt(dx*dx+dy*dy);if(d<n.r+7&&d<bd){bd=d;best=n}}hover=best;if(best){tip.innerHTML='<b style="color:'+COL[best.type]+'">'+esc(best.label)+'</b>'+(best.meta?'<div class="dim" style="margin-top:3px">'+esc(best.meta)+'</div>':'');tip.style.left=Math.min(ev.clientX+14,innerWidth-270)+'px';tip.style.top=(ev.clientY+14)+'px';tip.classList.add('on');canvas.style.cursor='pointer'}else{tip.classList.remove('on');canvas.style.cursor='default'}}
+  // 力学收敛后跳过 O(n²) 模拟（只继续画辉光/光粒）；页面隐藏或拓扑滚出视口时暂停 rAF
+  function frame(){if(energy>0.02)stepSim();draw();raf=requestAnimationFrame(frame)}
+  function start(){if(!raf)raf=requestAnimationFrame(frame)}
+  function pause(){if(raf){cancelAnimationFrame(raf);raf=0}}
+  function sync(){(!document.hidden&&onScreen)?start():pause()}
+  function onMove(ev){const r=canvas.getBoundingClientRect();const mx=ev.clientX-r.left,my=ev.clientY-r.top;let best=null,bd=1e9;for(const n of N){const dx=n.x-mx,dy=n.y-my,d=Math.sqrt(dx*dx+dy*dy);if(d<n.r+7&&d<bd){bd=d;best=n}}hover=best;if(best){tip.innerHTML='<b style="color:'+COL[best.type]+'">'+esc(best.label)+'</b>'+(best.meta?'<div class="dim" style="margin-top:3px">'+esc(best.meta)+'</div>':'');tip.style.left=Math.min(ev.clientX+14,innerWidth-270)+'px';tip.style.top=(ev.clientY+14)+'px';tip.classList.add('on');canvas.style.cursor='pointer';if(energy<=0.02)draw()}else{tip.classList.remove('on');canvas.style.cursor='default'}}
   const onLeave=()=>{hover=null;tip.classList.remove('on')}
-  const onResize=()=>{const s=size();w=s.w;h=s.h}
-  canvas.addEventListener('mousemove',onMove);canvas.addEventListener('mouseleave',onLeave);addEventListener('resize',onResize)
-  _swarmStop=()=>{cancelAnimationFrame(raf);canvas.removeEventListener('mousemove',onMove);canvas.removeEventListener('mouseleave',onLeave);removeEventListener('resize',onResize)}
+  const onResize=()=>{const s=size();w=s.w;h=s.h;energy=Math.max(energy,0.5)}
+  const onVis=()=>sync()
+  let io=null;if('IntersectionObserver' in window){io=new IntersectionObserver(es=>{onScreen=es[0].isIntersecting;sync()},{threshold:0.01});io.observe(canvas)}
+  canvas.addEventListener('mousemove',onMove);canvas.addEventListener('mouseleave',onLeave);addEventListener('resize',onResize);document.addEventListener('visibilitychange',onVis)
+  sync()
+  _swarmStop=()=>{pause();if(io)io.disconnect();canvas.removeEventListener('mousemove',onMove);canvas.removeEventListener('mouseleave',onLeave);removeEventListener('resize',onResize);document.removeEventListener('visibilitychange',onVis)}
 }
 async function renderOverview(){
-  const a=await api('/api/internal/social/analytics?days='+aDays)
-  const st=await api('/api/internal/social/stats')
-  const kr=await api('/api/internal/social/kols').catch(()=>({items:[],stats:{}}))
+  // 三个独立接口并行拉取，首屏更快（原来串行 3 个 RTT → 现在 1 个 RTT）
+  const [a,st,kr]=await Promise.all([
+    api('/api/internal/social/analytics?days='+aDays),
+    api('/api/internal/social/stats'),
+    api('/api/internal/social/kols').catch(()=>({items:[],stats:{}}))
+  ])
   const s=a.sentiment||{pos:0,neg:0,neu:0};const stot=(s.pos||0)+(s.neg||0)+(s.neu||0)||1
   const demandN=(a.byKind.find(k=>k.kind==='demand')||{}).n||0
   const compN=(a.byKind.find(k=>k.kind==='competitor')||{}).n||0

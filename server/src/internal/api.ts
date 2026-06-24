@@ -4,6 +4,10 @@ import { generateDraft } from './drafts.ts'
 import { runSocialIntelOnce, runCustomQuery, twDiag, twitterApiEnabled, scCredits, liDiag } from './socialintel.ts'
 import { PRODUCTS, productByKey } from './products.ts'
 import { PANEL_HTML } from './panel.ts'
+import { gzipSync } from 'node:zlib'
+// 面板是静态外壳，启动时预压一次，按 Accept-Encoding 直发 gzip（无新依赖，省 ~75% 传输）
+const PANEL_BUF = Buffer.from(PANEL_HTML)
+const PANEL_GZ = gzipSync(PANEL_BUF, { level: 9 })
 import { generateContent, openrouterEnabled } from '../content/openrouter.ts'
 import { translateOne, translateBatch } from './translate.ts'
 import { registerWgAuth, requireTeam } from './wgauth.ts'
@@ -25,8 +29,12 @@ export function registerSocialIntel(app: FastifyInstance): void {
   registerWgAuth(app) // Whale Growth 团队验证码登录（/api/internal/auth/*）
 
   // 面板（HTML 外壳无需鉴权；下面的数据接口才校验 token）
-  app.get('/internal/social', async (_req, reply) => {
-    return reply.header('Content-Type', 'text/html; charset=utf-8').header('Cache-Control', 'no-cache').send(PANEL_HTML)
+  app.get('/internal/social', async (req, reply) => {
+    reply.header('Content-Type', 'text/html; charset=utf-8').header('Cache-Control', 'no-cache').header('Vary', 'Accept-Encoding')
+    if (/\bgzip\b/.test(String(req.headers['accept-encoding'] || ''))) {
+      return reply.header('Content-Encoding', 'gzip').send(PANEL_GZ)
+    }
+    return reply.send(PANEL_BUF)
   })
 
   // 产品/关键词配置（前端渲染过滤器用）
