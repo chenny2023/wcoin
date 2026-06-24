@@ -945,34 +945,49 @@ async function runXJob(j: Extract<Job, { platform: 'x' }>): Promise<number> {
   return added
 }
 
-// LinkedIn 发现：DuckDuckGo HTML 搜 site:linkedin.com/posts 关键词（无 key、走住宅代理）。
-// 返回公开帖：url + 作者(取自 slug) + 片段(=帖子预览)。LinkedIn 无公开搜索 API，这是可行的发现路径。
+// LinkedIn 诊断：记录最近一次发现结果，便于排障。
+export let liDiag = 'LinkedIn: 尚未运行'
+// 解析任意搜索结果 HTML 里的 linkedin.com/posts 链接（uddg 解码 + 裸链兜底，不依赖具体 class）。
+function parseLiPosts(html: string): { id: string; url: string; author: string; text: string }[] {
+  const out: { id: string; url: string; author: string; text: string }[] = []
+  const seen = new Set<string>()
+  const urls = new Set<string>()
+  for (const m of html.matchAll(/uddg=([^&"']+)/g)) { try { const u = decodeURIComponent(m[1]); if (/linkedin\.com\/posts\//i.test(u)) urls.add(u) } catch { /* skip */ } }
+  for (const m of html.matchAll(/https?:(?:\/\/|%2F%2F)[a-z.]*linkedin\.com(?:\/|%2F)posts(?:\/|%2F)[\w%.-]+/gi)) { try { urls.add(decodeURIComponent(m[0])) } catch { urls.add(m[0]) } }
+  for (let u of urls) {
+    if (u.startsWith('//')) u = 'https:' + u
+    const slug = (u.match(/\/posts\/([^_/?]+)/) || [])[1] || ''
+    const act = (u.match(/activity-(\d+)/) || [])[1] || strHash(u)
+    if (seen.has(act)) continue
+    seen.add(act)
+    out.push({ id: act, url: u.split('?')[0], author: slug.replace(/-[0-9a-f]{6,}$/, ''), text: '' })
+  }
+  return out
+}
+// 发现：DuckDuckGo（先直连，失败/0 结果再走住宅；再退 lite 版）。LinkedIn 无公开搜索 API。
+// 正文不靠片段——后续用 ScrapeCreators 按 URL 补全；这里只要拿到 posts 链接即可。
 async function ddgLinkedin(query: string): Promise<{ id: string; url: string; author: string; text: string }[] | null> {
-  try {
-    const q = encodeURIComponent(`site:linkedin.com/posts ${query}`)
-    const r = await webFetchProxied(`https://html.duckduckgo.com/html/?q=${q}`, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', Accept: 'text/html' }, signal: AbortSignal.timeout(20_000),
-    })
-    if (!r.ok) return null
-    const html = await r.text()
-    const out: { id: string; url: string; author: string; text: string }[] = []
-    const seen = new Set<string>()
-    // 取每条结果的 链接 + 片段（按出现顺序配对）
-    const anchors = [...html.matchAll(/class="result__a"[^>]*href="([^"]+)"/g)].map((m) => m[1])
-    const snips = [...html.matchAll(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g)].map((m) => m[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim())
-    anchors.forEach((href, i) => {
-      const m = href.match(/uddg=([^&]+)/)
-      let url = m ? decodeURIComponent(m[1]) : href
-      if (url.startsWith('//')) url = 'https:' + url
-      if (!/linkedin\.com\/posts\//i.test(url)) return
-      const slug = (url.match(/\/posts\/([^_/?]+)/) || [])[1] || ''
-      const act = (url.match(/activity-(\d+)/) || [])[1] || strHash(url)
-      if (seen.has(act)) return
-      seen.add(act)
-      out.push({ id: act, url: url.split('?')[0], author: slug.replace(/-[0-9a-f]{6,}$/, ''), text: snips[i] || '' })
-    })
-    return out
-  } catch { return null }
+  const q = encodeURIComponent(`site:linkedin.com/posts ${query}`)
+  const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', Accept: 'text/html' }
+  const tries: [string, (u: string) => Promise<Response>][] = [
+    ['html-direct', (u) => webFetch(u, { headers, signal: AbortSignal.timeout(20_000) })],
+    ['html-resi', (u) => webFetchProxied(u, { headers, signal: AbortSignal.timeout(20_000) })],
+    ['lite-direct', (u) => webFetch(u, { headers, signal: AbortSignal.timeout(20_000) })],
+  ]
+  let any = false
+  for (const [tag, fetcher] of tries) {
+    const url = tag.startsWith('lite') ? `https://lite.duckduckgo.com/lite/?q=${q}` : `https://html.duckduckgo.com/html/?q=${q}`
+    try {
+      const r = await fetcher(url)
+      if (!r.ok) { liDiag = `LinkedIn: ${tag} HTTP ${r.status}`; continue }
+      any = true
+      const items = parseLiPosts(await r.text())
+      if (items.length) { liDiag = `LinkedIn: ${tag} OK，"${query.slice(0, 20)}" ${items.length} 条`; return items }
+      liDiag = `LinkedIn: ${tag} 0 结果(可能被拦/无结果)`
+    } catch (e) { liDiag = `LinkedIn: ${tag} 错误 ${(e as Error).message.slice(0, 40)}` }
+  }
+  console.log('[social-intel][lidiag]', liDiag)
+  return any ? [] : null
 }
 
 async function runLinkedinJob(j: Extract<Job, { platform: 'linkedin' }>): Promise<number> {

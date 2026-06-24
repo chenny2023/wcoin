@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { db } from '../db.ts'
 import { generateDraft } from './drafts.ts'
-import { runSocialIntelOnce, runCustomQuery, twDiag, twitterApiEnabled, scCredits } from './socialintel.ts'
+import { runSocialIntelOnce, runCustomQuery, twDiag, twitterApiEnabled, scCredits, liDiag } from './socialintel.ts'
 import { PRODUCTS, productByKey } from './products.ts'
 import { PANEL_HTML } from './panel.ts'
 import { generateContent, openrouterEnabled } from '../content/openrouter.ts'
@@ -54,7 +54,7 @@ export function registerSocialIntel(app: FastifyInstance): void {
        FROM social_intel GROUP BY platform ORDER BY total DESC`,
     ).all(Date.now() - 86_400_000)
     const unclassified = (db.prepare('SELECT COUNT(*) n FROM social_intel WHERE classified_ts IS NULL').get() as any).n
-    return { byProduct, pendingDrafts: pending, collected24h: last24, total, health, unclassified, twDiag, xEnabled: twitterApiEnabled(), scCredits }
+    return { byProduct, pendingDrafts: pending, collected24h: last24, total, health, unclassified, twDiag, xEnabled: twitterApiEnabled(), scCredits, liDiag }
   })
 
   // 分析概览：跨平台/产品/类别的聚合，供「概览」页可视化
