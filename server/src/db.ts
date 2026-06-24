@@ -602,6 +602,9 @@ for (const ddl of [
   'ALTER TABLE alert_rules ADD COLUMN notify_email INTEGER NOT NULL DEFAULT 1',
   // SEO page lifecycle state — internal_only | limited_public_noindex | public_indexable | featured_core | archived
   "ALTER TABLE seo_page ADD COLUMN lifecycle TEXT NOT NULL DEFAULT 'public_indexable'",
+  // provenance of a watched address — NULL/'curated' = hand-seeded; 'btc-cluster' =
+  // discovered by common-input-ownership clustering (auditable + bulk-reversible)
+  'ALTER TABLE watchlist ADD COLUMN source TEXT',
 ]) {
   try {
     db.exec(ddl)

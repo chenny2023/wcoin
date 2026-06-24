@@ -1132,6 +1132,25 @@ export async function registerApi(app: FastifyInstance) {
   // addresses (the 429-free path to harvest Tron/BTC casino wallets). ?key=<slug>
   app.get('/api/diag/arkham-addresses', async (req) => arkhamAddressProbe((req.query as any)?.key))
 
+  // BTC clustering audit — per-operator address counts split by provenance
+  // (seed vs cluster-discovered). Public read-only: it's how we expanded BTC
+  // coverage and the figures are auditable / cluster rows are bulk-reversible.
+  app.get('/api/diag/btc-cluster', async () => {
+    const rows = db.prepare(
+      `SELECT label,
+              COUNT(*) AS total,
+              SUM(CASE WHEN source='btc-cluster' THEN 1 ELSE 0 END) AS clustered,
+              SUM(CASE WHEN source IS NULL OR source!='btc-cluster' THEN 1 ELSE 0 END) AS seed
+       FROM watchlist WHERE chain='BTC' AND category='casino'
+       GROUP BY label ORDER BY total DESC`,
+    ).all() as { label: string; total: number; clustered: number; seed: number }[]
+    const totals = rows.reduce(
+      (a, r) => ({ addresses: a.addresses + r.total, clustered: a.clustered + r.clustered }),
+      { addresses: 0, clustered: 0 },
+    )
+    return { operators: rows.length, ...totals, perOperator: rows }
+  })
+
   // enrichment queue (gated) — low-confidence brands kept as noindex pages, awaiting
   // on-chain/reserve/trust enrichment before promotion to indexable.
   app.get('/api/diag/enrichment', async (req, reply) => {

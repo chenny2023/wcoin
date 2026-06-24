@@ -15,24 +15,29 @@ import { priceForDay } from './prices.ts'
 interface UtxoChain {
   key: string // 'BTC' | 'LTC'
   asset: string // price asset
-  api: string // esplora base
+  apis: string[] // esplora bases, rotated (spreads load + survives one host throttling)
   pollMs: number
 }
 
 const CHAINS: UtxoChain[] = [
-  { key: 'BTC', asset: 'BTC', api: 'https://blockstream.info/api', pollMs: 20_000 },
-  { key: 'LTC', asset: 'LTC', api: 'https://litecoinspace.org/api', pollMs: 20_000 },
+  // mempool.space leads for BTC: 50 tx/page (vs blockstream's 25) and gentler rate
+  // limits, so backfill catches up ~2× faster; blockstream is the rotation fallback.
+  { key: 'BTC', asset: 'BTC', apis: ['https://mempool.space/api', 'https://blockstream.info/api'], pollMs: 20_000 },
+  { key: 'LTC', asset: 'LTC', apis: ['https://litecoinspace.org/api'], pollMs: 20_000 },
 ]
 
 const enabled = (key: string) => process.env[`${key}_ENABLED`] !== '0'
 
-async function esplora(api: string, path: string): Promise<any | null> {
-  for (let i = 0; i < 3; i++) {
+let hostRr = 0
+async function esplora(apis: string[], path: string): Promise<any | null> {
+  for (let i = 0; i < apis.length + 2; i++) {
+    const api = apis[hostRr++ % apis.length]
     try {
       const r = await webFetch(api + path, { signal: AbortSignal.timeout(15_000) })
       if (r.ok) return await r.json()
+      if (r.status === 404) return null
     } catch {
-      /* retry */
+      /* rotate host + retry */
     }
     await new Promise((res) => setTimeout(res, 1500))
   }
@@ -107,7 +112,7 @@ async function indexChain(ch: UtxoChain) {
   const cap = isBackfill ? BACKFILL_PAGES : FWD_PAGES
   while (pages < cap && !reached) {
     const path = cursor ? `/address/${w.address}/txs/chain/${cursor}` : `/address/${w.address}/txs`
-    const txs = await esplora(ch.api, path)
+    const txs = await esplora(ch.apis, path)
     if (!Array.isArray(txs) || txs.length === 0) break
     gotData = true
     if (!cursor) newestTop = txs[0].txid // top of the address — the forward resume point

@@ -44,6 +44,7 @@ import { startAppStore } from './collectors/appstore.ts'
 import { startLemmy } from './collectors/lemmy.ts'
 import { startSolana } from './collectors/solana.ts'
 import { startUtxo } from './collectors/utxo.ts'
+import { startBtcCluster } from './collectors/btccluster.ts'
 import { startXrp } from './collectors/xrp.ts'
 import { startAggregation } from './aggregate.ts'
 import { startAlerts } from './alerts.ts'
@@ -222,6 +223,7 @@ async function main() {
     startNative() // native-coin (ETH) deposits — full-block scan, block-time priced
     startSolana() // Solana indexer (SPL USDC/USDT + native SOL, historically priced)
     startUtxo() // Bitcoin + Litecoin indexers (Esplora, historically priced)
+    startBtcCluster() // expand BTC casino address sets via common-input-ownership clustering
     startXrp() // XRP Ledger indexer (account_tx, historically priced)
   }
   startPrices() // daily historical price series (SOL) for non-1:1 valuation
