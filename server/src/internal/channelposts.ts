@@ -89,7 +89,7 @@ export async function generateChannelPost(topicId: number, channel: string): Pro
     topic_id: topicId, product: t.product, channel: spec.key,
     title: String(p.title || '').slice(0, 400), body: String(p.body || '').slice(0, 6000),
     hashtags: JSON.stringify(Array.isArray(p.hashtags) ? p.hashtags.slice(0, 15) : []),
-    image_url: image.slice(0, 1_500_000), image_prompt: String(p.image_prompt || '').slice(0, 500),
+    image_url: image.slice(0, 2_500_000), image_prompt: String(p.image_prompt || '').slice(0, 500),
     model: res?.model || '', created_ts: Date.now(),
   })
   const post = listChannelPosts(topicId).find((x) => x.channel === spec.key)
@@ -104,6 +104,6 @@ export async function regenChannelImage(topicId: number, channel: string): Promi
   const spec = CHANNELS.find((c) => c.key === channel)
   const img = await generateImage(String(row.image_prompt || '').slice(0, 500), spec?.aspect || '1:1')
   if (!img) return { ok: false, message: '配图生成失败（可能 OpenRouter 余额不足）' }
-  db.prepare('UPDATE social_channel_posts SET image_url=? WHERE topic_id=? AND channel=?').run(img.slice(0, 1_500_000), topicId, channel)
+  db.prepare('UPDATE social_channel_posts SET image_url=? WHERE topic_id=? AND channel=?').run(img.slice(0, 2_500_000), topicId, channel)
   return { ok: true, message: '已重新生成配图', image_url: img }
 }

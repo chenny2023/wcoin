@@ -11,10 +11,10 @@ export const OPENROUTER_KEY = () => env.OPENROUTER_API_KEY ?? ''
 const BASE = () => env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1'
 const TEXT_MODEL = () => env.OPENROUTER_TEXT_MODEL ?? 'x-ai/grok-4.3'
 const TEXT_FALLBACK = () => env.OPENROUTER_TEXT_MODEL_FALLBACK ?? 'x-ai/grok-4.20'
-// 配图走 xAI 直连（OpenRouter 没有 grok 图像模型）。需 XAI_API_KEY；模型默认 grok 图像，可用 XAI_IMAGE_MODEL 覆盖。
-const XAI_KEY = () => env.XAI_API_KEY ?? ''
-const XAI_IMAGE_BASE = () => env.XAI_IMAGE_BASE_URL ?? 'https://api.x.ai/v1'
-const XAI_IMAGE_MODEL = () => env.XAI_IMAGE_MODEL ?? 'grok-2-image'
+// 配图走 OpenRouter（用现有 OpenRouter key，无需额外 key）。注意：OpenRouter 没有 grok 图像模型
+// （实测 x-ai/grok-2-image → "not a valid model ID"），故默认用 OpenRouter 在售的图像模型；
+// 可用 OPENROUTER_IMAGE_MODEL 覆盖（若 OpenRouter 日后上架 grok 图像，改这个 env 即可切过去）。
+const IMAGE_MODEL = () => env.OPENROUTER_IMAGE_MODEL ?? 'openai/gpt-5-image-mini'
 const APP_NAME = () => env.OPENROUTER_APP_NAME ?? 'WCOIN.CASINO'
 const SITE_URL = () => env.OPENROUTER_SITE_URL ?? 'https://wcoin.casino'
 
@@ -92,24 +92,28 @@ export async function generateContent(system: string, user: string): Promise<{ d
   return null
 }
 
-export const imageEnabled = () => !!XAI_KEY()
-// 生成配图：走 xAI 直连（grok image）。返回 URL 或 data: base64，失败/未配 key 返回 null（文案照常）。
-// aspect 仅作签名兼容——grok 图像返回固定尺寸，不传 size。
+export const imageEnabled = () => openrouterEnabled()
+// 生成配图：走 OpenRouter 的 chat/completions + modalities:["image","text"]（图像模型经此返回）。
+// 返回 data:base64 或 URL；失败/未配 key 返回 null（文案照常生成）。aspect 仅签名兼容。
 export async function generateImage(prompt: string, _aspect = '1:1'): Promise<string | null> {
-  const key = XAI_KEY()
-  if (!key) return null // 未配 XAI_API_KEY → 不出图（grok 图像在 xAI 直连，OpenRouter 无此模型）
+  if (!openrouterEnabled()) return null
   try {
-    const res = await webFetch(`${XAI_IMAGE_BASE()}/images/generations`, {
+    const res = await webFetch(`${BASE()}/chat/completions`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: XAI_IMAGE_MODEL(), prompt: String(prompt).slice(0, 1024), n: 1, response_format: 'url' }),
+      headers: headers(),
+      body: JSON.stringify({
+        model: IMAGE_MODEL(),
+        modalities: ['image', 'text'],
+        messages: [{ role: 'user', content: String(prompt).slice(0, 1024) }],
+      }),
       signal: AbortSignal.timeout(120_000),
     })
-    if (!res.ok) { console.warn(`[content] xai image HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`); return null }
-    const d = ((await res.json()) as any)?.data?.[0]
-    return d?.url ? d.url : d?.b64_json ? `data:image/png;base64,${d.b64_json}` : null
+    if (!res.ok) { console.warn(`[content] image HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`); return null }
+    const j = (await res.json()) as any
+    const imgs = j?.choices?.[0]?.message?.images
+    return imgs?.[0]?.image_url?.url ?? imgs?.[0]?.url ?? j?.data?.[0]?.url ?? null
   } catch (e) {
-    console.warn('[content] xai image failed:', (e as Error).message)
+    console.warn('[content] image gen failed:', (e as Error).message)
     return null
   }
 }
