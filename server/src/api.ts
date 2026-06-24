@@ -1152,6 +1152,31 @@ export async function registerApi(app: FastifyInstance) {
     return { operators: rows.length, ...totals, perOperator: rows }
   })
 
+  // mention-attribution audit — top watch_labels in the mentions table (7d) and
+  // whether each matches a current brand label / member label (the join the
+  // sentiment board uses). If matched=false dominates, mention labels drifted
+  // from brand labels and the per-operator sentiment shows 0 despite live data.
+  app.get('/api/diag/mentions', async () => {
+    const d7 = Date.now() - 7 * 86_400_000
+    const labels = db
+      .prepare('SELECT watch_label, COUNT(*) n FROM mentions WHERE ts >= ? GROUP BY watch_label ORDER BY n DESC LIMIT 60')
+      .all(d7) as { watch_label: string; n: number }[]
+    const brands = await aggCachedAsync('brand:casino', () => aggregateBrands('casino'), 120_000)
+    const brandLabelSet = new Set<string>()
+    for (const b of brands as any[]) {
+      brandLabelSet.add(b.brand)
+      for (const m of b.members ?? []) brandLabelSet.add(m.label)
+    }
+    const rows = labels.map((l) => ({ ...l, matched: brandLabelSet.has(l.watch_label) }))
+    return {
+      total7d: labels.reduce((s, l) => s + l.n, 0),
+      matched: rows.filter((r) => r.matched).reduce((s, r) => s + r.n, 0),
+      unmatched: rows.filter((r) => !r.matched).reduce((s, r) => s + r.n, 0),
+      brandLabels: brandLabelSet.size,
+      top: rows,
+    }
+  })
+
   // enrichment queue (gated) — low-confidence brands kept as noindex pages, awaiting
   // on-chain/reserve/trust enrichment before promotion to indexable.
   app.get('/api/diag/enrichment', async (req, reply) => {
