@@ -57,12 +57,16 @@ const CHARTS: [string, string][] = [
   ['topfreeapplications', 'free'],
   ['topgrossingapplications', 'grossing'],
 ]
+// 除总榜外，再扫这些类目榜——总榜头部多是高分 app，类目榜能挖出更多「高流量但低分」的样本。
+// 默认：游戏/购物/金融/社交/工具/娱乐/生活/效率（id 见 Apple Genre IDs）。''=总榜。
+const GENRES = () => ['', ...(process.env.APPWATCH_GENRES || '6014,6024,6015,6005,6002,6016,6012,6007').split(',').map((g) => g.trim()).filter(Boolean)]
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-// 拉某国某榜的 top N（appid + 名次 + 名称）
-async function fetchChart(cc: string, feed: string, limit: number): Promise<{ appid: string; rank: number; name: string }[]> {
+// 拉某国某榜某类目的 top N（appid + 名次 + 名称）。genre='' 为总榜。
+async function fetchChart(cc: string, feed: string, limit: number, genre = ''): Promise<{ appid: string; rank: number; name: string }[]> {
   try {
-    const r = await webFetch(`https://itunes.apple.com/${cc}/rss/${feed}/limit=${limit}/json`, { signal: AbortSignal.timeout(20_000) })
+    const path = genre ? `${feed}/genre=${genre}` : feed
+    const r = await webFetch(`https://itunes.apple.com/${cc}/rss/${path}/limit=${limit}/json`, { signal: AbortSignal.timeout(20_000) })
     if (!r.ok) return []
     const j = (await r.json()) as any
     const entry: any[] = j?.feed?.entry ?? []
@@ -96,7 +100,14 @@ const insApp = db.prepare(`INSERT OR REPLACE INTO app_watch
   VALUES (@id,@store,@country,@chart,@rank,@app_id,@name,@publisher,@genre,@rating,@rating_count,@icon,@url,@description,@now)`)
 
 async function refreshOne(cc: string, feed: string, chart: string): Promise<number> {
-  const list = await fetchChart(cc, feed, 200)
+  // 总榜 + 各类目榜合并去重（rank = 首次出现的次序，总榜优先）→ 候选池大很多
+  const seen = new Set<string>()
+  const list: { appid: string; rank: number; name: string }[] = []
+  for (const g of GENRES()) {
+    const part = await fetchChart(cc, feed, 200, g)
+    for (const x of part) { if (seen.has(x.appid)) continue; seen.add(x.appid); list.push({ ...x, rank: list.length + 1 }) }
+    await sleep(150)
+  }
   if (list.length === 0) return 0
   const ratings = await lookupRatings(list.map((x) => x.appid), cc)
   const now = Date.now()
@@ -157,7 +168,7 @@ export const playEnabled = () => !!SB_KEY()
 const PLAY_COUNTRIES = () => process.env.SOCIAL_PLAY_COUNTRIES
   ? process.env.SOCIAL_PLAY_COUNTRIES.split(',').map((c) => c.trim().toLowerCase()).filter(Boolean)
   : COUNTRIES()
-const PLAY_CATEGORIES = () => (process.env.SOCIAL_PLAY_CATEGORIES || 'APPLICATION,GAME').split(',').map((c) => c.trim()).filter(Boolean)
+const PLAY_CATEGORIES = () => (process.env.SOCIAL_PLAY_CATEGORIES || 'APPLICATION,GAME,SOCIAL,SHOPPING,FINANCE,COMMUNICATION').split(',').map((c) => c.trim()).filter(Boolean)
 const PLAY_LIMIT = () => Number(process.env.SOCIAL_PLAY_LIMIT) || 120
 
 async function sbFetch(targetUrl: string): Promise<string | null> {
@@ -253,14 +264,14 @@ export async function refreshPlayWatch(): Promise<{ ok: boolean; kept: number }>
 // 需要更新时手动点「刷新榜单」(走 refreshPlayWatch)。强制重采：删 sync_state 的 playwatch_seeded。
 export function startPlayWatch(): void {
   if ((process.env.APPWATCH_ENABLED ?? '1') === '0' || !playEnabled()) return
-  if (db.prepare("SELECT 1 FROM sync_state WHERE key='playwatch_seeded'").get()) {
+  if (db.prepare("SELECT 1 FROM sync_state WHERE key='playwatch_seeded_v2'").get()) {
     console.log('[appwatch] Google Play 已采集过，跳过（如需更新点"刷新榜单"）'); return
   }
   console.log('[appwatch] Google Play：首次全量采集…')
   setTimeout(async () => {
     try {
       const r = await refreshPlayWatch()
-      if (r.ok) db.prepare("INSERT INTO sync_state(key,value) VALUES('playwatch_seeded',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(String(Date.now()))
+      if (r.ok) db.prepare("INSERT INTO sync_state(key,value) VALUES('playwatch_seeded_v2',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(String(Date.now()))
     } catch (e) { console.warn('[appwatch] play seed failed:', (e as Error).message) }
   }, 30_000)
 }
@@ -412,14 +423,14 @@ export function startAppAnalyzer(): void {
 // 需要更新时手动点「刷新榜单」(走 refreshAppWatch)。强制重采：删 sync_state 的 appwatch_seeded。
 export function startAppWatch(): void {
   if ((process.env.APPWATCH_ENABLED ?? '1') === '0') return
-  if (db.prepare("SELECT 1 FROM sync_state WHERE key='appwatch_seeded'").get()) {
+  if (db.prepare("SELECT 1 FROM sync_state WHERE key='appwatch_seeded_v2'").get()) {
     console.log('[appwatch] App Store 已采集过，跳过（如需更新点"刷新榜单"）'); return
   }
   console.log('[appwatch] 产品观察室：首次全量采集 App Store…')
   setTimeout(async () => {
     try {
       const r = await refreshAppWatch()
-      if (r.ok) db.prepare("INSERT INTO sync_state(key,value) VALUES('appwatch_seeded',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(String(Date.now()))
+      if (r.ok) db.prepare("INSERT INTO sync_state(key,value) VALUES('appwatch_seeded_v2',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(String(Date.now()))
     } catch (e) { console.warn('[appwatch] seed failed:', (e as Error).message) }
   }, 120_000) // 启动 2 分钟后首采（让主服务先稳）
 }
