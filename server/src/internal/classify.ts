@@ -87,7 +87,8 @@ async function classifyProductBatch(product: string): Promise<number> {
     `actor_type 取值: ${r.actors}\npain_type 取值: ${r.pains}\n${r.extra}\n` +
     `‼️ 保留规则（精准优先，宁缺毋滥）：keep=true 仅当这条帖是【真正匹配该产品的信号】——即：真实的用户需求/选型/求推荐、对竞品的具体吐槽或不满、或该领域有实质信息量的讨论。\n` +
     `keep=false（果断丢，别乱留）：泛泛沾边但无明确需求/无信息量的闲聊、新闻资讯/数据播报、营销软文/自我推广/抽奖、招聘求职、与产品需求无关的内容、其它行业。${COMMON_EXCLUDE}\n` +
-    `拿不准（既不像明确信号、也不像纯噪音）→ keep=false（精准优先）。唯一例外：很新(刚发布)且高意图(主动表达痛点/明确购买信号)的，即使弱也保留。${ignoredBlock}${draftedBlock}\n` +
+    `拿不准（既不像明确信号、也不像纯噪音）→ keep=false（精准优先）。唯一例外：很新(刚发布)且高意图(主动表达痛点/明确购买信号)的，即使弱也保留。\n` +
+    `‼️ LinkedIn 例外（行 (linkedin) 的帖）：LinkedIn 是 B2B 情报源，观点/营销味偏重但仍有价值——只要与本产品领域相关（行业讨论/痛点/选型/竞品/趋势/运营经验）就 keep=true(可给 cold)；只丢纯无关、招聘求职、与领域无关的硬广。${ignoredBlock}${draftedBlock}\n` +
     `intent_tier: hot=主动表达痛点/明确不满/高购买信号; warm=讨论选型求推荐; cold=泛泛相关或低意图(默认档)。reco_play: 销售类高意向→dm 或 public_reply；wcoin→content；噪音→discard。\n${SCHEMA_HINT}`
   const user = rows.map((x, i) => `[${i}] (${x.platform}) ${x.title}${x.body ? ' — ' + x.body.slice(0, 200) : ''}`).join('\n').slice(0, 7000)
 
@@ -154,10 +155,25 @@ function reclassifyDroppedOnce(): void {
   }
 }
 
+// 一次性：早期 LinkedIn 被严格规则在薄片段阶段全部误杀——重置为 new + 待补全/待分类，
+// 走「先全文补全 → LinkedIn 宽松规则重判」的新流程。
+function resetLinkedinOnce(): void {
+  try {
+    const k = 'social_linkedin_requeue_v1'
+    if (db.prepare('SELECT value FROM sync_state WHERE key=?').get(k)) return
+    const n = db.prepare("UPDATE social_intel SET status='new', classified_ts=NULL, enriched_ts=NULL WHERE platform='linkedin' AND status='dropped'").run().changes
+    db.prepare('INSERT INTO sync_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(k, '1')
+    if (n) console.log(`[social-intel] 重新入列 ${n} 条被误杀的 LinkedIn 信号（补全+宽松重判）`)
+  } catch (e) {
+    console.warn('[social-intel] linkedin requeue failed:', (e as Error).message)
+  }
+}
+
 export function startClassifier(): void {
   if ((process.env.SOCIAL_INTEL_ENABLED ?? '1') === '0') return
   if (!openrouterEnabled()) { console.log('[social-intel] 分类器未启用（无 OPENROUTER_API_KEY）'); return }
   reclassifyDroppedOnce()
+  resetLinkedinOnce()
   console.log('[social-intel] 信号分类器已启动（对齐 spec + 清理不符合）')
   const loop = async () => {
     try { await classifyBatch() } catch (e) { console.warn('[social-intel] classify failed:', (e as Error).message) }
