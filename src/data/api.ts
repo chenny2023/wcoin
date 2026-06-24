@@ -629,6 +629,20 @@ let liveBuffer: Transfer[] = []
 const liveListeners = new Set<() => void>()
 let es: EventSource | null = null
 
+// The stream carries EVERY watched transfer (all chains/categories) and can burst
+// to tens of events/sec. Re-rendering subscribers on each event melts the UI (the
+// feed appears to freeze / "not load"). Coalesce notifications to ~5 Hz — the
+// buffer still updates synchronously so no data is dropped, only the re-renders.
+let notifyScheduled = false
+function notifyLive() {
+  if (notifyScheduled) return
+  notifyScheduled = true
+  setTimeout(() => {
+    notifyScheduled = false
+    liveListeners.forEach((l) => l())
+  }, 200)
+}
+
 function ensureStream() {
   if (es || typeof window === 'undefined') return
   es = new EventSource(BASE + '/stream')
@@ -636,7 +650,7 @@ function ensureStream() {
     try {
       const t = JSON.parse(ev.data) as Transfer
       liveBuffer = [t, ...liveBuffer].slice(0, 300)
-      liveListeners.forEach((l) => l())
+      notifyLive()
     } catch {
       /* ignore */
     }
@@ -657,7 +671,7 @@ function seedLive() {
       const have = new Set(liveBuffer.map((t) => t.tx_hash + t.direction))
       const merged = [...liveBuffer, ...rows.filter((r) => !have.has(r.tx_hash + r.direction))]
       liveBuffer = merged.sort((a, b) => b.ts - a.ts).slice(0, 300)
-      liveListeners.forEach((l) => l())
+      notifyLive()
     })
     .catch(() => {})
 }
