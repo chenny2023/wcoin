@@ -63,7 +63,7 @@ import { startPolymarket } from './collectors/polymarket.ts'
 import { startYouTube } from './collectors/youtube.ts'
 import { startStatsMaintenance } from './aggregate.ts'
 import { registerSocialIntel } from './internal/api.ts'
-import { startSocialIntel } from './internal/socialintel.ts'
+import { startSocialIntel, startLinkedinEnrich } from './internal/socialintel.ts'
 import { startTranslator } from './internal/translate.ts'
 import { startClassifier } from './internal/classify.ts'
 import { startKolScorer, startKolContacts } from './internal/kol.ts'
@@ -266,6 +266,7 @@ async function main() {
   startClassifier() // 内部社媒情报：LLM 信号分类（actor/tier/pain/solvable）+ 清理不符合（需 OPENROUTER_API_KEY）
   startKolScorer() // 内部社媒情报：潜在合作 KOL 评分（领域契合 + 是否靠谱，需 OPENROUTER_API_KEY）
   startKolContacts() // 内部社媒情报：KOL 触达方式补全（抓主页/linktree 挖 邮箱/TG/Discord）
+  startLinkedinEnrich() // 内部社媒情报：LinkedIn 信号全文补全（ScrapeCreators 拉全文+互动）
   startAppWatch() // 产品观察室：全球主要市场 App Store 低分高流量榜（iTunes 免费榜单+评分）
   startAppAnalyzer() // 产品观察室：AI 分析每个 app（做什么/差评集中点/潜在机会，需 OPENROUTER_API_KEY）
   startBuildClassifier() // 产品观察室：可复刻性分类（vibe coding 机会，排除政府/重研发，需 OPENROUTER_API_KEY）

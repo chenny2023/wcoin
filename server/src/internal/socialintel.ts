@@ -149,6 +149,7 @@ CREATE TABLE IF NOT EXISTS social_suppress (
   add('reco_play', 'TEXT')      // public_reply | dm | diagnostic | content | discard
   add('confidence', 'REAL')     // 分类置信度 0..1
   add('classified_ts', 'INTEGER') // 已分类时间（NULL=待分类，分类器据此挑活）
+  add('enriched_ts', 'INTEGER')   // LinkedIn 全文补全时间（NULL=待补全；用 ScrapeCreators 拉全文+互动）
 }
 db.exec('CREATE INDEX IF NOT EXISTS idx_si_classified ON social_intel(classified_ts, intent DESC)')
 
@@ -683,7 +684,7 @@ type Job =
   | { product: string; platform: 'shopify'; kind: 'competitor'; query: string }
   | { product: string; platform: 'xsearch'; kind: Kind; query: string }
   | { product: string; platform: 'appstore'; kind: 'competitor'; query: string }
-  | { product: string; platform: 'linkedin'; kind: 'demand'; query: string }
+  | { product: string; platform: 'linkedin'; kind: Kind; query: string }
 
 function buildJobs(): Job[] {
   const jobs: Job[] = []
@@ -701,7 +702,8 @@ function buildJobs(): Job[] {
     for (const h of p.x.ownHandles) jobs.push({ product: p.key, platform: 'x', kind: 'brand', query: h })
     for (const ch of p.telegram ?? []) jobs.push({ product: p.key, platform: 'telegram', kind: 'demand', query: ch })
     for (const f of p.forums ?? []) jobs.push({ product: p.key, platform: 'forum', kind: 'demand', query: f.name, url: f.url })
-    for (const q of p.linkedinTerms ?? []) jobs.push({ product: p.key, platform: 'linkedin', kind: 'demand', query: q }) // LinkedIn：DDG site 搜索发现公开帖
+    for (const q of p.linkedinTerms ?? []) jobs.push({ product: p.key, platform: 'linkedin', kind: 'demand', query: q }) // LinkedIn 需求：DDG site 搜索发现公开帖
+    for (const q of (p.reddit.competitor ?? []).slice(0, 5)) jobs.push({ product: p.key, platform: 'linkedin', kind: 'competitor', query: q }) // LinkedIn 竞品讨论（喂竞品洞察）
 
     for (const app of p.shopifyApps ?? []) jobs.push({ product: p.key, platform: 'shopify', kind: 'competitor', query: app })
     for (const app of p.appleApps ?? []) jobs.push({ product: p.key, platform: 'appstore', kind: 'competitor', query: app })
@@ -984,20 +986,69 @@ async function runLinkedinJob(j: Extract<Job, { platform: 'linkedin' }>): Promis
     for (const it of items) {
       if (!it.text && !it.url) continue
       const text = it.text || j.query
-      const intent = intentScore(text)
-      const id = `li_${it.id}_${j.product}`
+      const intent = j.kind === 'demand' ? intentScore(text) : intentScore(text) * 0.5
+      const id = `li_${it.id}_${j.product}_${j.kind}`
       const r = insertSignal.run({
-        id, product: j.product, platform: 'linkedin', kind: 'demand', query: j.query,
+        id, product: j.product, platform: 'linkedin', kind: j.kind, query: j.query,
         author: (it.author || '').slice(0, 120), title: text.slice(0, 300), body: text.slice(0, 2000),
         url: it.url, score: 0, sentiment: senti(text), intent, ts: now, collected_ts: now,
       })
       added += r.changes
-      if (r.changes) fresh.push({ id, product: j.product, platform: 'linkedin', kind: 'demand', title: text.slice(0, 200), url: it.url, intent })
+      if (r.changes && j.kind === 'demand') fresh.push({ id, product: j.product, platform: 'linkedin', kind: j.kind, title: text.slice(0, 200), url: it.url, intent })
     }
   })
   tx()
   void maybeAlert(fresh)
   return added
+}
+
+// LinkedIn 全文补全：DDG 只给片段；用 ScrapeCreators /v1/linkedin/post 按 URL 拉全文 + 真实互动。
+// 全文在 description；likeCount/commentCount 当 score；datePublished 当 ts。让 LinkedIn 信号变成一手好料。
+async function scLinkedinPost(url: string): Promise<{ text: string; score: number; ts: number; author: string } | null> {
+  const j = await scFetch('/v1/linkedin/post', { url })
+  if (!j || j.success === false || j.error) return null
+  const text = j.description ?? j.text ?? j.commentary ?? ''
+  if (!text) return null
+  const a = j.author || {}
+  return {
+    text: String(text),
+    score: Number(j.likeCount ?? 0) + Number(j.commentCount ?? 0),
+    ts: Date.parse(j.datePublished ?? '') || 0,
+    author: (a.name || `${a.firstName ?? ''} ${a.lastName ?? ''}`.trim() || a.headline || '').slice(0, 120),
+  }
+}
+
+export async function enrichLinkedinBatch(): Promise<number> {
+  if (!scEnabled() || scCreditsLow()) return 0
+  const n = Number(process.env.SOCIAL_LINKEDIN_ENRICH_BATCH) || 8
+  const rows = db.prepare(
+    `SELECT id, url, author FROM social_intel WHERE platform='linkedin' AND enriched_ts IS NULL AND status NOT IN ('dropped','ignored','mismatch') AND url!='' ORDER BY intent DESC, collected_ts DESC LIMIT ?`,
+  ).all(n) as { id: string; url: string; author: string }[]
+  if (rows.length === 0) return 0
+  const now = Date.now()
+  let done = 0
+  for (const r of rows) {
+    const full = await scLinkedinPost(r.url)
+    if (full && full.text) {
+      db.prepare('UPDATE social_intel SET body=?, title=?, score=?, sentiment=?, author=COALESCE(NULLIF(?, \'\'), author), ts=CASE WHEN ?>0 THEN ? ELSE ts END, enriched_ts=?, classified_ts=NULL WHERE id=?')
+        .run(full.text.slice(0, 2000), full.text.replace(/\s+/g, ' ').slice(0, 300), full.score, senti(full.text), full.author, full.ts, full.ts, now, r.id)
+      done++
+    } else {
+      db.prepare('UPDATE social_intel SET enriched_ts=? WHERE id=?').run(now, r.id) // 私有/取不到 → 标记，避免重复尝试
+    }
+    await new Promise((res) => setTimeout(res, 400))
+  }
+  if (done) console.log(`[social-intel] LinkedIn 全文补全 ${done} 条`)
+  return done
+}
+
+export function startLinkedinEnrich(): void {
+  if ((process.env.SOCIAL_INTEL_ENABLED ?? '1') === '0' || !scEnabled()) return
+  const loop = async () => {
+    try { await enrichLinkedinBatch() } catch (e) { console.warn('[social-intel] linkedin enrich failed:', (e as Error).message) }
+    setTimeout(loop, Number(process.env.SOCIAL_LINKEDIN_ENRICH_MS) || 70_000)
+  }
+  setTimeout(loop, 110_000)
 }
 
 async function runForumJob(j: Extract<Job, { platform: 'forum' }>): Promise<number> {

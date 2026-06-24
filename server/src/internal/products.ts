@@ -111,7 +111,7 @@ export const PRODUCTS: ProductConfig[] = [
     // Threads 宽泛主题词（实测有返回；长尾短语恒为 0）。靠分类器再筛玩家/行业相关。
     threadsTerms: ['online casino', 'casino', 'gambling', 'sportsbook', 'slots', 'betting', 'casino bonus', 'free spins', 'sports betting', 'betting tips', 'poker', 'crypto gambling', 'roulette', 'blackjack'], // Threads 搜索对多词短语常返回 0，用宽泛单词；认证号优先 profile
     // LinkedIn：iGaming 行业/运营/合规 视角（玩家不在 LinkedIn，但行业人/运营商在）
-    linkedinTerms: ['igaming operator', 'crypto casino', 'online gambling industry', 'casino player protection', 'igaming compliance', 'responsible gambling'],
+    linkedinTerms: ['igaming operator', 'crypto casino', 'online gambling industry', 'casino player protection', 'igaming compliance', 'responsible gambling', 'proof of reserves casino', 'igaming fraud prevention', 'casino payments crypto', 'gambling license', 'igaming conference', 'casino affiliate program'],
   },
   {
     key: 'hirecx',
@@ -175,7 +175,7 @@ export const PRODUCTS: ProductConfig[] = [
       'dtc customer service', 'help desk tips', 'building a saas', 'ecommerce tips',
     ],
     // LinkedIn：运营商/客服负责人/电商-SaaS 决策者在这里讨论选型与痛点（B2B 核心）
-    linkedinTerms: ['ai customer service', 'customer support automation', 'ai support agent', 'reduce support costs', 'ecommerce customer support', 'igaming customer support', 'multilingual support'],
+    linkedinTerms: ['ai customer service', 'customer support automation', 'ai support agent', 'reduce support costs', 'ecommerce customer support', 'igaming customer support', 'multilingual support', 'scaling customer support', '24/7 customer support', 'customer support outsourcing', 'support ticket backlog', 'ai agent for ecommerce', 'live chat conversion', 'customer support strategy', 'cx automation'],
   },
   {
     key: 'wonix',
@@ -254,7 +254,7 @@ export const PRODUCTS: ProductConfig[] = [
       'ad creative breakdown', 'facebook ads strategy', 'tiktok ads strategy', 'paid ads tips',
     ],
     // LinkedIn：投手/增长/UA/广告代理 在这里聊创意疲劳、ROAS、放量
-    linkedinTerms: ['ad creative fatigue', 'creative testing', 'user acquisition', 'performance creative', 'scaling paid ads', 'ugc ads', 'media buying'],
+    linkedinTerms: ['ad creative fatigue', 'creative testing', 'user acquisition', 'performance creative', 'scaling paid ads', 'ugc ads', 'media buying', 'creative strategy', 'roas optimization', 'paid social creative', 'app install campaigns', 'igaming user acquisition', 'mobile ua', 'creative automation', 'performance marketing agency'],
   },
 ]
 
