@@ -683,6 +683,7 @@ type Job =
   | { product: string; platform: 'shopify'; kind: 'competitor'; query: string }
   | { product: string; platform: 'xsearch'; kind: Kind; query: string }
   | { product: string; platform: 'appstore'; kind: 'competitor'; query: string }
+  | { product: string; platform: 'linkedin'; kind: 'demand'; query: string }
 
 function buildJobs(): Job[] {
   const jobs: Job[] = []
@@ -700,6 +701,8 @@ function buildJobs(): Job[] {
     for (const h of p.x.ownHandles) jobs.push({ product: p.key, platform: 'x', kind: 'brand', query: h })
     for (const ch of p.telegram ?? []) jobs.push({ product: p.key, platform: 'telegram', kind: 'demand', query: ch })
     for (const f of p.forums ?? []) jobs.push({ product: p.key, platform: 'forum', kind: 'demand', query: f.name, url: f.url })
+    for (const q of p.linkedinTerms ?? []) jobs.push({ product: p.key, platform: 'linkedin', kind: 'demand', query: q }) // LinkedIn：DDG site 搜索发现公开帖
+
     for (const app of p.shopifyApps ?? []) jobs.push({ product: p.key, platform: 'shopify', kind: 'competitor', query: app })
     for (const app of p.appleApps ?? []) jobs.push({ product: p.key, platform: 'appstore', kind: 'competitor', query: app })
     // X 关键词搜索（twitterapi.io）——X 作为最有价值信号源：竞品/回复/需求/品牌全覆盖。
@@ -719,7 +722,7 @@ function buildJobs(): Job[] {
 // 各平台轮流交错：避免"先把 Reddit 全跑完才轮到论坛/X/TG"——开机几分钟内即遍历所有源，
 // 且每次重启(游标归零)也能立刻覆盖到每个平台。
 // 各平台轮流交错；并按优先级排序——X 作为最有价值的源排在每轮最前，确保它最先、最稳地跑。
-const PLATFORM_PRIO = ['xsearch', 'x', 'shopify', 'appstore', 'reddit', 'bluesky', 'forum', 'threads', 'hn', 'telegram']
+const PLATFORM_PRIO = ['xsearch', 'x', 'shopify', 'appstore', 'reddit', 'bluesky', 'forum', 'threads', 'hn', 'linkedin', 'telegram']
 function interleave(jobs: Job[]): Job[] {
   const buckets = new Map<string, Job[]>()
   for (const j of jobs) {
@@ -937,6 +940,63 @@ async function runXJob(j: Extract<Job, { platform: 'x' }>): Promise<number> {
     }
   })
   tx()
+  return added
+}
+
+// LinkedIn 发现：DuckDuckGo HTML 搜 site:linkedin.com/posts 关键词（无 key、走住宅代理）。
+// 返回公开帖：url + 作者(取自 slug) + 片段(=帖子预览)。LinkedIn 无公开搜索 API，这是可行的发现路径。
+async function ddgLinkedin(query: string): Promise<{ id: string; url: string; author: string; text: string }[] | null> {
+  try {
+    const q = encodeURIComponent(`site:linkedin.com/posts ${query}`)
+    const r = await webFetchProxied(`https://html.duckduckgo.com/html/?q=${q}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', Accept: 'text/html' }, signal: AbortSignal.timeout(20_000),
+    })
+    if (!r.ok) return null
+    const html = await r.text()
+    const out: { id: string; url: string; author: string; text: string }[] = []
+    const seen = new Set<string>()
+    // 取每条结果的 链接 + 片段（按出现顺序配对）
+    const anchors = [...html.matchAll(/class="result__a"[^>]*href="([^"]+)"/g)].map((m) => m[1])
+    const snips = [...html.matchAll(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g)].map((m) => m[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim())
+    anchors.forEach((href, i) => {
+      const m = href.match(/uddg=([^&]+)/)
+      let url = m ? decodeURIComponent(m[1]) : href
+      if (url.startsWith('//')) url = 'https:' + url
+      if (!/linkedin\.com\/posts\//i.test(url)) return
+      const slug = (url.match(/\/posts\/([^_/?]+)/) || [])[1] || ''
+      const act = (url.match(/activity-(\d+)/) || [])[1] || strHash(url)
+      if (seen.has(act)) return
+      seen.add(act)
+      out.push({ id: act, url: url.split('?')[0], author: slug.replace(/-[0-9a-f]{6,}$/, ''), text: snips[i] || '' })
+    })
+    return out
+  } catch { return null }
+}
+
+async function runLinkedinJob(j: Extract<Job, { platform: 'linkedin' }>): Promise<number> {
+  const items = await ddgLinkedin(j.query)
+  if (items === null) { markFail(j.platform); return 0 }
+  markOk(j.platform)
+  const now = Date.now()
+  let added = 0
+  const fresh: AlertSignal[] = []
+  const tx = db.transaction(() => {
+    for (const it of items) {
+      if (!it.text && !it.url) continue
+      const text = it.text || j.query
+      const intent = intentScore(text)
+      const id = `li_${it.id}_${j.product}`
+      const r = insertSignal.run({
+        id, product: j.product, platform: 'linkedin', kind: 'demand', query: j.query,
+        author: (it.author || '').slice(0, 120), title: text.slice(0, 300), body: text.slice(0, 2000),
+        url: it.url, score: 0, sentiment: senti(text), intent, ts: now, collected_ts: now,
+      })
+      added += r.changes
+      if (r.changes) fresh.push({ id, product: j.product, platform: 'linkedin', kind: 'demand', title: text.slice(0, 200), url: it.url, intent })
+    }
+  })
+  tx()
+  void maybeAlert(fresh)
   return added
 }
 
@@ -1187,6 +1247,7 @@ export async function runSocialIntelOnce(): Promise<void> {
       : j.platform === 'threads' ? await runThreadsJob(j)
       : j.platform === 'shopify' ? await runShopifyJob(j)
       : j.platform === 'appstore' ? await runAppStoreJob(j)
+      : j.platform === 'linkedin' ? await runLinkedinJob(j)
       : j.platform === 'xsearch' ? await runXSearchJob(j)
       : await runXJob(j)
     if (added) console.log(`[social-intel] ${j.product}/${j.platform}/${j.kind} "${j.query}": +${added}`)

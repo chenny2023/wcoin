@@ -78,6 +78,11 @@ export interface ProductConfig {
    * 只喂 X 关键词搜索（多词短语 X 支持良好；Threads 对多词常返 0，故不复用）。
    */
   kolTerms?: string[]
+  /**
+   * LinkedIn 关键词。LinkedIn 无公开搜索 API，故走「DuckDuckGo site:linkedin.com/posts 关键词」
+   * 发现公开帖(片段+链接)，再由分类器精筛。B2B 浓度高，适合 hirecx/wonix。留空=不采 LinkedIn。
+   */
+  linkedinTerms?: string[]
 }
 
 // 关键词可随时增删调优；竞品 X 账号名写错会自动 404 忽略，安全。各产品 ownHandles 待补真实账号。
@@ -105,6 +110,8 @@ export const PRODUCTS: ProductConfig[] = [
     x: { competitorHandles: ['casinoguru'], ownHandles: [] },
     // Threads 宽泛主题词（实测有返回；长尾短语恒为 0）。靠分类器再筛玩家/行业相关。
     threadsTerms: ['online casino', 'casino', 'gambling', 'sportsbook', 'slots', 'betting', 'casino bonus', 'free spins', 'sports betting', 'betting tips', 'poker', 'crypto gambling', 'roulette', 'blackjack'], // Threads 搜索对多词短语常返回 0，用宽泛单词；认证号优先 profile
+    // LinkedIn：iGaming 行业/运营/合规 视角（玩家不在 LinkedIn，但行业人/运营商在）
+    linkedinTerms: ['igaming operator', 'crypto casino', 'online gambling industry', 'casino player protection', 'igaming compliance', 'responsible gambling'],
   },
   {
     key: 'hirecx',
@@ -167,6 +174,8 @@ export const PRODUCTS: ProductConfig[] = [
       'ecommerce customer service', 'support automation', 'shopify store tips', 'saas customer success',
       'dtc customer service', 'help desk tips', 'building a saas', 'ecommerce tips',
     ],
+    // LinkedIn：运营商/客服负责人/电商-SaaS 决策者在这里讨论选型与痛点（B2B 核心）
+    linkedinTerms: ['ai customer service', 'customer support automation', 'ai support agent', 'reduce support costs', 'ecommerce customer support', 'igaming customer support', 'multilingual support'],
   },
   {
     key: 'wonix',
@@ -244,6 +253,8 @@ export const PRODUCTS: ProductConfig[] = [
       'ugc ads', 'creative strategy', 'performance marketing tips', 'dtc marketing',
       'ad creative breakdown', 'facebook ads strategy', 'tiktok ads strategy', 'paid ads tips',
     ],
+    // LinkedIn：投手/增长/UA/广告代理 在这里聊创意疲劳、ROAS、放量
+    linkedinTerms: ['ad creative fatigue', 'creative testing', 'user acquisition', 'performance creative', 'scaling paid ads', 'ugc ads', 'media buying'],
   },
 ]
 
