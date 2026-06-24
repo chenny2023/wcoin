@@ -377,6 +377,8 @@ function startObs(){const app=$('#app');if(!app||_obs)return
 function toast(m){const t=$('#toast');t.textContent=L(m);t.classList.add('show');clearTimeout(window._tt);window._tt=setTimeout(()=>t.classList.remove('show'),2600)}
 
 async function api(path,opts={}){
+  // 兜底：带 application/json 的 POST/PUT/PATCH 必须有 body，否则 Fastify 拒绝空 JSON body → 400。
+  const m=(opts.method||'GET').toUpperCase();if((m==='POST'||m==='PUT'||m==='PATCH')&&opts.body==null)opts={...opts,body:'{}'}
   const r=await fetch(path,{...opts,headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,...(opts.headers||{})}})
   if(r.status===403){token='';localStorage.removeItem(TOKEN_KEY);render();throw new Error('需要登录')}
   return r.json()
