@@ -93,6 +93,8 @@ function layout(opts: {
 <meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}">
 <meta property="og:url" content="${esc(canonical)}"><meta property="og:image" content="${esc(ogImage || SITE + '/og.svg')}">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${esc(ogImage || SITE + '/og.svg')}">
+<meta property="article:modified_time" content="${new Date(updated).toISOString()}">
+<meta name="rating" content="adult">
 <script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@graph': graph })}</script>
 <style>
 :root{--bg:#0a0a0f;--card:#13131b;--line:#ffffff14;--fg:#e8e8ee;--mut:#9aa0b4;--dim:#6b6b78;--gold:#f5b100;--mint:#2ee6a6;--rose:#ff6b8a}
@@ -136,8 +138,9 @@ footer{border-top:1px solid var(--line);margin-top:30px}footer .wrap{display:fle
 <main class="wrap">
 <div class="crumb">${crumbHtml}</div>
 <h1>${esc(h1)}</h1>
+<div class="upd">Last updated: ${new Date(updated).toISOString().slice(0, 10)} · live on-chain data, refreshed ~every 30 min</div>
 ${body}
-<p class="note"><strong>Methodology &amp; disclaimer.</strong> Figures are derived from on-chain transfers attributed to wallets we associate with each operator, plus third-party ratings shown with their source. Blockchain attribution carries inherent uncertainty, and reserves are an all-chain best-effort estimate from mapped wallets — coverage varies by operator. These pages describe <em>observed activity and third-party data only</em>; they are not a statement on any operator's solvency, legality, fairness, or safety, and nothing here is financial advice. See <a href="/methodology/address-attribution">how we attribute on-chain activity</a>. Data updates roughly every 30 minutes.</p>
+<p class="note"><strong>Methodology &amp; disclaimer.</strong> Figures are derived from on-chain transfers attributed to wallets we associate with each operator, plus third-party ratings shown with their source. Blockchain attribution carries inherent uncertainty, and reserves are an all-chain best-effort estimate from mapped wallets — coverage varies by operator. These pages describe <em>observed activity and third-party data only</em>; <strong>they are not an endorsement of any operator</strong> and not a statement on any operator's solvency, legality, fairness, or safety, and nothing here is financial, legal or investment advice. See <a href="/methodology/address-attribution">how we attribute on-chain activity</a> · <a href="/about">about us</a> · <a href="/app">report a correction</a>. Data updates roughly every 30 minutes. <strong>18+ only.</strong> Gambling can be addictive — see <a href="/responsible-gambling">responsible gambling resources</a>.</p>
 </main>
 <section style="border-top:1px solid var(--line);margin-top:30px;padding:24px 20px;text-align:center">
   <div style="font-weight:600;font-size:15px;color:var(--fg)">Get the daily on-chain report</div>
@@ -148,8 +151,8 @@ ${body}
   </form>
 </section>
 <footer><div class="wrap">
-<span>© 2026 WCOIN.CASINO — the on-chain intelligence layer for iGaming</span>
-<span><a href="/rankings">Rankings</a> · <a href="/daily">Daily report</a> · <a href="/streamers">Streamers</a> · <a href="/app">Live data</a> · <a href="/methodology/proof-of-reserves">Reserves methodology</a></span>
+<span>© 2026 WCOIN.CASINO — the on-chain intelligence layer for iGaming · <strong>18+</strong></span>
+<span><a href="/about">About</a> · <a href="/rankings">Rankings</a> · <a href="/streamers">Streamers</a> · <a href="/insights">Insights</a> · <a href="/methodology/proof-of-reserves">Methodology</a> · <a href="/responsible-gambling">Responsible gambling</a></span>
 </div></footer>
 </body></html>`
 }
@@ -1358,6 +1361,66 @@ const enqueueEnrich = db.prepare(
 const MAX_CASINOS = Number(process.env.SEO_MAX_CASINOS ?? 600)
 const MAX_REPORTS = Number(process.env.SEO_MAX_REPORTS ?? 400)
 
+// ── E-E-A-T + YMYL compliance pages (§4.1 / §4.4) ────────────────────────────
+function aboutPage(): { title: string; description: string; html: string } {
+  const url = `${SITE}/about`
+  const title = 'About WCOIN.CASINO — Independent On-Chain Crypto-Casino Intelligence'
+  const description = 'WCOIN.CASINO is an independent data-media platform tracking crypto casinos on-chain — verified volume, proof-of-reserves and trust signals. Not an operator, no paid rankings.'
+  const body = `
+<p class="sub">WCOIN.CASINO is an independent on-chain intelligence platform for the crypto-casino industry. We are a <strong>data-media site — not a casino, not an operator, and not an affiliate that sells rankings.</strong></p>
+<h2>What we do</h2>
+<div class="prose"><p>We attribute public blockchain transfers to crypto-casino operators and surface what the chain actually shows: tracked deposit/withdrawal volume, all-chain reserves mapped from on-chain wallets, net flow, and independent third-party trust ratings (always shown with their source). Everything is derived from public on-chain data and public review sources — information anyone can independently verify.</p></div>
+<h2>How we're different</h2>
+<div class="prose"><p>Most casino "review" sites rank by affiliate payouts. We don't. Our default ranking is <a href="/rankings/trust">independent trust</a>, never volume — which is trivially wash-traded. We separate <em>verified</em> wallet attribution from <em>claimed</em> / pattern-detected flow, and we never state a verdict on any operator's solvency, legality, fairness or safety.</p></div>
+<h2>Data &amp; methodology</h2>
+<div class="prose"><p>See our <a href="/methodology/address-attribution">attribution methodology</a>, <a href="/methodology/proof-of-reserves">proof-of-reserves methodology</a> and <a href="/methodology/trust">trust scoring</a>. Data refreshes roughly every 30 minutes. Spot an error in our attribution? <a href="/app">Report a correction</a> — corrections are reviewed and, where valid, applied.</p></div>
+<h2>Coverage</h2>
+<div class="prose"><p>Explore the <a href="/rankings">rankings hub</a>, per-operator on-chain pages, per-chain activity, the <a href="/daily">daily report</a>, and <a href="/streamers">streamer tracking</a>.</p></div>
+<p class="prose" style="margin-top:18px"><strong>18+ only.</strong> This site provides data, not gambling. Nothing here is financial, legal or investment advice. See <a href="/responsible-gambling">responsible gambling resources</a>.</p>`
+  return { title, description, html: layout({ title, description, canonical: url, breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: 'About', url }], h1: 'About WCOIN.CASINO', updated: Date.now(), body }) }
+}
+
+function responsibleGamblingPage(): { title: string; description: string; html: string } {
+  const url = `${SITE}/responsible-gambling`
+  const title = 'Responsible Gambling — Help & Resources | WCOIN.CASINO'
+  const description = 'Gambling can be addictive. WCOIN.CASINO is a data platform (18+). Find responsible-gambling tools and free, confidential help resources by region.'
+  const orgs = [
+    ['BeGambleAware (UK)', 'https://www.begambleaware.org', 'Free, confidential advice and a 24/7 helpline.'],
+    ['GamCare (UK)', 'https://www.gamcare.org.uk', 'Support, information and counselling for problem gambling.'],
+    ['National Council on Problem Gambling (US)', 'https://www.ncpgambling.org', 'Call/text 1-800-522-4700 — 24/7, confidential.'],
+    ['Gamblers Anonymous', 'https://www.gamblersanonymous.org', 'Peer fellowship for those who want to stop gambling.'],
+    ['Gambling Therapy (Global)', 'https://www.gamblingtherapy.org', 'Free online support in multiple languages, worldwide.'],
+  ]
+  const list = orgs.map(([n, u, d]) => `<tr><td><a href="${esc(u)}" rel="noopener nofollow" target="_blank">${esc(n)}</a></td><td>${esc(d)}</td></tr>`).join('')
+  const body = `
+<p class="sub"><strong>You must be 18+ (or the legal age in your jurisdiction) to gamble.</strong> WCOIN.CASINO is an information and data platform — we do not operate gambling and do not take bets. Gambling can be addictive; please play responsibly.</p>
+<h2>Signs it may be a problem</h2>
+<div class="prose"><p>Spending more than you can afford, chasing losses, borrowing to gamble, gambling to escape stress, or hiding it from people close to you. If any of this sounds familiar, free and confidential help is available.</p></div>
+<h2>Tools that help</h2>
+<div class="prose"><p>Set deposit and time limits, use cooling-off / self-exclusion features your operator provides, and consider blocking software (e.g. Gamban, GameStop). Never treat gambling as a way to make money.</p></div>
+<h2>Free, confidential help</h2>
+<table><thead><tr><th>Organisation</th><th>What they offer</th></tr></thead><tbody>${list}</tbody></table>
+<p class="prose" style="margin-top:16px">Availability and legality of gambling vary by jurisdiction — it is your responsibility to comply with your local laws. Nothing on this site is an endorsement to gamble. See our <a href="/about">about page</a> and <a href="/methodology/trust">methodology</a>.</p>`
+  return { title, description, html: layout({ title, description, canonical: url, breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: 'Responsible gambling', url }], h1: 'Responsible gambling', updated: Date.now(), body }) }
+}
+
+// §4.3 — /insights archive of the dated daily reports (hub for the digest pages)
+function insightsIndexPage(snaps: any[]): { title: string; description: string; html: string } {
+  const url = `${SITE}/insights`
+  const title = 'Crypto Casino Insights — Daily On-Chain Market Reports | WCOIN.CASINO'
+  const description = `Archive of WCOIN.CASINO daily on-chain crypto-casino reports — tracked volume, reserve moves, whale flow and chain breakdown. ${snaps.length} editions and counting.`
+  const rows = snaps
+    .slice(0, 120)
+    .map((s) => `<tr><td><a href="/reports/daily/${s.snapshot_date}">Daily report — ${s.snapshot_date}</a></td><td class="n">${fmtUsd(s.tracked_volume_24h ?? 0)}</td><td class="n">${s.active_casinos ?? 0}</td></tr>`)
+    .join('')
+  const body =
+    `<p class="sub">Every day we publish an on-chain snapshot of the crypto-casino market — verified tracked volume, reserve watch, whale flow and chain breakdown. Browse the archive below or get it in your inbox.</p>` +
+    `<p class="upd">${snaps.length} daily editions · newest first</p>` +
+    `<table><thead><tr><th>Edition</th><th style="text-align:right">24h tracked volume</th><th style="text-align:right">Active casinos</th></tr></thead><tbody>${rows}</tbody></table>` +
+    `<p class="prose" style="margin-top:16px">See today's <a href="/daily">live daily report</a> or the overall <a href="/rankings/trust">trust ranking</a>.</p>`
+  return { title, description, html: layout({ title, description, canonical: url, breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: 'Insights', url }], h1: 'Crypto casino insights — daily reports', updated: Date.now(), body }) }
+}
+
 export async function generateSeoPages(): Promise<void> {
   const views = await buildViews()
   const sorted = views.slice().sort((a, b) => {
@@ -1489,6 +1552,10 @@ export async function generateSeoPages(): Promise<void> {
   add('/rankings', 'rankings', rankingsIndexPage([...chainSet], unattributed.length > 0))
   add('/risk', 'risk', riskIndexPage(recentRiskEvents(80)), 'featured_core') // neutral risk registry
   add('/proof-of-reserves', 'reserves', reservesHubPage(onchainBrands, slugOfBrand), 'featured_core') // on-chain moat: PoR guide + verified list
+  // E-E-A-T + YMYL compliance pages (always indexable; linked from every page footer)
+  add('/about', 'about', aboutPage(), 'featured_core')
+  add('/responsible-gambling', 'about', responsibleGamblingPage(), 'featured_core')
+  add('/insights', 'insights', insightsIndexPage(snaps), 'featured_core')
   if (unattributed.length) add('/rankings/unattributed-flow', 'rankings', unattributedFlowPage(unattributed))
   await yieldLoop()
   // chains
@@ -1655,6 +1722,9 @@ export function registerSeo(app: FastifyInstance) {
   app.get('/reports/daily/:date', serve('report'))
   app.get('/reports/weekly/:week', serve('report'))
   app.get('/methodology/:topic', serve('methodology'))
+  app.get('/about', serve('about'))
+  app.get('/responsible-gambling', serve('about'))
+  app.get('/insights', serve('insights'))
   app.get('/streamers', serve('streamers'))
   app.get('/streamer/:slug', serve('streamers'))
 
