@@ -5,6 +5,8 @@ export const PANEL_HTML = `<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <title>Whale Growth</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap">
 <style>
   :root{
     --bg:#05060c;--panel:#0e1322;--panel2:#141b30;--line:#26304d;
@@ -12,34 +14,68 @@ export const PANEL_HTML = `<!doctype html>
     --acc:#6ea8ff;--acc2:#8b5cff;--good:#28e0a0;--bad:#ff5b7a;--warn:#ffc24a;
     --gold:#ffb24a;--cyan:#3fe0ff;--mag:#c96bff;
     --grad:linear-gradient(135deg,#8b5cff,#3fe0ff);
+    --font-disp:'Space Grotesk','Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    --font-body:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    --font-mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   }
   *{box-sizing:border-box}
-  ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:#1f2940;border-radius:8px}
-  body{margin:0;background:radial-gradient(1200px 600px at 80% -10%,#10203f33,transparent),var(--bg);
-    color:var(--fg);font:14px/1.55 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  ::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:#222d49;border-radius:8px;border:2px solid transparent;background-clip:padding-box}::-webkit-scrollbar-thumb:hover{background:#33406a;background-clip:padding-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 var(--font-body);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  /* 极光 + 网格背景层 */
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background:radial-gradient(60% 55% at 12% -5%,#8b5cff1f,transparent 70%),radial-gradient(55% 45% at 100% 8%,#3fe0ff14,transparent 70%),radial-gradient(45% 40% at 70% 110%,#c96bff14,transparent 70%)}
+  body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.5;
+    background-image:linear-gradient(#ffffff05 1px,transparent 1px),linear-gradient(90deg,#ffffff05 1px,transparent 1px);background-size:46px 46px;
+    -webkit-mask:radial-gradient(circle at 50% 0%,#000,transparent 75%);mask:radial-gradient(circle at 50% 0%,#000,transparent 75%)}
+  #app{position:relative;z-index:1}
   a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
-  .mut{color:var(--mut)}.dim{color:var(--dim)}.tabnum{font-variant-numeric:tabular-nums}.right{margin-left:auto}
+  .mut{color:var(--mut)}.dim{color:var(--dim)}.tabnum{font-family:var(--font-mono);font-variant-numeric:tabular-nums;letter-spacing:-.2px}.right{margin-left:auto}
 
-  header{display:flex;align-items:center;gap:14px;padding:12px 22px;border-bottom:1px solid var(--line);
-    position:sticky;top:0;z-index:20;background:rgba(7,10,16,.82);backdrop-filter:blur(12px)}
-  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px;letter-spacing:.2px}
-  .logo{width:26px;height:26px;border-radius:8px;background:var(--grad);display:grid;place-items:center;font-size:14px;box-shadow:0 4px 14px #5b8cff44}
-  .nav{display:flex;gap:4px;margin-left:8px;background:var(--panel);border:1px solid var(--line);padding:4px;border-radius:12px}
-  .nav button{background:transparent;border:0;color:var(--mut);padding:7px 14px;border-radius:9px;cursor:pointer;font-size:13px;font-weight:600;transition:.15s}
-  .nav button:hover{color:var(--fg)}
-  .nav button.on{color:#fff;background:var(--grad);box-shadow:0 4px 12px #5b8cff33}
+  .ic{display:inline-block;vertical-align:-.15em;flex:0 0 auto}
+  /* ── 左侧图标导航栏 ──────────────────────────────────────────────── */
+  .appwrap{display:flex;min-height:100vh;position:relative;z-index:1}
+  .rail{width:212px;flex:0 0 212px;border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:6px;
+    position:sticky;top:0;height:100vh;background:linear-gradient(180deg,rgba(14,19,34,.55),rgba(5,6,12,.55));backdrop-filter:blur(10px);z-index:20}
+  .rail .brand{display:flex;align-items:center;gap:11px;padding:4px 8px 16px;font-family:var(--font-disp)}
+  .rail .logo{width:36px;height:36px;border-radius:11px;background:var(--grad);display:grid;place-items:center;color:#fff;flex:0 0 auto;
+    box-shadow:0 6px 20px #8b5cff55,inset 0 0 0 1px #ffffff26}
+  .bword{font-size:15px;font-weight:600;letter-spacing:.3px;white-space:nowrap}
+  .bword b{font-weight:800;background:linear-gradient(90deg,var(--gold),var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .nav{display:flex;flex-direction:column;gap:3px;flex:1}
+  .navi{display:flex;align-items:center;gap:12px;background:transparent;border:0;color:var(--mut);padding:9px 11px;border-radius:11px;cursor:pointer;
+    font-size:13px;font-weight:600;font-family:inherit;position:relative;transition:background .18s,color .18s;text-align:left;width:100%}
+  .navi .ni{display:grid;place-items:center;width:20px;height:20px;flex:0 0 auto;opacity:.8;transition:.18s}
+  .navi .nl{white-space:nowrap;overflow:hidden}
+  .navi:hover{color:var(--fg);background:#ffffff0a}.navi:hover .ni{opacity:1;transform:translateX(1px)}
+  .navi.on{color:#fff;background:linear-gradient(90deg,#8b5cff24,#3fe0ff08)}
+  .navi.on .ni{opacity:1;color:var(--cyan)}
+  .navi.on::before{content:"";position:absolute;left:-12px;top:7px;bottom:7px;width:3px;border-radius:0 4px 4px 0;background:var(--grad);box-shadow:0 0 14px #8b5cffcc}
+  .rail-foot{display:flex;flex-direction:column;gap:2px;border-top:1px solid var(--line);padding-top:10px;margin-top:4px}
+  .rail-foot .btn{justify-content:flex-start;width:100%;border:0;background:transparent;color:var(--mut);padding:8px 11px;gap:12px}
+  .rail-foot .btn .nl{white-space:nowrap}
+  .rail-foot .btn:hover{background:#ffffff0a;color:var(--fg);box-shadow:none}
+
+  .content{flex:1;min-width:0;display:flex;flex-direction:column}
+  .topbar{display:flex;align-items:center;gap:12px;padding:14px 26px;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:15;background:rgba(5,6,12,.72);backdrop-filter:blur(12px)}
+  .ptitle{margin:0;font-family:var(--font-disp);font-size:18px;font-weight:700;letter-spacing:.2px}
+  .livedot{display:inline-flex;align-items:center;gap:7px;font-size:10.5px;color:var(--mut);text-transform:uppercase;letter-spacing:1.4px;font-weight:700}
   .spacer{margin-left:auto}
-  .btn{background:var(--panel2);border:1px solid var(--line);color:var(--fg);padding:8px 13px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:600;transition:.15s;display:inline-flex;align-items:center;gap:6px}
-  .btn:hover{border-color:var(--acc);box-shadow:0 0 0 3px #5b8cff1f}
-  .btn:disabled{opacity:.5;cursor:default;box-shadow:none}
+
+  .btn{background:var(--panel2);border:1px solid var(--line);color:var(--fg);padding:8px 13px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;transition:.16s;display:inline-flex;align-items:center;gap:7px}
+  .btn:hover{border-color:var(--acc);box-shadow:0 0 0 3px #6ea8ff1f;transform:translateY(-1px)}
+  .btn:active{transform:translateY(0)}
+  .btn:disabled{opacity:.5;cursor:default;box-shadow:none;transform:none}
   .btn.sm{padding:5px 10px;font-size:12px;border-radius:8px}
-  .btn.pri{background:var(--grad);border-color:transparent;box-shadow:0 4px 14px #5b8cff33}
+  .btn.pri{background:var(--grad);border-color:transparent;color:#fff;box-shadow:0 6px 18px #8b5cff44}
+  .btn.pri:hover{box-shadow:0 8px 24px #8b5cff66}
   .btn.good{background:#0f3326;border-color:#1c6e4d;color:#5ff0b0}
   .btn.bad{background:#3a1620;border-color:#7a2435;color:#ff9aa8}
   .btn.ghost{background:transparent}
 
-  main{padding:20px 22px 60px;max-width:1180px;margin:0 auto}
+  main{padding:22px 26px 72px;max-width:1280px;width:100%;animation:fadeUp .4s ease}
   .lead{color:var(--mut);font-size:13px;margin:0 0 16px}
+  @media(max-width:960px){.rail{width:64px;flex-basis:64px;padding:16px 10px}.bword,.navi .nl,.rail-foot .btn .nl{display:none}.navi{justify-content:center;padding:10px}.rail-foot .btn{justify-content:center}.rail .brand{justify-content:center;padding:4px 0 16px}.navi.on::before{left:-10px}main{padding:18px 16px 60px}.topbar{padding:12px 16px}}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 
   .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;margin-bottom:18px}
   .kpi{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:14px;padding:14px 16px;position:relative;overflow:hidden}
@@ -151,6 +187,23 @@ export const PANEL_HTML = `<!doctype html>
   .pstep:last-child::after{display:none}
   @keyframes pulseG{0%,100%{box-shadow:0 0 0 0 #28e0a055}50%{box-shadow:0 0 0 5px #28e0a000}}
   .live{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--good);animation:pulseG 1.8s infinite}
+
+  /* ── 排版 / 卡片 / 动效 精修 ─────────────────────────────────────── */
+  h1,h2,h3,.k-val,.kc .kn,.ptitle{font-family:var(--font-disp)}
+  .panel h3{letter-spacing:.2px}.panel h3 .tag{font-family:var(--font-body);letter-spacing:0}
+  .kpi{transition:transform .18s,border-color .18s,box-shadow .18s;animation:fadeUp .45s ease backwards}
+  .kpi:hover{transform:translateY(-3px);border-color:#33406a;box-shadow:0 14px 34px #00000066}
+  .kpis .kpi:nth-child(2){animation-delay:.05s}.kpis .kpi:nth-child(3){animation-delay:.1s}.kpis .kpi:nth-child(4){animation-delay:.15s}.kpis .kpi:nth-child(5){animation-delay:.2s}
+  .kpi .k-val{font-size:27px}
+  .panel{transition:border-color .18s,box-shadow .18s}.panel:hover{border-color:#2a3656}
+  .card{transition:transform .16s,border-color .16s,box-shadow .16s}
+  .card:hover{transform:translateY(-2px);border-color:#3a4a72;box-shadow:0 12px 30px #00000055}
+  .kc{animation:fadeUp .45s ease backwards}.kpis2 .kc:nth-child(2){animation-delay:.06s}.kpis2 .kc:nth-child(3){animation-delay:.12s}.kpis2 .kc:nth-child(4){animation-delay:.18s}
+  .pstep{animation:fadeUp .4s ease backwards}.pipe .pstep:nth-child(2){animation-delay:.06s}.pipe .pstep:nth-child(3){animation-delay:.12s}.pipe .pstep:nth-child(4){animation-delay:.18s}.pipe .pstep:nth-child(5){animation-delay:.24s}
+  .glass{transition:box-shadow .3s}.glass:hover{box-shadow:0 0 44px #8b5cff1c}
+  .login .logo{color:#fff;background:var(--grad);box-shadow:0 8px 26px #8b5cff55}
+  .login{box-shadow:0 30px 80px #00000066}.login h1{font-family:var(--font-disp);letter-spacing:.3px}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style></head>
 <body>
 <div id="app"></div>
@@ -165,6 +218,25 @@ const $=s=>document.querySelector(s)
 const esc=s=>(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
 const ago=ts=>{if(!ts)return '';const m=(Date.now()-ts)/60000;if(m<1)return '刚刚';if(m<60)return Math.round(m)+'分钟前';if(m<1440)return Math.round(m/60)+'小时前';return Math.round(m/1440)+'天前'}
 const pname=k=>(products.find(p=>p.key===k)||{}).name||k
+// ── 内联 SVG 图标（lucide 风格，stroke=currentColor）──────────────────────────
+const ICON={
+ overview:'<path d="M3 12h4l3 8 4-16 3 8h4"/>',
+ signals:'<path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/>',
+ kol:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+ appwatch:'<rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/>',
+ painradar:'<circle cx="12" cy="12" r="9"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/>',
+ topics:'<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1.3.5 2.6 1.5 3.5.8.8 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>',
+ drafts:'<path d="M12 22h6a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v10"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10.4 12.6a2 2 0 1 1 3 3L8 21l-4 1 1-4Z"/>',
+ custom:'<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="2" y1="14" x2="6" y2="14"/><line x1="10" y1="8" x2="14" y2="8"/><line x1="18" y1="16" x2="22" y2="16"/>',
+ run:'<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/>',
+ lang:'<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>',
+ logout:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>'
+}
+const ic=(n,s)=>'<svg class="ic" width="'+(s||18)+'" height="'+(s||18)+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+(ICON[n]||'')+'</svg>'
+const WHALE='<svg viewBox="0 0 24 24" width="22" height="22" fill="none"><path d="M3.6 11.4c-.9 0-1.6.7-1.6 1.7C2 15.8 4.9 18 8.6 18H11c3 0 5.6-1.8 6.6-4.5l2.1 1.6c.6.5 1.6.05 1.6-.72V9.6c0-.78-1-1.2-1.6-.72L17.6 10.5C16.6 7.9 14 6 11 6 8.6 6 6.5 7 5.2 8.8" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="rgba(255,255,255,.16)"/><circle cx="7.4" cy="11.6" r="1" fill="#fff"/></svg>'
+// 数字滚动入场（KPI / 管道计数）
+function countUp(el){const raw=(el.textContent||'').trim();const m=raw.match(/^([\d.,]+)([KMB%x]?)$/i);if(!m)return;const suf=m[2]||'';const dec=m[1].indexOf('.')>=0;const target=parseFloat(m[1].replace(/,/g,''));if(!isFinite(target))return;const t0=performance.now(),dur=640;const fmt=n=>dec?n.toFixed(1):(suf?Math.round(n).toString():Math.round(n).toLocaleString());el.textContent=fmt(0)+suf;function tick(t){const p=Math.min(1,(t-t0)/dur),e=1-Math.pow(1-p,3);el.textContent=fmt(target*e)+suf;if(p<1)requestAnimationFrame(tick)}requestAnimationFrame(tick)}
+function animateCounts(sel){document.querySelectorAll(sel).forEach(countUp)}
 // ── i18n（中英文切换，给海外同事用）─────────────────────────────────────────────
 // 渲染层全是中文模板；切到 en 时用 MutationObserver 在每次 DOM 变更后翻译，多策略且不破坏中文数据。
 let lang=localStorage.getItem('wg_lang')||'zh'
@@ -235,7 +307,7 @@ const EN={
 '不可解·仅记录':'Unsolvable · record only',
 '发送验证码登录':'Send code to sign in',
 '概览 / 分析':'Overview / Analytics',
-'🐋 鲸群拓扑':'🐋 Whale Swarm','⚡ 增长管道':'⚡ Growth Pipeline','采集 Collect':'Collect','分类 Classify':'Classify','起草 Draft':'Draft','KOL 候选':'KOL Pool','机会':'opps',
+'🐋 鲸群拓扑':'🐋 Whale Swarm','⚡ 增长管道':'⚡ Growth Pipeline','采集 Collect':'Collect','分类 Classify':'Classify','起草 Draft':'Draft','KOL 候选':'KOL Pool','机会':'opps','手动采集':'Collect now','实时数据':'Live',
 '可推荐自有产品':'can recommend our products',
 '最高意图机会贴':'Top high-intent opportunities',
 '对方未开放私信':'DMs not open',
@@ -455,7 +527,7 @@ H.reqcode=async(_,btn)=>{if(btn){btn.textContent='发送中…';btn.disabled=tru
 H.verify=async(_,btn)=>{const code=$('#code').value.trim();if(!code)return toast('请输入验证码');if(btn){btn.textContent='验证中…';btn.disabled=true}const r=await fetch('/api/internal/auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})});const j=await r.json();if(j.token){token=j.token;localStorage.setItem(TOKEN_KEY,token);render()}else{toast(j.error||'验证失败');if(btn){btn.textContent='登录';btn.disabled=false}}}
 H.backlogin=()=>render(false)
 function loginView(step){
-  $('#app').innerHTML='<div class="login"><div class="logo">🐳</div><h1>Whale Growth</h1><p class="mut">团队内部 · 增长情报</p>'+
+  $('#app').innerHTML='<div class="login"><div class="logo">'+WHALE+'</div><h1>Whale Growth</h1><p class="mut">团队内部 · 增长情报</p>'+
    (step
      ?'<p class="mut" style="font-size:13px;margin:-4px 0 12px">验证码已发送到管理员邮箱 <b>'+esc(codeSentTo)+'</b>，向管理员索取后输入：</p>'+
        '<input id="code" placeholder="6 位验证码" autofocus inputmode="numeric" maxlength="6"><button class="btn pri" data-act="verify" style="width:100%;justify-content:center">登录</button>'+
@@ -464,14 +536,19 @@ function loginView(step){
        '<button class="btn pri" data-act="reqcode" style="width:100%;justify-content:center">发送验证码登录</button>')+'</div>'
 }
 
+const NAVITEMS=[['overview','概览'],['signals','信号'],['kol','潜在合作'],['appwatch','产品观察室'],['painradar','竞品洞察'],['topics','选题建议'],['drafts','草稿'],['custom','自定义采集']]
 function shell(inner){
-  const nav=[['overview','概览'],['signals','信号'],['kol','潜在合作'],['appwatch','产品观察室'],['painradar','竞品洞察'],['topics','选题建议'],['drafts','草稿'],['custom','自定义采集']]
-    .map(t=>'<button class="'+(tab===t[0]?'on':'')+'" data-act="go" data-id="'+t[0]+'">'+t[1]+'</button>').join('')
-  return '<header><div class="brand"><div class="logo">🐳</div>Whale Growth</div>'+
-    '<div class="nav">'+nav+'</div><div class="spacer"></div>'+
-    '<button class="btn ghost sm" data-act="run">⟳ 手动采集</button>'+
-    '<button class="btn ghost sm" data-act="lang" title="中文 / English">🌐 '+(lang==='en'?'中文':'EN')+'</button>'+
-    '<button class="btn ghost sm" data-act="logout">退出</button></header><main>'+inner+'</main>'
+  const nav=NAVITEMS.map(t=>'<button class="navi'+(tab===t[0]?' on':'')+'" data-act="go" data-id="'+t[0]+'"><span class="ni">'+ic(t[0])+'</span><span class="nl">'+t[1]+'</span></button>').join('')
+  const title=(NAVITEMS.find(t=>t[0]===tab)||['','Whale Growth'])[1]
+  return '<div class="appwrap"><aside class="rail">'+
+    '<div class="brand"><span class="logo">'+WHALE+'</span><span class="bword">Whale<b>Growth</b></span></div>'+
+    '<nav class="nav">'+nav+'</nav>'+
+    '<div class="rail-foot">'+
+      '<button class="btn ghost sm" data-act="run">'+ic('run',16)+'<span class="nl">手动采集</span></button>'+
+      '<button class="btn ghost sm" data-act="lang" title="中文 / English">'+ic('lang',16)+'<span class="nl">'+(lang==='en'?'中文':'EN')+'</span></button>'+
+      '<button class="btn ghost sm" data-act="logout">'+ic('logout',16)+'<span class="nl">退出</span></button>'+
+    '</div></aside>'+
+    '<div class="content"><header class="topbar"><h2 class="ptitle">'+title+'</h2><div class="spacer"></div><span class="livedot"><i class="live"></i> 实时数据</span></header><main>'+inner+'</main></div></div>'
 }
 function skeleton(){$('#app').innerHTML=shell('<div class="skel"></div><div class="skel"></div><div class="skel"></div>')}
 
@@ -598,6 +675,7 @@ async function renderOverview(){
   $('#app').innerHTML=shell(head+kpis+hero+health+'<div class="grid2">'+spark+sentBar+'</div><div class="grid2">'+prodBars+platBars+'</div>'+opp+'<div class="grid2">'+demandTbl+compTbl+'</div>')
   $('#a-days').onchange=e=>{aDays=Number(e.target.value);render()}
   try{initSwarm($('#swarm'),$('#swarmtip'),swdata)}catch(e){/* 拓扑渲染失败不影响其余 */}
+  try{animateCounts('.kpi .k-val,.pstep .pn')}catch(e){}
 }
 
 // ── 信号 ────────────────────────────────────────────────────────────────────
