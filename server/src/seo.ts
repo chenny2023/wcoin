@@ -609,6 +609,91 @@ function bestOnChainPage(chain: string, entries: { v: CasinoView; slug: string }
   }
 }
 
+// ── crypto-casino streamers (public SSR; data was previously app-only) ──────────
+const streamerSlug = (s: { platform: string; handle: string }) => `${slugify(s.platform)}-${slugify(s.handle)}`
+
+function streamersIndexPage(streamers: any[]): { title: string; description: string; html: string } {
+  const path = '/streamers'
+  const url = SITE + path
+  const title = 'Top Crypto Casino Streamers — Live Gambling Streams & Followers | WCOIN.CASINO'
+  const description = `The biggest crypto-casino and gambling streamers across Kick, Twitch and YouTube — ranked by following, with live status, audience and the casino each promotes. Updated continuously.`
+  const rows = streamers
+    .map((s, i) => {
+      const aff = s.affiliation ? esc(String(s.affiliation)) : '—'
+      return `<tr><td class="n">${i + 1}</td><td><a href="/streamer/${streamerSlug(s)}">${esc(s.handle)}</a></td><td>${esc(s.platform)}</td><td class="n">${fmtNum(s.followers || 0)}</td><td>${s.live ? '<span class="gold">● LIVE</span>' : 'offline'}</td><td>${aff}</td></tr>`
+    })
+    .join('')
+  const body =
+    `<p class="sub">Crypto-gambling streamers we track live across <strong>Kick, Twitch and YouTube</strong>, ranked by following. Live status and viewer counts refresh continuously; affiliation is the casino each streamer most visibly promotes.</p>` +
+    `<p class="upd">${streamers.length} streamers tracked · updated continuously.</p>` +
+    `<table><thead><tr><th>#</th><th>Streamer</th><th>Platform</th><th style="text-align:right">Followers</th><th>Status</th><th>Promotes</th></tr></thead><tbody>${rows}</tbody></table>` +
+    `<p class="prose" style="margin-top:16px">Streamer promotion is a major acquisition channel for crypto casinos. Cross-reference a streamer's affiliated casino with its <a href="/rankings/trust">independent trust ranking</a> and <a href="/proof-of-reserves">on-chain reserves</a> before depositing.</p>`
+  return {
+    title,
+    description,
+    html: layout({
+      title,
+      description,
+      canonical: url,
+      jsonLd: [],
+      breadcrumb: [
+        { name: 'Home', url: SITE + '/' },
+        { name: 'Streamers', url },
+      ],
+      h1: 'Top crypto casino streamers',
+      updated: Date.now(),
+      body,
+    }),
+  }
+}
+
+function streamerPage(s: any, affCasino: { name: string; slug: string; vol7d: number; reserves: number; trust: number | null } | null): { title: string; description: string; html: string } {
+  const path = `/streamer/${streamerSlug(s)}`
+  const url = SITE + path
+  const followers = fmtNum(s.followers || 0)
+  const title = `${esc(s.handle)} — Crypto Casino Streamer on ${esc(s.platform)} | WCOIN.CASINO`
+  const description = `${s.handle} is a ${s.platform} crypto-gambling streamer with ${followers} followers${s.affiliation ? `, promoting ${s.affiliation}` : ''}. Live status, audience and the on-chain data for the casino they play.`
+  const affBlock = affCasino
+    ? `<div class="card"><h2>Promotes: <a href="/casino/${affCasino.slug}">${esc(affCasino.name)}</a></h2>` +
+      `<p class="prose">On-chain snapshot for ${esc(affCasino.name)} — independent of any promotion:</p>` +
+      `<table><tbody>` +
+      `<tr><td>7d on-chain volume</td><td class="n">${fmtUsd(affCasino.vol7d)}</td></tr>` +
+      `<tr><td>Mapped reserves</td><td class="n">${fmtUsd(affCasino.reserves)}</td></tr>` +
+      `<tr><td>Blended trust</td><td class="n gold">${affCasino.trust != null ? `${affCasino.trust} / 100` : '—'}</td></tr>` +
+      `</tbody></table></div>`
+    : s.affiliation
+      ? `<p class="prose">Most visibly promotes <strong>${esc(String(s.affiliation))}</strong>.</p>`
+      : ''
+  const body =
+    `<p class="sub"><strong>${esc(s.handle)}</strong> is a crypto-casino / gambling streamer on <strong>${esc(s.platform)}</strong>${s.live ? ' — <span class="gold">live now</span>' : ''}.</p>` +
+    `<table><tbody>` +
+    `<tr><td>Platform</td><td>${esc(s.platform)}</td></tr>` +
+    `<tr><td>Followers</td><td class="n">${followers}</td></tr>` +
+    `<tr><td>Status</td><td>${s.live ? `Live · ${fmtNum(s.viewers || 0)} viewers` : 'Offline'}</td></tr>` +
+    (s.game ? `<tr><td>Category</td><td>${esc(String(s.game))}</td></tr>` : '') +
+    `</tbody></table>` +
+    affBlock +
+    `<p class="prose" style="margin-top:16px">See all <a href="/streamers">tracked crypto casino streamers</a>. Streamer promotion ≠ endorsement of solvency — always check a casino's <a href="/proof-of-reserves">on-chain reserves</a> and <a href="/rankings/trust">independent trust</a>.</p>`
+  return {
+    title,
+    description,
+    html: layout({
+      title,
+      description,
+      canonical: url,
+      jsonLd: [],
+      breadcrumb: [
+        { name: 'Home', url: SITE + '/' },
+        { name: 'Streamers', url: SITE + '/streamers' },
+        { name: s.handle, url },
+      ],
+      h1: `${esc(s.handle)} — crypto casino streamer`,
+      updated: Date.now(),
+      body,
+    }),
+  }
+}
+
 // ── rankings ──────────────────────────────────────────────────────────────────
 // metric leaderboards run over on-chain brands (quantitative); the trust board
 // runs over the full merged view set (so all rated operators are eligible).
@@ -1437,6 +1522,31 @@ export async function generateSeoPages(): Promise<void> {
   for (const topic of Object.keys(METHODOLOGY)) add(`/methodology/${topic}`, 'methodology', methodologyPage(topic)!)
   await yieldLoop()
 
+  // crypto-casino streamers — public SSR (the data used to be login-only). Index page
+  // + per-streamer pages for the better-followed ones (thin-content guard), each
+  // cross-linked to the on-chain data of the casino they promote.
+  try {
+    const streamers = db
+      .prepare('SELECT id, handle, platform, viewers, live, followers, affiliation, game FROM streamers ORDER BY followers DESC LIMIT 100')
+      .all() as any[]
+    if (streamers.length) {
+      add('/streamers', 'streamers', streamersIndexPage(streamers), 'featured_core')
+      const casinoByNorm = new Map<string, CasinoView>()
+      for (const v of ranked) casinoByNorm.set(brandKey(v.name), v)
+      for (const s of streamers) {
+        if ((s.followers ?? 0) < 5000) continue // skip thin pages
+        const v = s.affiliation ? casinoByNorm.get(brandKey(String(s.affiliation))) : undefined
+        const aff = v
+          ? { name: v.name, slug: slugOfView(v), vol7d: v.onchain?.volume7d ?? 0, reserves: v.onchain?.reserves ?? 0, trust: blendedTrust(v)?.score ?? null }
+          : null
+        add(`/streamer/${streamerSlug(s)}`, 'streamers', streamerPage(s, aff))
+      }
+    }
+  } catch (e) {
+    console.warn('[seo] streamer pages skipped:', (e as Error).message)
+  }
+  await yieldLoop()
+
   // ── Phase 2: WRITE in small chunked transactions, yielding between chunks ───
   // 20 (not 50): each write transaction touches the multi-GB DB, and on a cold-cache
   // boot a 50-page transaction was part of the long SEO-regen freeze. Smaller chunks
@@ -1537,6 +1647,8 @@ export function registerSeo(app: FastifyInstance) {
   app.get('/reports/daily/:date', serve('report'))
   app.get('/reports/weekly/:week', serve('report'))
   app.get('/methodology/:topic', serve('methodology'))
+  app.get('/streamers', serve('streamers'))
+  app.get('/streamer/:slug', serve('streamers'))
 
   // Dynamic child sitemap with every generated SEO page (+ core URLs). We use a
   // distinct path because @fastify/static (wildcard:false) registers an explicit
