@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { db, stmt, stateGet, stateSet } from '../db.ts'
 import { workerAll } from '../readpool.ts'
-import { webFetch } from '../net.ts'
+import { webFetch, tronscanAccountKind } from '../net.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Casino-wallet attribution harvester. Collects REAL public labels from four
@@ -204,15 +204,19 @@ async function harvestTronTags(): Promise<number> {
 const DISCOVER_WINDOW_DAYS = 7
 const DISCOVER_MIN_TX = 150 // observed transfers in window (was 300 — surface smaller/newer casinos sooner)
 const DISCOVER_MIN_PEERS = 3 // distinct watched entities touched — the precision guard against random addresses
-const DISCOVER_MAX_PER_CHAIN = 12
+// Tron has far more casino seeds (32) + a keyed Tronscan classifier to keep the
+// pool clean, so we let it discover much deeper than ETH to build out Tron casino
+// coverage (the chain-distribution blind spot).
+const DISCOVER_MAX_PER_CHAIN: Record<string, number> = { ETH: 12, TRON: 60 }
 
 export async function discoverServices(): Promise<number> {
   const since = Date.now() - DISCOVER_WINDOW_DAYS * 86_400_000
   const now = Date.now()
   let added = 0
   for (const chain of ['ETH', 'TRON'] as const) {
+    const cap = DISCOVER_MAX_PER_CHAIN[chain] ?? 12
     const slots =
-      DISCOVER_MAX_PER_CHAIN -
+      cap -
       ((db.prepare("SELECT COUNT(*) n FROM watchlist WHERE active=1 AND chain=? AND label LIKE 'Service %'").get(chain) as any).n as number)
     if (slots <= 0) continue
     const rows = (await workerAll(
@@ -227,10 +231,21 @@ export async function discoverServices(): Promise<number> {
     )) as { addr: string; tx: number; peers: number }[]
     for (const r of rows) {
       const short = `${r.addr.slice(0, 8)}…${r.addr.slice(-6)}`
-      const res = stmt.addWatch.run(chain, r.addr, `Service ${short}`, 'other', now)
+      // On Tron, use the keyed Tronscan classifier to route the candidate: a
+      // tagged EXCHANGE is added as such (kept OUT of the casino-pattern pool and
+      // out of casino volume); everything else stays a "Service" for the
+      // user-overlap classifier to judge against our 32 Tron casino references.
+      let label = `Service ${short}`
+      let category = 'other'
+      if (chain === 'TRON') {
+        const k = await tronscanAccountKind(r.addr).catch(() => null)
+        if (k?.kind === 'exchange') { label = cleanLabel(k.tag) || `Exchange ${short}`; category = 'exchange' }
+        await new Promise((res) => setTimeout(res, 250)) // pace the keyed API
+      }
+      const res = stmt.addWatch.run(chain, r.addr, label, category, now)
       if (res.changes) {
         added += res.changes
-        console.log(`[labels] discovered ${chain} service ${short} (${r.tx} tx / ${r.peers} watched peers, 7d)`)
+        console.log(`[labels] discovered ${chain} ${category} ${short} (${r.tx} tx / ${r.peers} watched peers, 7d)`)
       }
     }
   }

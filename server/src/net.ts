@@ -193,6 +193,39 @@ export function arkhamFetch(path: string, init: FetchInit = {}): Promise<Respons
   return undiciFetch(url, { ...init, headers: { [header]: key, Accept: 'application/json', ...((init as any).headers || {}) } })
 }
 
+// Tronscan API — keyed access (env `tronscanapi`) lifts the rate limit and unlocks
+// account/transfer lookups used to classify Tron services (exchange vs casino).
+// Reachable direct from Railway (outside the GFW). Returns null when unconfigured.
+export function tronscanFetch(path: string, init: FetchInit = {}): Promise<Response> | null {
+  const key = process.env.tronscanapi || process.env.TRONSCAN_API_KEY
+  const base = 'https://apilist.tronscanapi.com'
+  const url = base + (path.startsWith('/') ? path : '/' + path)
+  const headers: Record<string, string> = { Accept: 'application/json', ...((init as any).headers || {}) }
+  if (key) headers['TRON-PRO-API-KEY'] = key
+  return undiciFetch(url, { ...init, headers })
+}
+
+// Classify a Tron address by its AUTHORITATIVE Tronscan tag (blueTag = verified).
+// Tronscan reliably tags exchanges (not casinos), so this is used to EXCLUDE
+// exchanges from the casino-pattern pool — never to positively name a casino.
+const EXCH_TAG_RE = /binance|okx|okex|huobi|htx|bybit|kraken|coinbase|kucoin|gate|bitfinex|mexc|bitget|crypto\.com|upbit|bithumb|poloniex|whitebit|bingx|lbank|xt\.com|exchange|deposit|hot ?wallet|cold ?wallet/i
+export async function tronscanAccountKind(
+  address: string,
+): Promise<{ kind: 'exchange' | 'tagged-other' | 'untagged'; tag: string } | null> {
+  const res = tronscanFetch(`/api/accountv2?address=${encodeURIComponent(address)}`, { signal: AbortSignal.timeout(15_000) })
+  if (!res) return null
+  try {
+    const r = await res
+    if (r.status !== 200) return null
+    const j = (await r.json()) as any
+    const tag = [j.blueTag, j.greyTag, j.name].filter(Boolean).join(' ').trim()
+    if (!tag) return { kind: 'untagged', tag: '' }
+    return { kind: EXCH_TAG_RE.test(tag) ? 'exchange' : 'tagged-other', tag }
+  } catch {
+    return null
+  }
+}
+
 // Read the Location of a single redirect hop WITHOUT following it. fetch's
 // redirect:'manual' yields an opaqueredirect (status 0, no headers) so the
 // Location is unreadable — undici's low-level request with maxRedirections:0
