@@ -1339,7 +1339,7 @@ export async function generateSeoPages(): Promise<void> {
     if (a) a.push(val)
     else m.set(k, [val])
   }
-  const COMPARE_TOP_K = Number(process.env.SEO_COMPARE_TOP_K ?? 13)
+  const COMPARE_TOP_K = Number(process.env.SEO_COMPARE_TOP_K ?? 18)
   const strong = cap.filter((v) => dataConfidence(v) !== 'low')
   const qScore = (v: CasinoView) => (blendedTrust(v)?.score ?? 0) * 1e12 + (v.onchain?.volume7d ?? 0)
   const topK = strong.slice().sort((a, b) => qScore(b) - qScore(a)).slice(0, COMPARE_TOP_K)
@@ -1501,14 +1501,17 @@ function buildSitemap(): string {
   // only indexable lifecycle states belong in the sitemap; limited_public_noindex /
   // internal_only / archived pages are accessible on-site but excluded from search.
   const pages = db
-    .prepare("SELECT path, kind, lifecycle FROM seo_page WHERE lifecycle IN ('public_indexable','featured_core') ORDER BY kind, path")
-    .all() as { path: string; kind: string; lifecycle: string }[]
+    .prepare("SELECT path, kind, lifecycle, updated_at FROM seo_page WHERE lifecycle IN ('public_indexable','featured_core') ORDER BY kind, path")
+    .all() as { path: string; kind: string; lifecycle: string; updated_at: number }[]
   const pr = (p: { kind: string; lifecycle: string }) =>
     p.lifecycle === 'featured_core' ? '0.9' : p.kind === 'rankings' ? '0.8' : p.kind === 'chains' ? '0.7' : p.kind === 'report' ? '0.6' : p.kind === 'methodology' ? '0.5' : '0.6'
   const cf = (k: string) => (k === 'methodology' || k === 'report' ? 'monthly' : 'daily')
+  // <lastmod> tells crawlers what's fresh → more efficient (re)crawling + faster
+  // indexing of updated pages. Sourced from each page's last regeneration time.
+  const lastmod = (ts: number) => (ts > 0 ? `<lastmod>${new Date(ts).toISOString().slice(0, 10)}</lastmod>` : '')
   const urls = [
     ...core.map((c) => `<url><loc>${SITE}${c.loc}</loc><changefreq>${c.freq}</changefreq><priority>${c.pr}</priority></url>`),
-    ...pages.map((p) => `<url><loc>${SITE}${p.path}</loc><changefreq>${cf(p.kind)}</changefreq><priority>${pr(p)}</priority></url>`),
+    ...pages.map((p) => `<url><loc>${SITE}${p.path}</loc>${lastmod(p.updated_at)}<changefreq>${cf(p.kind)}</changefreq><priority>${pr(p)}</priority></url>`),
   ]
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join('\n')}\n</urlset>\n`
 }
