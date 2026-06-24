@@ -114,6 +114,7 @@ function layout(opts: {
 <meta name="description" content="${esc(description)}">
 <meta name="robots" content="${noindex ? 'noindex,follow' : 'index,follow,max-image-preview:large'}">
 <link rel="canonical" href="${esc(canonical)}">
+<link rel="alternate" hreflang="en" href="${esc(canonical)}"><link rel="alternate" hreflang="x-default" href="${esc(canonical)}">
 <meta name="theme-color" content="#0a0a0f">
 <meta property="og:type" content="website"><meta property="og:site_name" content="WCOIN.CASINO">
 <meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}">
@@ -178,7 +179,7 @@ ${body}
 </section>
 <footer><div class="wrap">
 <span>© 2026 WCOIN.CASINO — the on-chain intelligence layer for iGaming · <strong>18+</strong></span>
-<span><a href="/about">About</a> · <a href="/rankings">Rankings</a> · <a href="/streamers">Streamers</a> · <a href="/insights">Insights</a> · <a href="/methodology/proof-of-reserves">Methodology</a> · <a href="/responsible-gambling">Responsible gambling</a></span>
+<span><a href="/about">About</a> · <a href="/rankings">Rankings</a> · <a href="/streamers">Streamers</a> · <a href="/insights">Insights</a> · <a href="/submit/casino">List your casino</a> · <a href="/methodology/proof-of-reserves">Methodology</a> · <a href="/responsible-gambling">Responsible gambling</a></span>
 </div></footer>
 </body></html>`
 }
@@ -1449,6 +1450,43 @@ function insightsIndexPage(snaps: any[]): { title: string; description: string; 
   return { title, description, html: layout({ title, description, canonical: url, breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: 'Insights', url }], h1: 'Crypto casino insights — daily reports', updated: Date.now(), body }) }
 }
 
+// §5.3 — indexable submission landing pages (keyword-optimised, form posts to
+// /submit/:kind → recorded as a reviewed submission). Free, editorial, no pay-for-rank.
+function submitPage(kind: 'casino' | 'kol'): { title: string; description: string; html: string } {
+  const isCasino = kind === 'casino'
+  const url = `${SITE}/submit/${kind}`
+  const title = isCasino
+    ? 'Submit Your Crypto Casino — Get Listed on WCOIN.CASINO (Free)'
+    : 'Submit a Crypto Casino Streamer or KOL — WCOIN.CASINO'
+  const description = isCasino
+    ? 'Run a crypto casino? Submit your operator and on-chain wallets to be tracked on WCOIN.CASINO — independent, on-chain, free. We verify attribution before listing; we never sell rankings.'
+    : 'Submit a crypto-gambling streamer or KOL to WCOIN.CASINO’s public streamer index. Free, no login — reviewed before listing.'
+  const inputStyle = 'width:100%;background:#ffffff08;border:1px solid var(--line);border-radius:9px;padding:10px 12px;color:var(--fg);font-size:14px;margin:6px 0'
+  const form = `<form method="POST" action="/submit/${kind}" style="max-width:520px;margin:14px 0">
+  <input name="name" required maxlength="120" placeholder="${isCasino ? 'Casino / operator name' : 'Streamer handle + platform (e.g. Kick / Xposed)'}" style="${inputStyle}">
+  <input name="email" type="email" maxlength="200" placeholder="Email (optional — for follow-up only)" style="${inputStyle}">
+  ${isCasino ? `<input name="evidence" maxlength="500" placeholder="On-chain wallet address(es) or block-explorer link" style="${inputStyle}">` : ''}
+  <textarea name="message" required minlength="5" maxlength="3500" rows="4" placeholder="${isCasino ? 'Chains you settle on, which wallets are deposit vs hot, anything that helps us verify.' : 'Why they fit, links to their channels, affiliated casino.'}" style="${inputStyle}"></textarea>
+  <button type="submit" style="background:linear-gradient(135deg,#ffe27a,#f5b100);border:0;border-radius:9px;padding:11px 22px;font-weight:700;font-size:14px;color:#1a1205;cursor:pointer">Submit for review</button>
+</form>`
+  const body = isCasino
+    ? `<p class="sub">Get your crypto casino tracked with verified on-chain data — independent and free. <strong>We never sell rankings; submitting does not buy placement or a higher score.</strong></p>
+<h2>How submission works</h2>
+<div class="prose"><p>Submit your operator name and the on-chain hot/deposit wallets you want associated with it. Before anything appears as <em>verified</em>, we check the attribution against public block-explorer name-tags and on-chain behaviour — claimed data is never shown as verified, and we never state a verdict on your solvency, legality or safety. Listing is editorial: it reflects what the chain shows, not what you pay.</p><p>Once verified, your operator gets an on-chain page with tracked deposit/withdrawal volume, all-chain mapped reserves (proof-of-reserves), net flow and a blended independent-trust score, plus eligibility for the per-chain and metric leaderboards and the daily report. Everything updates roughly every 30 minutes from public on-chain data.</p><p>Already listed and something looks wrong? Use the same form to file a correction — corrections are reviewed and, where valid, applied. See our <a href="/methodology/address-attribution">attribution methodology</a> and <a href="/methodology/proof-of-reserves">proof-of-reserves methodology</a> for exactly how figures are produced.</p></div>
+${form}
+<p class="prose">Submissions are reviewed by hand and are <strong>not a guarantee of listing</strong>. We list operators we can attribute on-chain or that carry credible third-party ratings. Read more <a href="/about">about us</a>. 18+ only — see <a href="/responsible-gambling">responsible gambling</a>.</p>`
+    : `<p class="sub">Add a crypto-casino streamer or KOL to our <a href="/streamers">public streamer index</a> — free, no login.</p>
+<h2>How it works</h2>
+<div class="prose"><p>Tell us the streamer’s handle and platform (Kick, Twitch or YouTube) and, if you know it, the casino they most visibly promote. We review the submission and, where it fits our coverage, add them to the public index with their live status, follower count and affiliated casino — cross-linked to that casino’s on-chain data so readers can sanity-check promotion against verified reserves and trust.</p><p>We track streamers as part of the crypto-casino information landscape; inclusion is editorial and is not an endorsement of the streamer or the casinos they promote. Public stats only — we don’t publish private information.</p></div>
+${form}
+<p class="prose">Submissions are reviewed and are <strong>not a guarantee of listing</strong>. See <a href="/streamers">all tracked streamers</a> and our <a href="/about">about page</a>. 18+ only.</p>`
+  return {
+    title,
+    description,
+    html: layout({ title, description, canonical: url, breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: isCasino ? 'Submit a casino' : 'Submit a streamer', url }], h1: isCasino ? 'Submit your crypto casino' : 'Submit a streamer or KOL', updated: Date.now(), body }),
+  }
+}
+
 // §4.2 — flagship hub. The central "Best Crypto Casinos {year}" page that targets
 // the top head term and hub-spokes out to per-casino, per-chain and metric pages.
 function bestCasinosHubPage(views: CasinoView[], slugOfView: (v: CasinoView) => string, chains: string[]): { title: string; description: string; html: string } {
@@ -1645,6 +1683,8 @@ export async function generateSeoPages(): Promise<void> {
   add('/about', 'about', aboutPage(), 'featured_core')
   add('/responsible-gambling', 'about', responsibleGamblingPage(), 'featured_core')
   add('/insights', 'insights', insightsIndexPage(snaps), 'featured_core')
+  add('/submit/casino', 'submit', submitPage('casino'), 'featured_core') // §5.3
+  add('/submit/kol', 'submit', submitPage('kol'), 'featured_core')
   if (unattributed.length) add('/rankings/unattributed-flow', 'rankings', unattributedFlowPage(unattributed))
   await yieldLoop()
   // chains
@@ -1815,6 +1855,36 @@ export function registerSeo(app: FastifyInstance) {
   app.get('/about', serve('about'))
   app.get('/responsible-gambling', serve('about'))
   app.get('/insights', serve('insights'))
+  app.get('/submit/casino', serve('submit'))
+  app.get('/submit/kol', serve('submit'))
+  // §5.3 form post (x-www-form-urlencoded parser registered in server.ts) → record a
+  // reviewed submission, reply with a branded HTML page (SSR pages run no JS).
+  const submitReply = (reply: any, heading: string, msg: string) =>
+    reply.type('text/html; charset=utf-8').send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${heading} — WCOIN.CASINO</title><body style="background:#0a0a0f;color:#e8e8ee;font:16px/1.6 system-ui,sans-serif;text-align:center;padding:72px 20px"><h1 style="color:#f5b100;font-size:22px">${heading}</h1><p style="color:#aab;max-width:440px;margin:12px auto">${esc(msg)}</p><p style="margin-top:24px"><a style="color:#f5b100" href="/">← WCOIN.CASINO home</a></p></body>`)
+  const handleSubmit = (kind: string) => async (req: any, reply: any) => {
+    const b = (req.body ?? {}) as { name?: string; email?: string; message?: string; evidence?: string }
+    const name = String(b.name ?? '').trim().slice(0, 120)
+    const message = String(b.message ?? '').trim().slice(0, 3500)
+    const email = String(b.email ?? '').trim().slice(0, 200)
+    if (name.length < 2 || message.length < 5) return submitReply(reply, 'Missing details', 'Please provide a name and a short description, then submit again.')
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return submitReply(reply, 'Invalid email', 'That email looks off — leave it blank or fix it and resubmit.')
+    try {
+      db.prepare('INSERT INTO submission(type, brand, email, message, evidence_url, status, created_at) VALUES(?,?,?,?,?,?,?)').run(
+        'attribution',
+        name,
+        email || null,
+        `[${kind} submission] ${message}`,
+        String(b.evidence ?? '').trim().slice(0, 500) || null,
+        'new',
+        Date.now(),
+      )
+    } catch (e) {
+      return submitReply(reply, 'Something went wrong', 'Please try again in a moment.')
+    }
+    return submitReply(reply, 'Thanks — received', 'Your submission is in our review queue. We verify on-chain before listing and may follow up if you left an email.')
+  }
+  app.post('/submit/casino', handleSubmit('casino'))
+  app.post('/submit/kol', handleSubmit('kol'))
   app.get('/streamers', serve('streamers'))
   app.get('/streamer/:slug', serve('streamers'))
 
