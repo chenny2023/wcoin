@@ -7,10 +7,11 @@ export const PANEL_HTML = `<!doctype html>
 <title>Whale Growth</title>
 <style>
   :root{
-    --bg:#070a10;--panel:#121826;--panel2:#161d2e;--line:#222c40;
-    --fg:#e8eef6;--mut:#8a98ad;--dim:#5b6b86;
-    --acc:#5b8cff;--acc2:#7c5bff;--good:#23c882;--bad:#ff5b6e;--warn:#ffb24a;
-    --grad:linear-gradient(135deg,#5b8cff,#7c5bff);
+    --bg:#05060c;--panel:#0e1322;--panel2:#141b30;--line:#26304d;
+    --fg:#eaf0fb;--mut:#94a3c0;--dim:#5e6f93;
+    --acc:#6ea8ff;--acc2:#8b5cff;--good:#28e0a0;--bad:#ff5b7a;--warn:#ffc24a;
+    --gold:#ffb24a;--cyan:#3fe0ff;--mag:#c96bff;
+    --grad:linear-gradient(135deg,#8b5cff,#3fe0ff);
   }
   *{box-sizing:border-box}
   ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:#1f2940;border-radius:8px}
@@ -107,6 +108,49 @@ export const PANEL_HTML = `<!doctype html>
   .empty .big{font-size:30px;margin-bottom:8px}
   .skel{height:120px;border-radius:14px;background:linear-gradient(90deg,#0e1422,#141d30,#0e1422);background-size:200% 100%;animation:sh 1.2s infinite;margin-bottom:12px}
   @keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+  /* ── 赛博朋克 概览 hero ─────────────────────────────────────────── */
+  .hero{display:grid;grid-template-columns:1.5fr 1fr;gap:14px;margin-bottom:16px}
+  @media(max-width:920px){.hero{grid-template-columns:1fr}}
+  .glass{background:linear-gradient(180deg,rgba(20,27,48,.7),rgba(10,14,26,.7));border:1px solid var(--line);
+    border-radius:16px;position:relative;overflow:hidden;backdrop-filter:blur(8px)}
+  .glass::before{content:"";position:absolute;inset:0;border-radius:16px;padding:1px;pointer-events:none;
+    background:linear-gradient(135deg,#8b5cff55,transparent 40%,transparent 60%,#3fe0ff55);
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
+  .hero-h{position:absolute;top:12px;left:16px;z-index:2;font-weight:800;font-size:14px;letter-spacing:.4px;
+    display:flex;align-items:center;gap:8px}
+  .hero-h .tag{font-size:10px;color:var(--gold);border:1px solid #5c4a1f;background:#21190a;padding:2px 7px;border-radius:999px;font-weight:700}
+  .swarm{height:420px;display:block;width:100%}
+  .swarmtip{position:fixed;z-index:60;pointer-events:none;background:var(--panel2);border:1px solid var(--acc);
+    border-radius:10px;padding:8px 11px;font-size:12px;max-width:260px;box-shadow:0 10px 30px #000a;opacity:0;transition:opacity .12s}
+  .swarmtip.on{opacity:1}
+
+  .kpis2{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;padding:42px 14px 14px}
+  .kc{background:linear-gradient(180deg,#161d33,#0d1322);border:1px solid var(--line);border-radius:13px;padding:12px 13px;position:relative;overflow:hidden}
+  .kc .kn{font-size:24px;font-weight:800;letter-spacing:-.5px;line-height:1}
+  .kc .kl{font-size:11px;color:var(--mut);font-weight:600;margin-top:5px}
+  .kc .ks{font-size:10px;color:var(--dim);margin-top:2px}
+  .kc.gold{border-color:#5c4a1f}.kc.gold .kn{color:var(--gold);text-shadow:0 0 18px #ffb24a55}
+  .kc.cyan .kn{color:var(--cyan);text-shadow:0 0 18px #3fe0ff44}
+  .kc.mag .kn{color:var(--mag)}
+  .kc .spark2{position:absolute;right:10px;bottom:8px;display:flex;gap:2px;align-items:flex-end;height:22px;opacity:.6}
+  .kc .spark2 i{width:3px;background:var(--acc2);border-radius:2px}
+
+  /* 增长管道 */
+  .pipe{padding:42px 14px 14px;display:flex;flex-direction:column;gap:9px}
+  .pstep{display:flex;align-items:center;gap:11px;background:linear-gradient(135deg,#171f38,#0e1424);border:1px solid var(--line);
+    border-radius:11px;padding:11px 13px;position:relative}
+  .pstep .pico{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:15px;background:#1c2542;flex:0 0 auto}
+  .pstep .pmid{flex:1;min-width:0}
+  .pstep .pt{font-weight:700;font-size:13px}
+  .pstep .pbar{height:5px;border-radius:3px;background:#0c1322;margin-top:6px;overflow:hidden}
+  .pstep .pbar i{display:block;height:100%;border-radius:3px;background:var(--grad);box-shadow:0 0 10px #8b5cff66}
+  .pstep .pn{font-variant-numeric:tabular-nums;font-weight:800;font-size:15px}
+  .pstep .pdot{position:absolute;right:11px;top:11px;width:7px;height:7px;border-radius:50%}
+  .pstep::after{content:"";position:absolute;left:27px;bottom:-9px;width:2px;height:9px;background:var(--line)}
+  .pstep:last-child::after{display:none}
+  @keyframes pulseG{0%,100%{box-shadow:0 0 0 0 #28e0a055}50%{box-shadow:0 0 0 5px #28e0a000}}
+  .live{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--good);animation:pulseG 1.8s infinite}
 </style></head>
 <body>
 <div id="app"></div>
@@ -191,6 +235,7 @@ const EN={
 '不可解·仅记录':'Unsolvable · record only',
 '发送验证码登录':'Send code to sign in',
 '概览 / 分析':'Overview / Analytics',
+'🐋 鲸群拓扑':'🐋 Whale Swarm','⚡ 增长管道':'⚡ Growth Pipeline','采集 Collect':'Collect','分类 Classify':'Classify','起草 Draft':'Draft','KOL 候选':'KOL Pool','机会':'opps',
 '可推荐自有产品':'can recommend our products',
 '最高意图机会贴':'Top high-intent opportunities',
 '对方未开放私信':'DMs not open',
@@ -433,6 +478,7 @@ function skeleton(){$('#app').innerHTML=shell('<div class="skel"></div><div clas
 async function render(loginStep){
   if(!token){loginView(loginStep);return}
   if(!products.length){try{const p=await api('/api/internal/social/products');products=p.products||[]}catch(e){return}}
+  if(tab!=='overview'&&_swarmStop){_swarmStop();_swarmStop=null} // 离开概览停掉拓扑动画
   skeleton()
   try{
     if(tab==='overview')await renderOverview()
@@ -452,9 +498,45 @@ function bars(rows,labFn){const max=Math.max(1,...rows.map(r=>r.n));return rows.
   '<span class="bartrack"><span class="barfill" style="width:'+Math.round(r.n/max*100)+'%"></span></span>'+
   '<span class="num tabnum">'+r.n+'</span></div>').join('')||'<div class="dim" style="font-size:12px">暂无数据</div>'}
 
+// ── 鲸群拓扑（canvas 力导向图，真实数据）─────────────────────────────────────────
+let _swarmStop=null
+function initSwarm(canvas,tip,data){
+  if(_swarmStop){_swarmStop();_swarmStop=null}
+  if(!canvas)return
+  const ctx=canvas.getContext('2d');const DPR=Math.min(2,window.devicePixelRatio||1)
+  const size=()=>{const r=canvas.getBoundingClientRect();canvas.width=Math.max(1,r.width*DPR);canvas.height=Math.max(1,r.height*DPR);return{w:r.width||600,h:r.height||420}}
+  let{w,h}=size()
+  const N=[],byId={},E=[];const add=n=>{N.push(n);byId[n.id]=n;return n}
+  const rnd=()=>({x:w/2+(Math.sin(N.length*12.9)*0.5+0.5-0.5)*w*0.6,y:h/2+(Math.cos(N.length*7.3)*0.5)*h*0.6,vx:0,vy:0})
+  const core=add({id:'core',type:'core',r:15,label:'Whale Growth',x:w/2,y:h/2,vx:0,vy:0})
+  ;(data.products||[]).forEach(p=>{const n=add({id:'p_'+p.key,type:'product',r:11,label:p.name,meta:(p.n||0)+' 信号',...rnd()});E.push([n,core,85])})
+  ;(data.platforms||[]).forEach(p=>{const n=add({id:'pl_'+p.platform,type:'platform',r:7+Math.min(6,Math.log10((p.n||1))*3),label:p.platform,meta:(p.n||0)+' 条',...rnd()});E.push([n,core,130])})
+  ;(data.whales||[]).forEach(k=>{const r=6+Math.min(12,Math.log10((k.followers||1)+1)*2.5);const tgt=byId['p_'+k.fit_product]||core;const n=add({id:'w_'+k.handle,type:'whale',r,label:'@'+k.handle,meta:(k.name?k.name+' · ':'')+fmtN(k.followers||0)+'粉 · 信用'+(k.cred_score||0),...rnd()});E.push([n,tgt,72])})
+  ;(data.signals||[]).forEach(s=>{const tgt=byId['pl_'+s.platform]||core;const n=add({id:'s_'+s.id,type:'signal',r:3+(s.intent||0)*4,label:(s.title||'').slice(0,60),meta:s.platform+' · 意图'+((s.intent||0).toFixed(2)),...rnd()});E.push([n,tgt,55])})
+  const COL={core:'#ffffff',product:'#c96bff',platform:'#3fe0ff',whale:'#ffb24a',signal:'#8b5cff'}
+  let hover=null,t=0,raf=0
+  function stepSim(){
+    for(let i=0;i<N.length;i++){const a=N[i];for(let j=i+1;j<N.length;j++){const b=N[j];let dx=a.x-b.x,dy=a.y-b.y;let d2=dx*dx+dy*dy||1;if(d2<24000){const d=Math.sqrt(d2),f=200/d2;dx/=d;dy/=d;a.vx+=dx*f;a.vy+=dy*f;b.vx-=dx*f;b.vy-=dy*f}}}
+    for(const e of E){const a=e[0],b=e[1];let dx=b.x-a.x,dy=b.y-a.y;const d=Math.sqrt(dx*dx+dy*dy)||1,f=(d-e[2])*0.012;dx/=d;dy/=d;a.vx+=dx*f;a.vy+=dy*f;b.vx-=dx*f;b.vy-=dy*f}
+    for(const n of N){if(n.type==='core'){n.x=w/2;n.y=h/2;n.vx=0;n.vy=0;continue}n.vx+=(w/2-n.x)*0.0016;n.vy+=(h/2-n.y)*0.0016;n.vx*=0.85;n.vy*=0.85;n.x+=n.vx;n.y+=n.vy;n.x=Math.max(n.r,Math.min(w-n.r,n.x));n.y=Math.max(n.r,Math.min(h-n.r,n.y))}
+  }
+  function draw(){
+    ctx.setTransform(DPR,0,0,DPR,0,0);ctx.clearRect(0,0,w,h)
+    for(const e of E){const a=e[0],b=e[1];ctx.strokeStyle=a.type==='whale'?'rgba(255,178,74,.16)':'rgba(110,168,255,.1)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();const fp=((t*0.5+(a.x+a.y))%70)/70,fx=a.x+(b.x-a.x)*fp,fy=a.y+(b.y-a.y)*fp;ctx.fillStyle=a.type==='whale'?'rgba(255,200,90,.55)':'rgba(120,200,255,.4)';ctx.beginPath();ctx.arc(fx,fy,1.5,0,7);ctx.fill()}
+    for(const n of N){const c=COL[n.type];const pr=n.type==='whale'?n.r+Math.sin(t*0.05+n.x*0.1)*1.6:n.r;const g=ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,pr*2.6);g.addColorStop(0,c);g.addColorStop(.45,c+'55');g.addColorStop(1,c+'00');ctx.fillStyle=g;ctx.beginPath();ctx.arc(n.x,n.y,pr*2.6,0,7);ctx.fill();ctx.fillStyle=c;ctx.beginPath();ctx.arc(n.x,n.y,pr,0,7);ctx.fill();if(n===hover||n.type==='core'||n.type==='product'){ctx.fillStyle='#eaf0fb';ctx.font='600 11px -apple-system,sans-serif';ctx.textAlign='center';ctx.fillText(String(n.label).slice(0,18),n.x,n.y-pr-5)}}
+    t++
+  }
+  const loop=()=>{stepSim();stepSim();draw();raf=requestAnimationFrame(loop)};loop()
+  function onMove(ev){const r=canvas.getBoundingClientRect();const mx=ev.clientX-r.left,my=ev.clientY-r.top;let best=null,bd=1e9;for(const n of N){const dx=n.x-mx,dy=n.y-my,d=Math.sqrt(dx*dx+dy*dy);if(d<n.r+7&&d<bd){bd=d;best=n}}hover=best;if(best){tip.innerHTML='<b style="color:'+COL[best.type]+'">'+esc(best.label)+'</b>'+(best.meta?'<div class="dim" style="margin-top:3px">'+esc(best.meta)+'</div>':'');tip.style.left=Math.min(ev.clientX+14,innerWidth-270)+'px';tip.style.top=(ev.clientY+14)+'px';tip.classList.add('on');canvas.style.cursor='pointer'}else{tip.classList.remove('on');canvas.style.cursor='default'}}
+  const onLeave=()=>{hover=null;tip.classList.remove('on')}
+  const onResize=()=>{const s=size();w=s.w;h=s.h}
+  canvas.addEventListener('mousemove',onMove);canvas.addEventListener('mouseleave',onLeave);addEventListener('resize',onResize)
+  _swarmStop=()=>{cancelAnimationFrame(raf);canvas.removeEventListener('mousemove',onMove);canvas.removeEventListener('mouseleave',onLeave);removeEventListener('resize',onResize)}
+}
 async function renderOverview(){
   const a=await api('/api/internal/social/analytics?days='+aDays)
   const st=await api('/api/internal/social/stats')
+  const kr=await api('/api/internal/social/kols').catch(()=>({items:[],stats:{}}))
   const s=a.sentiment||{pos:0,neg:0,neu:0};const stot=(s.pos||0)+(s.neg||0)+(s.neu||0)||1
   const demandN=(a.byKind.find(k=>k.kind==='demand')||{}).n||0
   const compN=(a.byKind.find(k=>k.kind==='competitor')||{}).n||0
@@ -502,11 +584,20 @@ async function renderOverview(){
     '<table class="tbl"><tr><th>平台</th><th>总数</th><th>近24h</th><th>已清理</th><th>最后采集</th></tr>'+
     (hrows||'<tr><td colspan="5" class="dim">暂无</td></tr>')+'</table></div>'
 
+  // 增长管道（真实计数）+ 鲸群拓扑数据
+  const kstats=kr.stats||{}
+  const classified=Math.max(0,(st.total||0)-(st.unclassified||0))
+  const steps=[['🛰️','采集 Collect',st.total||0,st.total||0],['🧠','分类 Classify',classified,st.total||0],['✍️','起草 Draft',st.pendingDrafts||0,Math.max(st.pendingDrafts||0,1)],['🐋','KOL 候选',kstats.recommended||0,Math.max(kstats.total||0,1)],['🤝','已联系',kstats.contacted||0,Math.max(kstats.recommended||0,1)]]
+  const pipeHTML=steps.map(s=>{const pc=Math.round(Math.min(1,s[2]/(s[3]||1))*100);return '<div class="pstep"><div class="pico">'+s[0]+'</div><div class="pmid"><div class="pt">'+s[1]+'</div><div class="pbar"><i style="width:'+pc+'%"></i></div></div><div class="pn">'+fmtN(s[2])+'</div><span class="pdot" style="background:'+(s[2]>0?'var(--good)':'var(--dim)')+'"></span></div>'}).join('')
+  const swdata={products:(a.byProduct||[]).map(p=>({key:p.product,name:pname(p.product),n:p.n})),platforms:a.byPlatform||[],whales:(kr.items||[]).slice(0,24),signals:(a.topOpportunities||[]).slice(0,30)}
+  const hero='<div class="hero"><div class="glass"><div class="hero-h">🐋 鲸群拓扑 <span class="tag">'+swdata.whales.length+' KOL · '+swdata.signals.length+' 机会</span></div><canvas class="swarm" id="swarm"></canvas></div>'+
+    '<div class="glass"><div class="hero-h">⚡ 增长管道 <span class="live"></span></div><div class="pipe">'+pipeHTML+'</div></div></div><div class="swarmtip" id="swarmtip"></div>'
   const head='<div class="crow" style="margin-bottom:14px"><p class="lead" style="margin:0">竞品动向 · 用户需求 · 推荐机会，一屏掌握。</p>'+
     '<select class="right" id="a-days"><option value="7"'+(aDays===7?' selected':'')+'>近 7 天</option><option value="14"'+(aDays===14?' selected':'')+'>近 14 天</option><option value="30"'+(aDays===30?' selected':'')+'>近 30 天</option></select></div>'
 
-  $('#app').innerHTML=shell(head+kpis+health+'<div class="grid2">'+spark+sentBar+'</div><div class="grid2">'+prodBars+platBars+'</div>'+opp+'<div class="grid2">'+demandTbl+compTbl+'</div>')
+  $('#app').innerHTML=shell(head+kpis+hero+health+'<div class="grid2">'+spark+sentBar+'</div><div class="grid2">'+prodBars+platBars+'</div>'+opp+'<div class="grid2">'+demandTbl+compTbl+'</div>')
   $('#a-days').onchange=e=>{aDays=Number(e.target.value);render()}
+  try{initSwarm($('#swarm'),$('#swarmtip'),swdata)}catch(e){/* 拓扑渲染失败不影响其余 */}
 }
 
 // ── 信号 ────────────────────────────────────────────────────────────────────
