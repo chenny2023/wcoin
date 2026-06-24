@@ -76,8 +76,17 @@ let rr = 0
 async function indexChain(ch: UtxoChain) {
   const watched = (stmt.activeWatch.all() as WatchRow[]).filter((w) => w.chain === ch.key)
   if (watched.length === 0) return
-  const w = watched[rr % watched.length]
-  rr++
+  const cl = ch.key.toLowerCase()
+  // Prioritise addresses that haven't had their one-time deep backfill yet, so the
+  // big wallets get filled regardless of how often the process restarts (the bf flag
+  // is DB-persisted). A naive round-robin restarts at index 0 on every redeploy and,
+  // with frequent restarts, never reaches late addresses. Once all are backfilled we
+  // fall back to round-robin for ongoing forward sync.
+  let w = watched.find((x) => !stateGet(`${cl}:bf:${x.address}`))
+  if (!w) {
+    w = watched[rr % watched.length]
+    rr++
+  }
   const seenKey = `${ch.key.toLowerCase()}:seen:${w.address}`
   const lastSeen = stateGet(seenKey)
   const horizon = Date.now() - INDEX_HORIZON_DAYS * 86_400_000
