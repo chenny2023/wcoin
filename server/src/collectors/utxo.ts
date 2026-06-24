@@ -66,60 +66,60 @@ function settle(tx: any, addr: string): { dir: 'in' | 'out'; coins: number; coun
 // single poll's catch-up). High-activity casino wallets do hundreds of tx/week, so
 // without pagination we used to capture only the latest ~25 and lose the rest.
 const INDEX_HORIZON_DAYS = 14
-// Esplora pages are 25 tx. The normal stop is lastSeen (steady-state) or the 14d
-// horizon (first-sight backfill); this cap is just a runaway guard. It must clear
-// a busy casino wallet's 14d in ONE poll (else, since we resume from the newest
-// txid, the deeper history is never revisited) — ~60×25 = 1500 tx covers it.
-const MAX_PAGES_PER_POLL = 60
+const BACKFILL_PAGES = 20 // pages per poll for an in-progress backfill (gentle burst; resumed next poll via the saved cursor — a big wallet finishes over several polls)
+const FWD_PAGES = 8 // forward-sync cap (steady state only needs a few)
+const RETRY_COOLDOWN_MS = 20 * 60_000 // a fetch-failing address is parked this long so it can't block the backfill queue
 
 let rr = 0
 async function indexChain(ch: UtxoChain) {
   const watched = (stmt.activeWatch.all() as WatchRow[]).filter((w) => w.chain === ch.key)
   if (watched.length === 0) return
   const cl = ch.key.toLowerCase()
-  // Prioritise addresses that haven't had their one-time deep backfill yet, so the
-  // big wallets get filled regardless of how often the process restarts (the bf flag
-  // is DB-persisted). A naive round-robin restarts at index 0 on every redeploy and,
-  // with frequent restarts, never reaches late addresses. Once all are backfilled we
-  // fall back to round-robin for ongoing forward sync.
-  let w = watched.find((x) => !stateGet(`${cl}:bf:${x.address}`))
+  const now = Date.now()
+  // Pick the first address that still needs its one-time deep backfill AND isn't in a
+  // failure cooldown (so a single fetch-failing/rate-limited address can't wedge the
+  // queue). bf flag + cursor are DB-persisted, so progress survives the frequent
+  // redeploys. Once everything is backfilled, round-robin for ongoing forward sync.
+  let w = watched.find((x) => {
+    if (stateGet(`${cl}:bf:${x.address}`)) return false
+    const cd = Number(stateGet(`${cl}:bfcd:${x.address}`) ?? 0)
+    return now - cd > RETRY_COOLDOWN_MS
+  })
+  const isBackfill = !!w
   if (!w) {
     w = watched[rr % watched.length]
     rr++
   }
-  const seenKey = `${ch.key.toLowerCase()}:seen:${w.address}`
+  const seenKey = `${cl}:seen:${w.address}`
+  const bfKey = `${cl}:bf:${w.address}`
+  const bfCurKey = `${cl}:bfcur:${w.address}`
   const lastSeen = stateGet(seenKey)
-  const horizon = Date.now() - INDEX_HORIZON_DAYS * 86_400_000
+  const horizon = now - INDEX_HORIZON_DAYS * 86_400_000
 
-  // One-time deep backfill per address: addresses indexed by the old (no-pagination)
-  // code have a lastSeen pointing at a recent tx, so a plain forward sync would never
-  // recover the historical gap it dropped. The first time we see an address we ignore
-  // lastSeen and walk all the way to the horizon; thereafter we stop at lastSeen. The
-  // flag is DB-persisted so it survives restarts and runs exactly once per address.
-  const bfKey = `${ch.key.toLowerCase()}:bf:${w.address}`
-  const backfilled = !!stateGet(bfKey)
-
-  // Esplora returns newest-first, 25/page. Paginate via /txs/chain/{last_txid},
-  // bounded by the horizon and a page cap so a huge history can't run away.
+  // Esplora is newest-first, 25/page. Forward sync stops at lastSeen; a backfill walks
+  // toward the 14d horizon a bounded chunk at a time, RESUMING from the saved cursor.
   const fresh: any[] = []
-  let newest: string | null = null
-  let cursor: string | null = null
+  let newestTop: string | null = null
+  let cursor: string | null = isBackfill ? stateGet(bfCurKey) || null : null
   let pages = 0
   let reached = false
-  while (pages < MAX_PAGES_PER_POLL && !reached) {
+  let gotData = false
+  const cap = isBackfill ? BACKFILL_PAGES : FWD_PAGES
+  while (pages < cap && !reached) {
     const path = cursor ? `/address/${w.address}/txs/chain/${cursor}` : `/address/${w.address}/txs`
     const txs = await esplora(ch.api, path)
     if (!Array.isArray(txs) || txs.length === 0) break
-    if (!newest) newest = txs[0].txid
+    gotData = true
+    if (!cursor) newestTop = txs[0].txid // top of the address — the forward resume point
     for (const tx of txs) {
-      if (backfilled && tx.txid === lastSeen) { reached = true; break } // forward-sync stop
-      const ts = (tx.status?.block_time ?? Math.floor(Date.now() / 1000)) * 1000
+      if (!isBackfill && tx.txid === lastSeen) { reached = true; break } // forward-sync stop
+      const ts = (tx.status?.block_time ?? Math.floor(now / 1000)) * 1000
       if (tx.status?.block_time && ts < horizon) { reached = true; break } // far enough back
       fresh.push(tx)
     }
     cursor = txs[txs.length - 1].txid
     pages++
-    if (!reached) await new Promise((res) => setTimeout(res, 200)) // polite pacing on deep catch-up
+    if (!reached) await new Promise((res) => setTimeout(res, 350)) // gentle pacing → avoid Esplora rate-limit
   }
 
   // insert oldest-first, chunked + yield so a big catch-up never blocks the loop
@@ -146,11 +146,19 @@ async function indexChain(ch: UtxoChain) {
     }
     if (i % 50 === 49) await new Promise((res) => setImmediate(res)) // yield every 50 rows
   }
-  if (newest) {
-    stateSet(seenKey, newest)
-    if (!backfilled) stateSet(bfKey, '1') // mark the one-time deep backfill done (only if we got data)
+
+  if (newestTop) stateSet(seenKey, newestTop) // forward resume point (set on the first poll, before deep history)
+  if (isBackfill) {
+    if (reached) {
+      stateSet(bfKey, '1') // backfill complete
+      stateSet(bfCurKey, '')
+    } else if (gotData && cursor) {
+      stateSet(bfCurKey, cursor) // more history to fetch — resume here next poll
+    } else {
+      stateSet(`${cl}:bfcd:${w.address}`, String(now)) // fetch failed → park so the queue advances
+    }
   }
-  if (added) console.log(`[${ch.key.toLowerCase()}] ${w.label}: +${added} transfers (${pages}p${backfilled ? '' : ' backfill'})`)
+  if (added) console.log(`[${cl}] ${w.label}: +${added} transfers (${pages}p${isBackfill ? ' backfill' + (reached ? ' ✓' : '…') : ''})`)
 }
 
 export function startUtxo() {
