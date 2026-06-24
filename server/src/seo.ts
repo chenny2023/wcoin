@@ -159,7 +159,7 @@ footer{border-top:1px solid var(--line);margin-top:30px}footer .wrap{display:fle
 </style></head><body>
 <header class="nav"><div class="wrap">
 <a class="brand" href="/">WCOIN.CASINO</a>
-<nav class="navlinks"><a href="/">Home</a><a href="/rankings">Rankings</a><a href="/risk">Risk</a><a href="/daily">Daily report</a><a href="/methodology/address-attribution">Methodology</a><a class="cta" href="/app">Live dashboard →</a></nav>
+<nav class="navlinks"><a href="/best-crypto-casinos">Best casinos</a><a href="/rankings">Rankings</a><a href="/risk">Risk</a><a href="/daily">Daily report</a><a href="/about">About</a><a class="cta" href="/app">Live dashboard →</a></nav>
 </div></header>
 <main class="wrap">
 <div class="crumb">${crumbHtml}</div>
@@ -1449,6 +1449,51 @@ function insightsIndexPage(snaps: any[]): { title: string; description: string; 
   return { title, description, html: layout({ title, description, canonical: url, breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: 'Insights', url }], h1: 'Crypto casino insights — daily reports', updated: Date.now(), body }) }
 }
 
+// §4.2 — flagship hub. The central "Best Crypto Casinos {year}" page that targets
+// the top head term and hub-spokes out to per-casino, per-chain and metric pages.
+function bestCasinosHubPage(views: CasinoView[], slugOfView: (v: CasinoView) => string, chains: string[]): { title: string; description: string; html: string } {
+  const url = `${SITE}/best-crypto-casinos`
+  const top = views
+    .filter((v) => dataConfidence(v) !== 'low')
+    .sort((a, b) => (blendedTrust(b)?.score ?? 0) - (blendedTrust(a)?.score ?? 0) || (b.onchain?.volume7d ?? 0) - (a.onchain?.volume7d ?? 0))
+    .slice(0, 30)
+  const title = `Best Crypto Casinos ${YEAR} — Ranked by On-Chain Data & Independent Trust | WCOIN.CASINO`
+  const lead = top.slice(0, 5).map((v) => v.name).join(', ')
+  const description = `The best crypto casinos in ${YEAR}, ranked by independent trust and verified on-chain data — not affiliate payouts. Top operators: ${lead || '—'}. On-chain volume and reserves shown. Updated continuously.`
+  const rows = top
+    .map((v, i) => {
+      const bt = blendedTrust(v)
+      const oc = v.onchain
+      return `<tr><td class="n">${i + 1}</td><td><a href="/casino/${slugOfView(v)}">${esc(v.name)}</a></td><td class="n gold">${bt ? `${bt.score} / 100` : '—'}</td><td class="n">${oc ? fmtUsd(oc.volume7d) : '—'}</td><td class="n">${oc ? fmtUsd(oc.reserves) : '—'}</td></tr>`
+    })
+    .join('')
+  const chainChips = chains.map((c) => `<a class="pill" href="/rankings/best-on-${c}">Best on ${esc(chainName(c))}</a>`).join('')
+  const body =
+    `<p class="sub">The definitive ranking of crypto casinos by what the blockchain actually shows — <strong>independent trust plus verified on-chain volume and reserves</strong>, never affiliate payouts. This is a data ranking, not an endorsement.</p>` +
+    `<p class="upd">${top.length} operators · ranked by blended independent trust · live on-chain data, refreshed ~every 30 min</p>` +
+    `<table><thead><tr><th>#</th><th>Casino</th><th style="text-align:right">Blended trust</th><th style="text-align:right">7d on-chain vol</th><th style="text-align:right">Reserves</th></tr></thead><tbody>${rows}</tbody></table>` +
+    `<h2>Best crypto casinos by blockchain</h2><div class="chips">${chainChips}</div>` +
+    `<h2>More ways to rank</h2><div class="chips"><a class="pill" href="/rankings/trust">Most trusted</a><a class="pill" href="/rankings/volume">By on-chain volume</a><a class="pill" href="/rankings/reserves">By reserves</a><a class="pill" href="/rankings">All rankings</a></div>` +
+    `<p class="prose" style="margin-top:18px">Why trust over volume? On-chain volume is trivially wash-traded, so we lead with an independent <a href="/rankings/trust">trust ranking</a> and verify reserves on-chain (<a href="/proof-of-reserves">proof-of-reserves</a>). See <a href="/methodology/trust">how trust is scored</a> and the daily <a href="/daily">market report</a>.</p>`
+  return {
+    title,
+    description,
+    html: layout({
+      title,
+      description,
+      canonical: url,
+      jsonLd: [itemListLd(top.map((v) => ({ url: `${SITE}/casino/${slugOfView(v)}`, name: v.name })))],
+      breadcrumb: [
+        { name: 'Home', url: SITE + '/' },
+        { name: 'Best crypto casinos', url },
+      ],
+      h1: `Best crypto casinos ${YEAR}`,
+      updated: Date.now(),
+      body,
+    }),
+  }
+}
+
 export async function generateSeoPages(): Promise<void> {
   const views = await buildViews()
   const sorted = views.slice().sort((a, b) => {
@@ -1509,8 +1554,23 @@ export async function generateSeoPages(): Promise<void> {
   type Built = { path: string; kind: string; pg: { title: string; description: string; html: string }; lifecycle: string }
   const built: Built[] = []
   const enrich: { brand_key: string; label: string; slug: string; confidence: string; missing: string; now: number }[] = []
+  // §3.4 thin-content gate: a page below the unique-text threshold is forced to
+  // limited_public_noindex (robots noindex + excluded from sitemap), regardless of
+  // its data-confidence lifecycle — a safety net so no thin/sparse page dilutes the
+  // site. Threshold is configurable. lifecycle is the auditable indexable flag.
+  const SEO_MIN_WORDS = Number(process.env.SEO_MIN_WORDS ?? 250)
+  const mainWords = (html: string): number => {
+    const m = html.match(/<main[^>]*>([\s\S]*?)<\/main>/)
+    return (m ? m[1] : html).replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/g, ' ').split(/\s+/).filter(Boolean).length
+  }
   const add = (path: string, kind: string, pg: { title: string; description: string; html: string }, lifecycle = 'public_indexable') => {
-    built.push({ path, kind, pg, lifecycle })
+    let lc = lifecycle
+    let html = pg.html
+    if (lc !== 'limited_public_noindex' && mainWords(html) < SEO_MIN_WORDS) {
+      lc = 'limited_public_noindex'
+      html = html.replace(/<meta name="robots"[^>]*>/, '<meta name="robots" content="noindex,follow">')
+    }
+    built.push({ path, kind, pg: html === pg.html ? pg : { ...pg, html }, lifecycle: lc })
     written.add(path)
   }
 
@@ -1578,6 +1638,7 @@ export async function generateSeoPages(): Promise<void> {
   }
   add('/rankings/trust', 'rankings', trustRankingPage(ranked, slugOfView))
   add('/rankings', 'rankings', rankingsIndexPage([...chainSet], unattributed.length > 0))
+  add('/best-crypto-casinos', 'rankings', bestCasinosHubPage(ranked, slugOfView, chainBestGroups.map((g) => g.chain)), 'featured_core') // §4.2 flagship hub
   add('/risk', 'risk', riskIndexPage(recentRiskEvents(80)), 'featured_core') // neutral risk registry
   add('/proof-of-reserves', 'reserves', reservesHubPage(onchainBrands, slugOfBrand), 'featured_core') // on-chain moat: PoR guide + verified list
   // E-E-A-T + YMYL compliance pages (always indexable; linked from every page footer)
@@ -1743,6 +1804,7 @@ export function registerSeo(app: FastifyInstance) {
   app.get('/casino/:slug', serve('casino'))
   app.get('/compare/:slug', serve('compare'))
   app.get('/rankings', serve('rankings'))
+  app.get('/best-crypto-casinos', serve('rankings'))
   app.get('/risk', serve('risk'))
   app.get('/proof-of-reserves', serve('reserves'))
   app.get('/rankings/:slug', serve('rankings'))
