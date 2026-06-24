@@ -263,9 +263,9 @@ export const PRODUCTS: ProductConfig[] = [
     // 自家产品：已上线两年的加密货币「直播体育 + iGaming」平台。slogan 读自官网 2026-06：
     // "Predict, Play, Win the World! Live Sports & iGaming Platform"。受众=加密赌场/体育博彩玩家。
     // ⚠️ 与 wcoin.casino 区分：wcoin 是面向玩家的"赌场安全/偿付数据工具"；wcoingame 是真正的赌场/博彩
-    // 运营方（目标=把玩家引导来玩）。pitch 里的具体玩法/币种为占位，站点是 SPA splash 抓不全，待你按官网校对。
+    // 运营方（目标=把玩家引导来玩）。支付定位为用户确认（2026-06）；具体玩法明细可继续按官网细化。
     pitch:
-      'wcoingame.com 是已上线两年的加密货币「直播体育 + iGaming」平台（"Predict, Play, Win the World"）：支持加密货币充提，提供体育博彩 + 在线赌场（老虎机/真人）等玩法，面向想用加密货币娱乐博彩的玩家。',
+      'wcoingame.com 是已上线两年的加密货币「直播体育 + iGaming」平台（"Predict, Play, Win the World"）：支持几乎所有主流加密货币、充提灵活、稳定币支持业内最全；提供体育博彩 + 在线赌场玩法。核心卖点=加密支付灵活、稳定币选择最多，面向想用加密货币（尤其稳定币）娱乐博彩的玩家。',
     reddit: {
       brand: ['wcoingame.com', 'wcoingame', 'wcoin game'],
       // 竞品=主流加密赌场/体育博彩品牌（命中后分类器分桶；玩家对竞品不满=置换机会）
@@ -280,11 +280,13 @@ export const PRODUCTS: ProductConfig[] = [
         'where to gamble with crypto', 'crypto casino recommendations', 'best usdt casino',
         'stake alternative', 'rollbit alternative', 'best crypto sportsbook', 'provably fair casino',
         'crypto casino with faucet', 'is this crypto casino legit', 'crypto casino rakeback',
+        // wcoingame 的差异点：稳定币支持最全 + 充提灵活
+        'usdc casino', 'stablecoin casino', 'best stablecoin gambling', 'casino accepts usdt',
       ],
     },
     subreddits: ['gambling', 'onlinegambling', 'sportsbook', 'slots', 'CryptoCurrency', 'CryptoGambling', 'Crypto_com'],
-    // X 竞品官方号（写错会自动 404 忽略）；ownHandles 待补 wcoingame 自己的 X 号
-    x: { competitorHandles: ['Stake', 'Rollbit', 'BCGame', 'Roobet', 'Shuffle', 'Duelbits', 'Gamdom'], ownHandles: [] },
+    // X 竞品官方号（写错会自动 404 忽略）；ownHandles=wcoingame 自家官方号（监听自家声量/被议论）
+    x: { competitorHandles: ['Stake', 'Rollbit', 'BCGame', 'Roobet', 'Shuffle', 'Duelbits', 'Gamdom'], ownHandles: ['wcoinHQ'] },
     // Threads 宽泛主题词（长尾恒为 0，用宽词；分类器筛玩家/博彩相关）
     threadsTerms: ['crypto casino', 'bitcoin casino', 'online casino', 'casino', 'gambling', 'slots', 'crypto gambling', 'sportsbook', 'casino bonus', 'free spins', 'sports betting', 'betting'],
     // 去噪相关性词（demand/论坛/广搜命中需含其一；品牌/竞品精确命中不受限）
@@ -292,7 +294,7 @@ export const PRODUCTS: ProductConfig[] = [
       'crypto casino', 'bitcoin casino', 'online casino', 'casino', 'gambling', 'gamble', 'slots', 'slot',
       'sportsbook', 'sports betting', 'bet', 'betting', 'bonus', 'free spins', 'deposit', 'withdraw', 'withdrawal',
       'no kyc', 'kyc', 'provably fair', 'faucet', 'jackpot', 'wager', 'rakeback', 'cashback', 'vip',
-      'usdt', 'btc', 'eth', 'crypto', 'degen',
+      'usdt', 'usdc', 'stablecoin', 'btc', 'eth', 'crypto', 'degen',
     ],
     // KOL/KOC 发现：加密赌场主播/slots 直播/赌博内容创作者会发的词 → 把这些达人捞进库做玩家拉新
     kolTerms: [
