@@ -65,49 +65,47 @@ export async function generateMarketSnapshot(): Promise<void> {
   const EXTERNAL_ONLY =
     "AND NOT EXISTS (SELECT 1 FROM watchlist cpw WHERE cpw.address = transfers.counterparty AND cpw.category='casino')"
 
-  // 24h verified casino totals (worker)
-  const tot = (await workerGet(
-    `SELECT SUM(usd) vol,
-            SUM(CASE WHEN direction='in'  THEN usd ELSE 0 END) inflow,
-            SUM(CASE WHEN direction='out' THEN usd ELSE 0 END) outflow
-     FROM transfers WHERE category='casino' AND ts>=? ${NOT_UNATTR} ${EXTERNAL_ONLY}`,
-    [d1],
-  )) as { vol: number; inflow: number; outflow: number }
-  const trackedVol24 = tot?.vol ?? 0
-  const netFlow24 = (tot?.inflow ?? 0) - (tot?.outflow ?? 0)
-
-  // Chain distribution over the 7d window (NOT 24h). The 24h window is unreliable for
-  // chain SHARE because slower/keyless collectors (esp. Tron) lag the live head, so a
-  // recent gap makes one chain look like ~96% when the true split is ETH ~55% / TRON
-  // ~42%. 7d has complete data for every chain → an honest, professional breakdown.
-  // ALSO exclude volume-suspect brands (anomalous wash/treasury/own-token churn — e.g.
-  // Rollbit ~$14B, Rain.gg ~$3.8B in a week) from the chain split: a couple of those
-  // labels otherwise swamp ETH and crush every other chain's share. Reuse the per-brand
-  // volumeSuspect flag computed above; collect their member labels and drop them.
+  // Volume-suspect + treasury-churn operators must be excluded from EVERY headline
+  // volume figure — total, net flow AND chain split — not just the chain share, or the
+  // total annualises PAST the entire industry (~$1.5T/yr from Rollbit-style churn alone).
+  // volumeSuspect catches wash; the per-tx ceiling catches treasury/market-making churn
+  // (Rollbit ~$404k/tx vs ~$2k for real player flow).
   const suspectLabels = new Set<string>()
   for (const b of brands) if (b.volumeSuspect) { suspectLabels.add(b.brand); for (const m of b.members ?? []) suspectLabels.add(m.label) }
-  // Treasury/market-making churn hides among attributed casinos that volumeSuspect
-  // doesn't flag (e.g. Rollbit ~$14B at ~$404k/tx avg vs Stake/Roobet ~$2k/tx — real
-  // user deposits are small, 200x smaller). A per-operator average-transfer ceiling
-  // cleanly separates deposit flow from treasury churn for the chain-share metric.
   const AVG_TX_CEILING = Number(process.env.DEPOSIT_AVG_TX_CEILING ?? 50_000)
-  const chainBy = async (since: number) => {
+  // ONE de-distorted scan per window → credible {total, deposits, withdrawals, per-chain}.
+  // total = external deposits + withdrawals (gross); `deposits` (inflow) is the cleaner
+  // "money in" figure (~half the gross). Chain split uses the 7d window (24h lags per chain).
+  const flowBy = async (since: number) => {
     const rows = (await workerAll(
-      `SELECT chain, label, SUM(usd) v, COUNT(*) n FROM transfers WHERE category='casino' AND ts>=? ${NOT_UNATTR} ${EXTERNAL_ONLY} GROUP BY chain, label`,
+      `SELECT chain, label, SUM(usd) v,
+              SUM(CASE WHEN direction='in'  THEN usd ELSE 0 END) inflow,
+              SUM(CASE WHEN direction='out' THEN usd ELSE 0 END) outflow,
+              COUNT(*) n
+       FROM transfers WHERE category='casino' AND ts>=? ${NOT_UNATTR} ${EXTERNAL_ONLY} GROUP BY chain, label`,
       [since],
-    )) as { chain: string; label: string; v: number; n: number }[]
-    const m = new Map<string, number>()
+    )) as { chain: string; label: string; v: number; inflow: number; outflow: number; n: number }[]
+    const byChain = new Map<string, number>()
+    let total = 0
+    let inflow = 0
+    let outflow = 0
     for (const r of rows) {
       if (suspectLabels.has(r.label)) continue
       if (r.n > 0 && r.v / r.n > AVG_TX_CEILING) continue // treasury-churn signature
-      m.set(r.chain, (m.get(r.chain) ?? 0) + (r.v ?? 0))
+      byChain.set(r.chain, (byChain.get(r.chain) ?? 0) + (r.v ?? 0))
+      total += r.v ?? 0
+      inflow += r.inflow ?? 0
+      outflow += r.outflow ?? 0
     }
-    return [...m.entries()].map(([chain, v]) => ({ chain, v })).sort((a, b) => b.v - a.v)
+    return { total, inflow, outflow, chainRows: [...byChain.entries()].map(([chain, v]) => ({ chain, v })).sort((a, b) => b.v - a.v) }
   }
-  const chainRows = await chainBy(d7)
-  // 24h per-chain too — the weekly report sums each day's per-chain value, which only
-  // works with the (non-overlapping) DAILY figure. Carried alongside vol7d.
-  const chainRows24 = await chainBy(d1)
+  const f1 = await flowBy(d1)
+  const f7 = await flowBy(d7)
+  const trackedVol24 = f1.total
+  const deposits24 = f1.inflow
+  const netFlow24 = f1.inflow - f1.outflow
+  const chainRows = f7.chainRows
+  const chainRows24 = f1.chainRows
   const vol24ByChain = new Map(chainRows24.map((c) => [c.chain, c.v ?? 0]))
 
   // AUTHORITATIVE cross-chain split: per-chain RESERVES from Arkham's portfolio
@@ -243,7 +241,7 @@ export async function generateMarketSnapshot(): Promise<void> {
     conf,
     now,
   })
-  console.log(`[snapshot] market ${utcDay(now)} — vol24h $${Math.round(trackedVol24).toLocaleString()}, ${activeCasinos} casinos, ${chainRows.length} chains, conf=${conf}`)
+  console.log(`[snapshot] market ${utcDay(now)} — vol24h(gross) $${Math.round(trackedVol24).toLocaleString()} (deposits $${Math.round(deposits24).toLocaleString()}), ${activeCasinos} casinos, ${chainRows.length} chains, conf=${conf}`)
 }
 
 export function latestMarketSnapshot(): any | null {
