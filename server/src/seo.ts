@@ -342,18 +342,21 @@ function casinoPage(
     ? `${v.name} — On-Chain Reserves, Solvency & Trust Data | WCOIN.CASINO`
     : `${v.name} — Crypto Casino Trust Ratings & Reserves Data | WCOIN.CASINO`
   const description = oc
-    ? `Is ${v.name} solvent and active? On-chain data: ${fmtUsd(oc.reserves)} tracked all-chain reserves (${COVERAGE_LABEL[cov]} coverage), ${fmtUsd(oc.volume7d)} 7-day volume across ${oc.byChain?.length || 1} chains, and multi-source trust ratings — independently verifiable, updated continuously.`
+    ? `Is ${v.name} solvent and active? On-chain data: ${fmtUsd(oc.reserves)} tracked all-chain reserves (${COVERAGE_LABEL[cov]} coverage)${oc.volumeSuspect ? '' : `, ${fmtUsd(oc.volume7d)} 7-day volume across ${oc.byChain?.length || 1} chains`}, and multi-source trust ratings — independently verifiable, updated continuously.`
     : `Trust ratings and reference data for ${v.name} — casino.guru, Trustpilot${r.ag != null ? ', AskGamblers' : ''} and more, in one place. Updated continuously.`
 
   // stats grid — on-chain tiles when we track wallets, else rating tiles
   let stats = ''
   if (oc) {
     const net = oc.net7d ?? 0
+    // anomalous-volume operators (wash / treasury churn): withhold the volume figures
+    // as "Under review" rather than publish an inflated number as fact
+    const vsus = oc.volumeSuspect
     stats =
       `<div class="grid">` +
-      stat('7d volume', fmtUsd(oc.volume7d)) +
-      stat('24h volume', fmtUsd(oc.volume24h)) +
-      stat('Net flow (7d)', (net >= 0 ? '+' : '−') + fmtUsd(Math.abs(net)), net >= 0 ? 'mint' : 'rose') +
+      stat('7d volume', vsus ? 'Under review' : fmtUsd(oc.volume7d)) +
+      stat('24h volume', vsus ? 'Under review' : fmtUsd(oc.volume24h)) +
+      stat('Net flow (7d)', vsus ? 'Under review' : (net >= 0 ? '+' : '−') + fmtUsd(Math.abs(net)), vsus ? '' : net >= 0 ? 'mint' : 'rose') +
       stat('Mapped reserves', fmtUsd(oc.reserves), 'mint') +
       stat('Active counterparties (7d)', fmtNum(oc.players)) +
       stat('Chains', String(oc.byChain?.length || 0)) +
@@ -460,7 +463,9 @@ function casinoPage(
   const faqs: { q: string; a: string }[] = []
   if (oc) {
     faqs.push({ q: `What are ${v.name}'s on-chain reserves?`, a: `WCOIN tracks approximately ${fmtUsd(oc.reserves)} in all-chain reserves mapped to ${v.name}, with ${COVERAGE_LABEL[cov].toLowerCase()} coverage. Reserves are a best-effort estimate from mapped wallets and may be partial by brand.` })
-    faqs.push({ q: `Is ${v.name} active on-chain?`, a: `${v.name} has ${fmtUsd(oc.volume7d)} of tracked on-chain volume over the last 7 days across ${oc.byChain?.length || 1} chain${(oc.byChain?.length || 1) === 1 ? '' : 's'}, with ${fmtNum(oc.players)} active counterparties.` })
+    faqs.push({ q: `Is ${v.name} active on-chain?`, a: oc.volumeSuspect
+      ? `${v.name} is active across ${oc.byChain?.length || 1} chain${(oc.byChain?.length || 1) === 1 ? '' : 's'} with ${fmtNum(oc.players)} active counterparties. Its on-chain transfer volume is anomalous (consistent with treasury/market-making rather than player flow), so we hold the headline volume figure under review rather than publish it.`
+      : `${v.name} has ${fmtUsd(oc.volume7d)} of tracked on-chain volume over the last 7 days across ${oc.byChain?.length || 1} chain${(oc.byChain?.length || 1) === 1 ? '' : 's'}, with ${fmtNum(oc.players)} active counterparties.` })
     faqs.push({ q: `Is ${v.name} legit or safe to use?`, a: `WCOIN is an independent on-chain data site and does not rate operators as legit, safe or unsafe. We surface verifiable signals — on-chain reserves, tracked volume and independent third-party ratings${bt ? ` (blended trust ${bt.score}/100 from ${bt.sources} sources)` : ''} — so you can assess for yourself. Always do your own research.` })
     faqs.push({ q: `How is ${v.name}'s data verified?`, a: `Figures come from on-chain transfers attributed to wallets associated with ${v.name}, plus published third-party ratings shown with their source. Attribution carries inherent uncertainty; see our methodology.` })
   }
