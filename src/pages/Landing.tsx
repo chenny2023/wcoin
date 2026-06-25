@@ -242,7 +242,7 @@ export default function Landing() {
             {/* Live total */}
             <div className="mx-auto mt-10 inline-flex flex-col items-center">
               <div className="flex items-center gap-2 text-[12px] uppercase tracking-wider text-white/40">
-                <LiveBadge /> Total volume tracked
+                <LiveBadge /> Verified 7d volume
               </div>
               <div className="mt-1 font-display text-4xl font-bold tabular-nums text-gradient-gold sm:text-5xl">
                 {fmtUsd(total, false)}
