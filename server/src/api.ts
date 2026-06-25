@@ -230,10 +230,8 @@ export async function registerApi(app: FastifyInstance) {
     const d7 = now - 7 * 86_400_000
     const { totals, cas } = await expensiveCounts()
     const players = maintainedPlayers() // fresh each call; cheap, never scans
-    // heavy transfers scans → worker; small-table reads stay on the main thread
-    const vol7 = ((await workerGet('SELECT SUM(usd) v FROM transfers WHERE ts>=?', [d7])) as any).v ?? 0
-    const chains = (await workerAll('SELECT chain, SUM(usd) v FROM transfers WHERE ts>=? GROUP BY chain', [d7])) as any[]
-    const casChains = (await workerAll("SELECT chain, SUM(usd) v FROM transfers WHERE category='casino' AND ts>=? GROUP BY chain", [d7])) as any[]
+    // volume + chain split now come from the credible per-brand aggregate below
+    // (external-only, suspect-excluded), so the old raw all-category scans are gone.
     const reserves = (db.prepare('SELECT SUM(usd) v FROM balances').get() as any).v ?? 0
     const wl = (db.prepare('SELECT COUNT(*) n FROM watchlist WHERE active=1').get() as any).n
     const liveStreamers = (db.prepare('SELECT COUNT(*) n FROM streamers WHERE live=1').get() as any).n
@@ -253,6 +251,13 @@ export async function registerApi(app: FastifyInstance) {
     // per-brand 7d volume instead (attributed, non-suspect; already external-only).
     const cbrands = (await aggCachedAsync('brand:casino', () => aggregateBrands('casino'), 120_000)) as any[]
     const verifiedVol7d = cbrands.filter((b) => b.attributed && !b.volumeSuspect).reduce((s, b) => s + (b.volume7d || 0), 0)
+    // Credible chain split too — derive from the de-distorted per-brand byChain
+    // (external-only, attributed, non-suspect) instead of the raw all-category
+    // GROUP BY chain (which Rollbit-style churn otherwise dominates).
+    const chainAgg = new Map<string, number>()
+    for (const b of cbrands)
+      if (b.attributed && !b.volumeSuspect) for (const c of b.byChain ?? []) chainAgg.set(c.chain, (chainAgg.get(c.chain) ?? 0) + (c.value ?? 0))
+    const credibleChainSplit = [...chainAgg.entries()].map(([chain, value]) => ({ chain, value })).sort((a, b) => b.value - a.value)
     const data = {
       totalVolume: verifiedVol7d,
       volume7d: verifiedVol7d,
@@ -261,7 +266,7 @@ export async function registerApi(app: FastifyInstance) {
       reserves,
       entities: wl,
       liveStreamers,
-      chainSplit: chains.map((c) => ({ chain: c.chain, value: c.v ?? 0 })),
+      chainSplit: credibleChainSplit,
       casino: {
         totalVolume: verifiedVol7d,
         volume7d: verifiedVol7d,
@@ -269,7 +274,7 @@ export async function registerApi(app: FastifyInstance) {
         uniquePlayers: players.casino,
         reserves: casReserves,
         entities: casEntities,
-        chainSplit: casChains.map((c) => ({ chain: c.chain, value: c.v ?? 0 })),
+        chainSplit: credibleChainSplit,
       },
     }
     statsCache = { data, at: Date.now() }
