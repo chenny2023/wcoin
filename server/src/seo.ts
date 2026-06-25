@@ -1937,6 +1937,38 @@ export async function generateSeoPages(): Promise<void> {
     ],
     related: `Use our <a href="/crypto-casinos-with-proof-of-reserves">proof-of-reserves list</a>, <a href="/highest-volume-crypto-casinos">verified volume ranking</a>, and <a href="/methodology/address-attribution">attribution methodology</a>.`,
   }), 'featured_core')
+  add('/guide/crypto-casino-withdrawal-times', 'guide', guidePage({
+    path: '/guide/crypto-casino-withdrawal-times', h1: 'Crypto casino withdrawal times by network',
+    title: `Crypto Casino Withdrawal Times by Network (${YEAR}) | WCOIN.CASINO`,
+    description: `How long crypto-casino withdrawals actually take by network — USDT-TRC20, USDT-ERC20, Bitcoin, Solana — and the operator-side factors (approval, reserves) that matter more than the chain.`,
+    intro: `"How long does a crypto casino withdrawal take?" splits into two parts: the operator's approval time, and the network's confirmation time. Here's what to expect.`,
+    sections: [
+      { h: 'Network confirmation times', body: `<p>Once an operator releases a withdrawal, the chain decides how fast it lands. <strong>USDT-TRC20 (Tron)</strong> and <strong>Solana</strong> confirm in seconds for cents or less. <strong>USDT-ERC20 / Ethereum</strong> is usually under a minute but costs more in gas. <strong>Bitcoin</strong> is the slowest — one confirmation averages ~10 minutes, and casinos often wait for 1–3. For speed, withdraw to TRC20 or Solana.</p>` },
+      { h: 'The part that actually varies: operator approval', body: `<p>Confirmation time is consistent; <em>approval</em> time is where casinos differ. Some auto-approve small withdrawals instantly; others manual-review anything above a threshold, which can take minutes to days. A solvent operator with healthy <a href="/proof-of-reserves">on-chain reserves</a> can pay instantly; one that's stretched may delay or stall withdrawals — a key risk signal.</p>` },
+      { h: 'How to read the on-chain signal', body: `<p>You can sanity-check an operator's withdrawal health on-chain: steady outflows to many counterparties suggest withdrawals are flowing; reserves that only top up around withdrawals, or outflows that dry up, are warning signs. We track net flow and reserves continuously so slow-payout problems show up in the data.</p>` },
+    ],
+    faqs: [
+      { q: 'What is the fastest crypto casino withdrawal network?', a: 'USDT-TRC20 (Tron) and Solana are fastest — seconds to confirm, near-zero fees. Bitcoin is slowest (~10 min per confirmation, often 1–3 required). Operator approval time usually matters more than the chain.' },
+      { q: 'Why is my crypto casino withdrawal slow?', a: 'Almost always operator-side: manual review, withdrawal limits, or — in the worst case — solvency strain. Network confirmation is fast on most chains. Check the operator\'s on-chain reserves and outflow activity.' },
+    ],
+    related: `Check operators' on-chain health in the <a href="/crypto-casinos-with-proof-of-reserves">proof-of-reserves list</a> and <a href="/rankings/trust">trust ranking</a>.`,
+  }), 'featured_core')
+  add('/guide/provably-fair-explained', 'guide', guidePage({
+    path: '/guide/provably-fair-explained', h1: 'Provably fair, explained',
+    title: `Provably Fair Crypto Casinos Explained (${YEAR}) — How It Works | WCOIN.CASINO`,
+    description: `What "provably fair" actually means at a crypto casino, how the cryptographic check works in plain terms, what it does and doesn't protect against, and why it's separate from solvency.`,
+    intro: `"Provably fair" is one of the few things at a crypto casino you can verify mathematically. Here's how it works — and what it doesn't cover.`,
+    sections: [
+      { h: 'How provably fair works', body: `<p>Before a bet, the casino commits to a secret <em>server seed</em> by publishing its hash. You contribute a <em>client seed</em>. The outcome is computed from both seeds, so neither side can change the result after the fact. Afterwards the casino reveals the server seed, and you can hash it to confirm it matches the earlier commitment — proving the game wasn't rigged against you.</p>` },
+      { h: 'What it protects against', body: `<p>It protects against the operator manipulating individual game outcomes — the classic "is the dice loaded?" worry. For provably-fair games (dice, crash, plinko and similar), you can independently verify every result. That's a genuine, meaningful guarantee that most traditional online casinos can't offer.</p>` },
+      { h: 'What it does NOT protect against', body: `<p>Provably fair says nothing about whether the casino will <strong>pay your winnings</strong>. It doesn't prove solvency, doesn't stop withdrawal freezes, and doesn't apply to third-party slots (which use the provider's RNG, not the casino's). The house edge is still built into the math. So fairness ≠ safety — pair it with <a href="/guide/crypto-casino-proof-of-reserves">proof of reserves</a> and trust signals.</p>` },
+    ],
+    faqs: [
+      { q: 'Does provably fair mean a crypto casino is safe?', a: 'No. It proves individual game outcomes were not manipulated, but says nothing about solvency or whether you can withdraw. Combine it with on-chain reserves and trust ratings to judge safety.' },
+      { q: 'Can I verify provably fair results myself?', a: 'Yes — that is the point. After a bet the casino reveals the server seed; you hash it and confirm it matches the commitment published before the bet. Most provably-fair casinos provide a verifier tool.' },
+    ],
+    related: `See why fairness is separate from solvency in <a href="/guide/are-crypto-casinos-safe">are crypto casinos safe?</a> and the <a href="/rankings/trust">trust ranking</a>.`,
+  }), 'featured_core')
   add('/guide', 'guide', guidePage({
     path: '/guide', h1: 'Crypto casino guides',
     title: `Crypto Casino Guides — On-Chain Data, Reserves & Deposits (${YEAR}) | WCOIN.CASINO`,
@@ -1945,6 +1977,7 @@ export async function generateSeoPages(): Promise<void> {
     sections: [
       { h: 'Safety & solvency', body: `<p><a href="/guide/are-crypto-casinos-safe">Are crypto casinos safe?</a> — the real risks and how to judge an operator. <a href="/guide/crypto-casino-proof-of-reserves">Proof of reserves explained</a> — what it proves and how we measure it. <a href="/guide/how-to-verify-a-crypto-casino">How to verify a crypto casino on-chain</a> — a step-by-step you can follow yourself.</p>` },
       { h: 'Deposits & currencies', body: `<p><a href="/guide/usdt-vs-bitcoin-casino-deposits">USDT vs Bitcoin for casino deposits</a> — what the on-chain data shows and which to use. See live data in the <a href="/data/crypto-casino-deposit-currencies">deposit currency breakdown</a>, and operators in the <a href="/best-usdt-casinos">best USDT casinos</a> ranking.</p>` },
+      { h: 'Games & withdrawals', body: `<p><a href="/guide/provably-fair-explained">Provably fair, explained</a> — how to verify game outcomes, and why fairness isn't safety. <a href="/guide/crypto-casino-withdrawal-times">Crypto casino withdrawal times</a> — what to expect by network, and the on-chain signals of a slow-payout operator.</p>` },
     ],
     related: `Explore the <a href="/best-crypto-casinos">best crypto casinos</a> ranking and the daily <a href="/daily">market report</a>.`,
   }), 'featured_core')
@@ -2128,6 +2161,8 @@ export function registerSeo(app: FastifyInstance) {
   app.get('/guide/usdt-vs-bitcoin-casino-deposits', serve('guide'))
   app.get('/guide/are-crypto-casinos-safe', serve('guide'))
   app.get('/guide/how-to-verify-a-crypto-casino', serve('guide'))
+  app.get('/guide/crypto-casino-withdrawal-times', serve('guide'))
+  app.get('/guide/provably-fair-explained', serve('guide'))
   app.get('/risk', serve('risk'))
   app.get('/proof-of-reserves', serve('reserves'))
   app.get('/rankings/:slug', serve('rankings'))

@@ -736,7 +736,9 @@ export async function registerApi(app: FastifyInstance) {
       const from = now - days * 86_400_000
       const rows = (await workerAll(
         `SELECT chain, CAST((ts - ?) / 86400000 AS INTEGER) AS b, SUM(usd) v
-         FROM transfers WHERE watch_id = ? AND ts >= ? GROUP BY chain, b`,
+         FROM transfers WHERE watch_id = ? AND ts >= ?
+           AND NOT EXISTS (SELECT 1 FROM watchlist cpw WHERE cpw.address = transfers.counterparty AND cpw.category='casino')
+         GROUP BY chain, b`,
         [from, Number(id), from],
       )) as { chain: string; b: number; v: number }[]
       const chains = [...new Set(rows.map((r) => r.chain))].sort()
@@ -811,7 +813,9 @@ export async function registerApi(app: FastifyInstance) {
     const rows = (await workerAll(
       `SELECT CASE WHEN usd >= 100000 THEN 0 WHEN usd >= 10000 THEN 1 WHEN usd >= 500 THEN 2 ELSE 3 END AS b,
               COUNT(*) cnt, SUM(usd) vol, COUNT(DISTINCT counterparty) players
-       FROM transfers WHERE ts >= ?${catFilter} GROUP BY b`,
+       FROM transfers WHERE ts >= ?${catFilter}
+         AND NOT EXISTS (SELECT 1 FROM watchlist cpw WHERE cpw.address = transfers.counterparty AND cpw.category='casino')
+       GROUP BY b`,
       [d7, ...catArg],
     )) as any[]
     const byB = new Map(rows.map((r) => [r.b, r]))
