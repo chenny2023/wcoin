@@ -1134,6 +1134,31 @@ export async function registerApi(app: FastifyInstance) {
   // addresses (the 429-free path to harvest Tron/BTC casino wallets). ?key=<slug>
   app.get('/api/diag/arkham-addresses', async (req) => arkhamAddressProbe((req.query as any)?.key))
 
+  // Credible cross-chain split: external-facing volume (counterparty is NOT a watched
+  // casino address → real deposits/withdrawals, not internal churn/double-count) with
+  // volume-suspect brands (anomalous wash/treasury/own-token churn) excluded. This is
+  // the de-distorted version of the raw per-chain volume.
+  app.get('/api/diag/chain-distribution', async () => {
+    const brands = await aggCachedAsync('brand:casino', () => aggregateBrands('casino'), 120_000)
+    const suspect = new Set<string>()
+    for (const b of brands as any[]) if (b.volumeSuspect) { suspect.add(b.brand); for (const m of b.members ?? []) suspect.add(m.label) }
+    const d7 = Date.now() - 7 * 86_400_000
+    const rows = db.prepare(
+      `SELECT chain, label, SUM(usd) v FROM transfers
+       WHERE category='casino' AND ts>=?
+         AND label NOT LIKE 'Casino-pattern%' AND label NOT LIKE '0x%' AND label NOT LIKE 'Unknown%' AND label NOT LIKE 'Unnamed%'
+         AND NOT EXISTS (SELECT 1 FROM watchlist cpw WHERE cpw.address = transfers.counterparty AND cpw.category='casino')
+       GROUP BY chain, label`,
+    ).all(d7) as { chain: string; label: string; v: number }[]
+    const m = new Map<string, number>()
+    for (const r of rows) if (!suspect.has(r.label)) m.set(r.chain, (m.get(r.chain) ?? 0) + (r.v ?? 0))
+    const total = [...m.values()].reduce((s, v) => s + v, 0) || 1
+    const dist = [...m.entries()]
+      .map(([chain, v]) => ({ chain, usd: Math.round(v), share: +(100 * v / total).toFixed(1) }))
+      .sort((a, b) => b.usd - a.usd)
+    return { window: '7d', basis: 'external deposits+withdrawals, volume-suspect excluded', total: Math.round(total), dist, suspectExcluded: [...suspect].filter((l) => !l.startsWith('0x')).slice(0, 20) }
+  })
+
   // BTC clustering audit — per-operator address counts split by provenance
   // (seed vs cluster-discovered). Public read-only: it's how we expanded BTC
   // coverage and the figures are auditable / cluster rows are bulk-reversible.

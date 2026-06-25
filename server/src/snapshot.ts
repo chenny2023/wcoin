@@ -80,16 +80,25 @@ export async function generateMarketSnapshot(): Promise<void> {
   // chain SHARE because slower/keyless collectors (esp. Tron) lag the live head, so a
   // recent gap makes one chain look like ~96% when the true split is ETH ~55% / TRON
   // ~42%. 7d has complete data for every chain → an honest, professional breakdown.
-  const chainRows = (await workerAll(
-    `SELECT chain, SUM(usd) v FROM transfers WHERE category='casino' AND ts>=? ${NOT_UNATTR} ${EXTERNAL_ONLY} GROUP BY chain ORDER BY v DESC`,
-    [d7],
-  )) as { chain: string; v: number }[]
+  // ALSO exclude volume-suspect brands (anomalous wash/treasury/own-token churn — e.g.
+  // Rollbit ~$14B, Rain.gg ~$3.8B in a week) from the chain split: a couple of those
+  // labels otherwise swamp ETH and crush every other chain's share. Reuse the per-brand
+  // volumeSuspect flag computed above; collect their member labels and drop them.
+  const suspectLabels = new Set<string>()
+  for (const b of brands) if (b.volumeSuspect) { suspectLabels.add(b.brand); for (const m of b.members ?? []) suspectLabels.add(m.label) }
+  const chainBy = async (since: number) => {
+    const rows = (await workerAll(
+      `SELECT chain, label, SUM(usd) v FROM transfers WHERE category='casino' AND ts>=? ${NOT_UNATTR} ${EXTERNAL_ONLY} GROUP BY chain, label`,
+      [since],
+    )) as { chain: string; label: string; v: number }[]
+    const m = new Map<string, number>()
+    for (const r of rows) if (!suspectLabels.has(r.label)) m.set(r.chain, (m.get(r.chain) ?? 0) + (r.v ?? 0))
+    return [...m.entries()].map(([chain, v]) => ({ chain, v })).sort((a, b) => b.v - a.v)
+  }
+  const chainRows = await chainBy(d7)
   // 24h per-chain too — the weekly report sums each day's per-chain value, which only
   // works with the (non-overlapping) DAILY figure. Carried alongside vol7d.
-  const chainRows24 = (await workerAll(
-    `SELECT chain, SUM(usd) v FROM transfers WHERE category='casino' AND ts>=? ${NOT_UNATTR} ${EXTERNAL_ONLY} GROUP BY chain`,
-    [d1],
-  )) as { chain: string; v: number }[]
+  const chainRows24 = await chainBy(d1)
   const vol24ByChain = new Map(chainRows24.map((c) => [c.chain, c.v ?? 0]))
 
   // AUTHORITATIVE cross-chain split: per-chain RESERVES from Arkham's portfolio
