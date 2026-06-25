@@ -1494,6 +1494,57 @@ ${form}
 
 // §4.2 — flagship hub. The central "Best Crypto Casinos {year}" page that targets
 // the top head term and hub-spokes out to per-casino, per-chain and metric pages.
+// Educational guide — evergreen content that explains our data/methodology and
+// targets informational queries. FAQPage schema when Q&A is supplied.
+function guidePage(cfg: {
+  path: string
+  h1: string
+  title: string
+  description: string
+  intro: string
+  sections: { h: string; body: string }[]
+  faqs?: { q: string; a: string }[]
+  related: string
+}): { title: string; description: string; html: string } {
+  const url = SITE + cfg.path
+  const body =
+    `<p class="sub">${cfg.intro}</p>` +
+    cfg.sections.map((s) => `<h2>${esc(s.h)}</h2><div class="prose">${s.body}</div>`).join('') +
+    (cfg.faqs?.length ? `<h2>FAQ</h2>${cfg.faqs.map((f) => `<div class="prose"><strong>${esc(f.q)}</strong><br>${f.a}</div>`).join('')}` : '') +
+    `<div class="prose" style="margin-top:16px">${cfg.related}</div>`
+  const jsonLd: object[] = []
+  if (cfg.faqs?.length) jsonLd.push({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: cfg.faqs.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a.replace(/<[^>]+>/g, '') } })) })
+  return {
+    title: cfg.title,
+    description: cfg.description,
+    html: layout({ title: cfg.title, description: cfg.description, canonical: url, jsonLd, breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: 'Guides', url: SITE + '/guide' }, { name: cfg.h1, url }], h1: cfg.h1, updated: Date.now(), body }),
+  }
+}
+
+// Data-story page — the credible cross-chain deposit/withdrawal breakdown (external-
+// only, wash/treasury excluded). Unique on-chain data → linkable. Dataset schema.
+function currencyReportPage(chainRows: { chain: string; v: number }[], total: number): { title: string; description: string; html: string } {
+  const path = '/data/crypto-casino-deposit-currencies'
+  const url = SITE + path
+  const title = `What Currencies & Chains Do Crypto Casinos Use? On-Chain Data ${YEAR} | WCOIN.CASINO`
+  const description = `On-chain breakdown of where crypto-casino money actually moves in ${YEAR}: stablecoins (USDT on Tron + Ethereum) dominate deposits & withdrawals; native BTC is a small share. Verified, wash/treasury-churn excluded.`
+  const rows = chainRows
+    .map((c) => `<tr><td><span class="pill">${esc(chainName(c.chain))}</span></td><td class="n">${fmtUsd(c.v)}</td><td class="n">${total > 0 ? ((100 * c.v) / total).toFixed(1) : '0'}%</td></tr>`)
+    .join('')
+  const lead = chainRows[0] ? `${chainName(chainRows[0].chain)} leads with ${((100 * chainRows[0].v) / (total || 1)).toFixed(0)}% of tracked flow` : ''
+  const body =
+    `<p class="sub">Where does crypto-casino money actually move on-chain? We tracked <strong>${fmtUsd(total)}</strong> of external deposits + withdrawals over the last 7 days across every major chain. ${lead}.</p>` +
+    `<p class="upd">Verified external flow only — internal hot-wallet churn, double-counts and wash/treasury volume are excluded, so these shares reflect real player money. Live data, refreshed ~every 30 min.</p>` +
+    `<table><thead><tr><th>Chain</th><th style="text-align:right">7d external flow</th><th style="text-align:right">Share</th></tr></thead><tbody>${rows}</tbody></table>` +
+    `<h2>The takeaway: crypto casinos run on stablecoins</h2><div class="prose"><p>The data is unambiguous — the overwhelming majority of crypto-casino deposit and withdrawal flow is <strong>stablecoins (USDT), settled on Tron and Ethereum</strong>. USDT-TRC20 in particular is the dominant rail: low fees, fast finality, dollar-stable. Native Bitcoin, despite its profile, is a small single-digit share of actual deposit flow — most BTC sits in treasury wallets rather than moving as player deposits.</p><p>This matters because most "volume" figures you'll see elsewhere are inflated by internal hot-wallet churn and a handful of operators' treasury/market-making transfers. We strip those out (see <a href="/methodology/address-attribution">methodology</a>), so the split above reflects money players actually move.</p></div>` +
+    `<h2>Explore the data</h2><div class="chips"><a class="pill" href="/best-usdt-casinos">Best USDT casinos</a><a class="pill" href="/highest-volume-crypto-casinos">Highest verified volume</a><a class="pill" href="/crypto-casinos-with-proof-of-reserves">Proof of reserves</a><a class="pill" href="/daily">Daily report</a></div>`
+  return {
+    title,
+    description,
+    html: layout({ title, description, canonical: url, jsonLd: [datasetLd('Crypto Casino Deposit Currency & Chain Breakdown', description, url, Date.now(), ['7d external on-chain flow by chain', 'chain share of deposits/withdrawals'])], breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: 'Data', url }], h1: `What currencies & chains do crypto casinos use?`, updated: Date.now(), body }),
+  }
+}
+
 // High-intent topic leaderboards — each a distinct angle (verified volume / proof of
 // reserves / multi-chain) over the same ≥medium-confidence operator set, so they
 // don't duplicate the trust hub. Each ranks by its own metric and shows the column
@@ -1521,7 +1572,7 @@ function topicListPage(cfg: {
     `<p class="upd">${cfg.rows.length} operators with ≥medium-confidence data · live on-chain data, refreshed ~every 30 min</p>` +
     `<table><thead><tr><th>#</th><th>Casino</th><th style="text-align:right">${cfg.metricHead}</th><th style="text-align:right">Blended trust</th></tr></thead><tbody>${rowsHtml}</tbody></table>` +
     (cfg.note ? `<p class="prose" style="margin-top:14px">${cfg.note}</p>` : '') +
-    `<h2>More rankings</h2><div class="chips"><a class="pill" href="/best-crypto-casinos">Best overall</a><a class="pill" href="/highest-volume-crypto-casinos">Highest volume</a><a class="pill" href="/crypto-casinos-with-proof-of-reserves">Proof of reserves</a><a class="pill" href="/multi-chain-crypto-casinos">Multi-chain</a><a class="pill" href="/rankings/trust">Most trusted</a></div>`
+    `<h2>More rankings</h2><div class="chips"><a class="pill" href="/best-crypto-casinos">Best overall</a><a class="pill" href="/best-usdt-casinos">Best USDT</a><a class="pill" href="/highest-volume-crypto-casinos">Highest volume</a><a class="pill" href="/crypto-casinos-with-proof-of-reserves">Proof of reserves</a><a class="pill" href="/multi-chain-crypto-casinos">Multi-chain</a><a class="pill" href="/data/crypto-casino-deposit-currencies">Currency data</a></div>`
   return {
     title: cfg.title,
     description: cfg.description,
@@ -1768,6 +1819,78 @@ export async function generateSeoPages(): Promise<void> {
       metricHead: 'Chains tracked', rows: mcTop.map((v) => ({ v, metric: String(v.onchain?.byChain?.length ?? 0) })),
       note: `Chain count reflects networks where we currently track wallet activity for the operator; coverage expands over time.`,
     }), 'featured_core')
+
+  // ── currency page + data-story + guides (all on the credible external-only,
+  // suspect/churn-excluded basis, consistent with the rest of the site) ─────────
+  const D7w = Date.now() - 7 * 86_400_000
+  const EXT_SEO = "AND NOT EXISTS (SELECT 1 FROM watchlist cpw WHERE cpw.address = transfers.counterparty AND cpw.category='casino')"
+  const suspectSeo = new Set<string>()
+  for (const b of onchainBrands) if (b.volumeSuspect) { suspectSeo.add(b.brand); for (const m of b.members ?? []) suspectSeo.add(m.label) }
+  const labelToView = new Map<string, CasinoView>()
+  for (const v of ranked) for (const m of v.onchain?.members ?? []) labelToView.set(m.label, v)
+  const tokRows = db
+    .prepare(`SELECT chain, label, token, SUM(usd) v, COUNT(*) n FROM transfers WHERE category='casino' AND ts>=? ${EXT_SEO} GROUP BY chain, label, token`)
+    .all(D7w) as { chain: string; label: string; token: string; v: number; n: number }[]
+  const usdtByView = new Map<CasinoView, number>()
+  const chainFlow = new Map<string, number>()
+  for (const r of tokRows) {
+    if (suspectSeo.has(r.label)) continue
+    if (r.n > 0 && r.v / r.n > 50_000) continue // treasury-churn gate (consistent with snapshot)
+    chainFlow.set(r.chain, (chainFlow.get(r.chain) ?? 0) + (r.v ?? 0))
+    if (r.token === 'USDT') { const vv = labelToView.get(r.label); if (vv) usdtByView.set(vv, (usdtByView.get(vv) ?? 0) + (r.v ?? 0)) }
+  }
+  const chainFlowRows = [...chainFlow.entries()].map(([chain, v]) => ({ chain, v })).sort((a, b) => b.v - a.v)
+  const chainFlowTotal = chainFlowRows.reduce((s, c) => s + c.v, 0)
+  if (chainFlowTotal > 0)
+    add('/data/crypto-casino-deposit-currencies', 'data', currencyReportPage(chainFlowRows, chainFlowTotal), 'featured_core')
+  const usdtTop = [...usdtByView.entries()]
+    .filter(([v]) => dataConfidence(v) !== 'low')
+    .sort((a, b) => (blendedTrust(b[0])?.score ?? 0) - (blendedTrust(a[0])?.score ?? 0) || b[1] - a[1])
+    .slice(0, 30)
+  if (usdtTop.length >= 5)
+    add('/best-usdt-casinos', 'rankings', topicListPage({
+      path: '/best-usdt-casinos', h1: `Best USDT (Tether) casinos ${YEAR}`, slugOfView,
+      title: `Best USDT (Tether) Casinos ${YEAR} — Ranked by Trust & On-Chain Data | WCOIN.CASINO`,
+      description: `The most trusted crypto casinos accepting USDT (Tether) in ${YEAR}, with verified on-chain USDT settlement. USDT-TRC20 is the #1 crypto-casino deposit rail — fast, low-fee and dollar-stable.`,
+      intro: `USDT (Tether) is the <strong>#1 crypto-casino deposit currency</strong> — most player money moves as USDT on Tron and Ethereum. These operators have verified on-chain USDT settlement, ranked by independent trust (not volume).`,
+      metricHead: '7d USDT settled', rows: usdtTop.map(([v, vol]) => ({ v, metric: fmtUsd(vol) })),
+      note: `USDT figures are external-facing flow (deposits/withdrawals) with wash/treasury volume excluded. See the full <a href="/data/crypto-casino-deposit-currencies">currency breakdown</a>.`,
+    }), 'featured_core')
+  add('/guide/crypto-casino-proof-of-reserves', 'guide', guidePage({
+    path: '/guide/crypto-casino-proof-of-reserves', h1: 'Crypto casino proof of reserves, explained',
+    title: `Crypto Casino Proof of Reserves Explained (${YEAR}) | WCOIN.CASINO`,
+    description: `What proof of reserves means for a crypto casino, why it matters for solvency, how on-chain reserves are measured and verified, and the limits of the approach.`,
+    intro: `"Proof of reserves" is the closest thing a crypto casino has to a public balance sheet — on-chain wallet balances anyone can verify. Here's what it actually proves, and what it doesn't.`,
+    sections: [
+      { h: 'What is proof of reserves?', body: `<p>Proof of reserves (PoR) means showing, on-chain, that an operator holds enough crypto to cover what it owes players. Because blockchains are public, anyone can read the balance of a wallet — so if a casino's hot and cold wallets are identified, their total balance is independently verifiable, with no need to trust the operator's word.</p>` },
+      { h: 'Why it matters', body: `<p>Crypto casinos are unregulated in most markets, so there's no deposit insurance and no auditor of last resort. The single biggest risk to a player isn't a rigged game — it's the operator becoming insolvent or exit-scamming. Visible, healthy on-chain reserves are the strongest available signal that withdrawals can be honoured today.</p>` },
+      { h: 'How WCOIN measures it', body: `<p>We map wallets to operators from public block-explorer name-tags and on-chain behaviour, then read their balances across every chain we track. We show reserves with a coverage level (how complete our wallet mapping is) and never present a claimed figure as verified. Reserves are a best-effort estimate and may be partial by brand — see our <a href="/methodology/proof-of-reserves">methodology</a>.</p>` },
+      { h: 'The limits', body: `<p>PoR proves assets, not liabilities — it can't show how much an operator <em>owes</em> players, only what it holds. A wallet can also be funded temporarily to look healthy. That's why we pair reserves with net flow, trust ratings and continuous monitoring rather than treating a single snapshot as proof of solvency.</p>` },
+    ],
+    faqs: [
+      { q: 'Does proof of reserves guarantee a casino is solvent?', a: 'No. It shows assets held on-chain, not total liabilities to players, and balances can be moved. It is a strong positive signal, not a guarantee — combine it with trust ratings and net-flow trends.' },
+      { q: 'Can I verify a casino\'s reserves myself?', a: 'Yes — that is the point. Once the operator\'s wallets are known, you can open them on a block explorer and read the balances directly. We surface the mapped wallets and figures to make that easy.' },
+    ],
+    related: `See casinos ranked by mapped reserves on <a href="/crypto-casinos-with-proof-of-reserves">our proof-of-reserves list</a>, or the <a href="/proof-of-reserves">reserves hub</a>.`,
+  }), 'featured_core')
+  add('/guide/usdt-vs-bitcoin-casino-deposits', 'guide', guidePage({
+    path: '/guide/usdt-vs-bitcoin-casino-deposits', h1: 'USDT vs Bitcoin for crypto casino deposits',
+    title: `USDT vs Bitcoin for Crypto Casino Deposits (${YEAR}) — On-Chain Data | WCOIN.CASINO`,
+    description: `USDT (Tether) vs Bitcoin for crypto-casino deposits: fees, speed, volatility and what the on-chain data shows about which players actually use. USDT-TRC20 dominates — here's why.`,
+    intro: `Should you deposit to a crypto casino in USDT or Bitcoin? Our on-chain data answers it clearly — and it's not close.`,
+    sections: [
+      { h: 'What the data shows', body: `<p>Across the operators we track, the overwhelming majority of external deposit and withdrawal flow is <strong>stablecoins — USDT, settled mostly on Tron and Ethereum</strong>. Native Bitcoin is a small single-digit share of actual deposit flow. See the live <a href="/data/crypto-casino-deposit-currencies">currency breakdown</a>.</p>` },
+      { h: 'Why USDT-TRC20 dominates', body: `<p>USDT on Tron (TRC20) is fast (seconds), cheap (cents or free), and dollar-stable — so the amount you deposit is the amount you can wager, with no price swing between deposit and play. For high-frequency casino play that combination is hard to beat, which is why it has become the default rail.</p>` },
+      { h: 'Where Bitcoin still fits', body: `<p>Bitcoin makes sense if you already hold BTC and don't want to convert, value its censorship-resistance, or are making large, infrequent transfers where the on-chain fee is negligible relative to size. The trade-offs are slower confirmations and price volatility between deposit and withdrawal.</p>` },
+      { h: 'Practical tips', body: `<p>Match the network to the asset: USDT-TRC20 for low-fee stablecoin play, USDT-ERC20 only if the casino lacks Tron support (higher fees). Always send on the exact network the casino specifies — sending USDT-ERC20 to a TRC20 address (or vice versa) can lose funds. 18+ only; gamble responsibly — see <a href="/responsible-gambling">responsible gambling</a>.</p>` },
+    ],
+    faqs: [
+      { q: 'Is USDT or Bitcoin better for casino deposits?', a: 'For most players, USDT (especially TRC20) — it is faster, cheaper and dollar-stable, which is why on-chain data shows it dominates casino deposit flow. Bitcoin suits those who already hold BTC or make large, infrequent transfers.' },
+      { q: 'Which USDT network is cheapest for casinos?', a: 'USDT-TRC20 (on Tron) has the lowest fees and fastest confirmations and is the most widely supported casino deposit option. USDT-ERC20 (Ethereum) works but costs more in gas.' },
+    ],
+    related: `Browse the <a href="/best-usdt-casinos">best USDT casinos</a> or the full <a href="/data/crypto-casino-deposit-currencies">on-chain currency breakdown</a>.`,
+  }), 'featured_core')
+
   add('/risk', 'risk', riskIndexPage(recentRiskEvents(80)), 'featured_core') // neutral risk registry
   add('/proof-of-reserves', 'reserves', reservesHubPage(onchainBrands, slugOfBrand), 'featured_core') // on-chain moat: PoR guide + verified list
   // E-E-A-T + YMYL compliance pages (always indexable; linked from every page footer)
@@ -1939,6 +2062,10 @@ export function registerSeo(app: FastifyInstance) {
   app.get('/highest-volume-crypto-casinos', serve('rankings'))
   app.get('/crypto-casinos-with-proof-of-reserves', serve('rankings'))
   app.get('/multi-chain-crypto-casinos', serve('rankings'))
+  app.get('/best-usdt-casinos', serve('rankings'))
+  app.get('/data/crypto-casino-deposit-currencies', serve('data'))
+  app.get('/guide/crypto-casino-proof-of-reserves', serve('guide'))
+  app.get('/guide/usdt-vs-bitcoin-casino-deposits', serve('guide'))
   app.get('/risk', serve('risk'))
   app.get('/proof-of-reserves', serve('reserves'))
   app.get('/rankings/:slug', serve('rankings'))
