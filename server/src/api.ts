@@ -247,9 +247,15 @@ export async function registerApi(app: FastifyInstance) {
     const casEntities = (
       db.prepare("SELECT COUNT(*) n FROM watchlist WHERE active=1 AND category='casino'").get() as any
     ).n
+    // Headline "volume" must be the CREDIBLE figure — the raw all-time SUM(usd) over
+    // EVERY transfer (all categories, no external-only, no suspect/churn exclusion)
+    // annualises past the whole industry (~$100B+ cumulative). Use the de-distorted
+    // per-brand 7d volume instead (attributed, non-suspect; already external-only).
+    const cbrands = (await aggCachedAsync('brand:casino', () => aggregateBrands('casino'), 120_000)) as any[]
+    const verifiedVol7d = cbrands.filter((b) => b.attributed && !b.volumeSuspect).reduce((s, b) => s + (b.volume7d || 0), 0)
     const data = {
-      totalVolume: totals.vol ?? 0,
-      volume7d: vol7,
+      totalVolume: verifiedVol7d,
+      volume7d: verifiedVol7d,
       totalTransfers: totals.tx ?? 0,
       uniquePlayers: players.all,
       reserves,
@@ -257,8 +263,8 @@ export async function registerApi(app: FastifyInstance) {
       liveStreamers,
       chainSplit: chains.map((c) => ({ chain: c.chain, value: c.v ?? 0 })),
       casino: {
-        totalVolume: cas.vol ?? 0,
-        volume7d: cas.vol7 ?? 0,
+        totalVolume: verifiedVol7d,
+        volume7d: verifiedVol7d,
         totalTransfers: cas.tx ?? 0,
         uniquePlayers: players.casino,
         reserves: casReserves,
