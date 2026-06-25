@@ -177,8 +177,18 @@ async function computeEntities(): Promise<EntityAgg[]> {
   // the two 7d GROUP BY scans over the 24M-row transfers table are the heavy part —
   // run them in the read worker (off the main event loop). workerAll falls back to
   // the main thread when READ_WORKER is disabled, so behaviour is unchanged there.
+  // Count only EXTERNAL-facing flow (counterparty is NOT a watched casino address):
+  // drops casino↔casino internal consolidation/churn AND the double-count where the
+  // same transfer is recorded under each watched side. This is what made volume
+  // credible at the chain level; applied here it makes every per-casino volume number
+  // (rankings, casino pages, SEO, daily report) reflect real deposits/withdrawals.
+  // Env kill-switch in case the per-row NOT EXISTS ever costs too much on the hot path.
+  const EXT =
+    process.env.VOLUME_EXTERNAL_ONLY === '0'
+      ? ''
+      : "AND NOT EXISTS (SELECT 1 FROM watchlist cpw WHERE cpw.address = transfers.counterparty AND cpw.category='casino')"
   const chainRows = (await workerAll(
-    'SELECT watch_id, chain, SUM(usd) v FROM transfers WHERE ts >= ? GROUP BY watch_id, chain',
+    `SELECT watch_id, chain, SUM(usd) v FROM transfers WHERE ts >= ? ${EXT} GROUP BY watch_id, chain`,
     [params.d7],
   )) as { watch_id: number; chain: string; v: number }[]
   const byChainMap = new Map<number, { chain: string; value: number }[]>()
@@ -203,7 +213,7 @@ async function computeEntities(): Promise<EntityAgg[]> {
        SUM(CASE WHEN direction='in'  THEN usd ELSE 0 END)    AS in7,
        SUM(CASE WHEN direction='out' THEN usd ELSE 0 END)    AS out7,
        COUNT(*)                                              AS tx7
-     FROM transfers WHERE ts >= ? GROUP BY watch_id`,
+     FROM transfers WHERE ts >= ? ${EXT} GROUP BY watch_id`,
     [params.d1, params.d1, params.d2, params.d7],
   )) as any[]
   const aggMap = new Map<number, any>(aggRows.map((r) => [r.watch_id, r]))
