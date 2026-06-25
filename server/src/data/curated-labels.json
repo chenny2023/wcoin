@@ -3,6 +3,13 @@
   "_source_class": "block-explorer public name-tag",
   "_updated": "2026-06-12",
   "labels": [
+    { "chain": "BTC", "address": "bc1qd2kx8pmpnvfx40rmgd483988jcasamm9xw326zlm4pwguv5drxfssc4c86", "label": "Stake", "category": "casino", "source": "On-chain sweep-flow from a confirmed Stake BTC deposit address (38kiv4…→1o3sTed…→here); main hot wallet, 9200 tx / 207k BTC cumulative" },
+    { "chain": "BTC", "address": "1o3sTed13jYSHuWn9eQyq3VWWseJHLSy8", "label": "Stake", "category": "casino", "source": "On-chain: Stake BTC consolidation hub (760-input sweep tx 9db5cea8…); receives deposit addresses, sweeps to the main hot wallet" },
+    { "chain": "BTC", "address": "38A6nGSMR59WHVnj9gaJ2Cm62y9kFE318i", "label": "Stake", "category": "casino", "source": "On-chain: Stake BTC consolidation output of the hub 1o3sTed…" },
+    { "chain": "BTC", "address": "33XZf8Ys9sbqnAKynA4yBckyzwN3SEZaU7", "label": "Stake", "category": "casino", "source": "On-chain: Stake BTC consolidation output of the hub 1o3sTed…" },
+    { "chain": "BTC", "address": "38kiv4WUF6Ruhcot68DVMNc6axsgfoo5vq", "label": "Stake", "category": "casino", "source": "Stake BTC deposit address (user-confirmed); swept into the Stake cluster" },
+    { "chain": "BTC", "address": "3C9jqYp1cEU62fsssgcKAaWDtX4mTbFpPG", "label": "Stake", "category": "casino", "source": "On-chain: co-input sibling of the confirmed Stake deposit address in sweep tx 4eac93bd…" },
+    { "chain": "BTC", "address": "3HEtjYhFyJyA6wLxmeyNc1rswdN7dUh57t", "label": "Stake", "category": "casino", "source": "On-chain: co-input sibling of the confirmed Stake deposit address in sweep tx 4eac93bd…" },
     { "chain": "ETH", "address": "0xcbd6832ebc203e49e2b771897067fce3c58575ac", "label": "Rollbit", "category": "casino", "source": "Etherscan name-tag: Rollbit: Hot Wallet" },
     { "chain": "ETH", "address": "0xc94ebb328ac25b95db0e0aa968371885fa516215", "label": "Roobet", "category": "casino", "source": "Etherscan name-tag: Roobet: Hot Wallet" },
     { "chain": "ETH", "address": "0xd5fbda4c79f38920159fe5f22df9655fde292d47", "label": "Gamdom", "category": "casino", "source": "Etherscan name-tag: Gamdom: Hot Wallet" },
