@@ -86,13 +86,22 @@ export async function generateMarketSnapshot(): Promise<void> {
   // volumeSuspect flag computed above; collect their member labels and drop them.
   const suspectLabels = new Set<string>()
   for (const b of brands) if (b.volumeSuspect) { suspectLabels.add(b.brand); for (const m of b.members ?? []) suspectLabels.add(m.label) }
+  // Treasury/market-making churn hides among attributed casinos that volumeSuspect
+  // doesn't flag (e.g. Rollbit ~$14B at ~$404k/tx avg vs Stake/Roobet ~$2k/tx — real
+  // user deposits are small, 200x smaller). A per-operator average-transfer ceiling
+  // cleanly separates deposit flow from treasury churn for the chain-share metric.
+  const AVG_TX_CEILING = Number(process.env.DEPOSIT_AVG_TX_CEILING ?? 50_000)
   const chainBy = async (since: number) => {
     const rows = (await workerAll(
-      `SELECT chain, label, SUM(usd) v FROM transfers WHERE category='casino' AND ts>=? ${NOT_UNATTR} ${EXTERNAL_ONLY} GROUP BY chain, label`,
+      `SELECT chain, label, SUM(usd) v, COUNT(*) n FROM transfers WHERE category='casino' AND ts>=? ${NOT_UNATTR} ${EXTERNAL_ONLY} GROUP BY chain, label`,
       [since],
-    )) as { chain: string; label: string; v: number }[]
+    )) as { chain: string; label: string; v: number; n: number }[]
     const m = new Map<string, number>()
-    for (const r of rows) if (!suspectLabels.has(r.label)) m.set(r.chain, (m.get(r.chain) ?? 0) + (r.v ?? 0))
+    for (const r of rows) {
+      if (suspectLabels.has(r.label)) continue
+      if (r.n > 0 && r.v / r.n > AVG_TX_CEILING) continue // treasury-churn signature
+      m.set(r.chain, (m.get(r.chain) ?? 0) + (r.v ?? 0))
+    }
     return [...m.entries()].map(([chain, v]) => ({ chain, v })).sort((a, b) => b.v - a.v)
   }
   const chainRows = await chainBy(d7)

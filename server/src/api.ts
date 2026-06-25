@@ -1144,14 +1144,19 @@ export async function registerApi(app: FastifyInstance) {
     for (const b of brands as any[]) if (b.volumeSuspect) { suspect.add(b.brand); for (const m of b.members ?? []) suspect.add(m.label) }
     const d7 = Date.now() - 7 * 86_400_000
     const rows = db.prepare(
-      `SELECT chain, label, SUM(usd) v FROM transfers
+      `SELECT chain, label, SUM(usd) v, COUNT(*) n FROM transfers
        WHERE category='casino' AND ts>=?
          AND label NOT LIKE 'Casino-pattern%' AND label NOT LIKE '0x%' AND label NOT LIKE 'Unknown%' AND label NOT LIKE 'Unnamed%'
          AND NOT EXISTS (SELECT 1 FROM watchlist cpw WHERE cpw.address = transfers.counterparty AND cpw.category='casino')
        GROUP BY chain, label`,
-    ).all(d7) as { chain: string; label: string; v: number }[]
+    ).all(d7) as { chain: string; label: string; v: number; n: number }[]
+    const AVG_TX_CEILING = Number(process.env.DEPOSIT_AVG_TX_CEILING ?? 50_000)
     const m = new Map<string, number>()
-    for (const r of rows) if (!suspect.has(r.label)) m.set(r.chain, (m.get(r.chain) ?? 0) + (r.v ?? 0))
+    for (const r of rows) {
+      if (suspect.has(r.label)) continue
+      if (r.n > 0 && r.v / r.n > AVG_TX_CEILING) continue // treasury/market-making churn, not deposits
+      m.set(r.chain, (m.get(r.chain) ?? 0) + (r.v ?? 0))
+    }
     const total = [...m.values()].reduce((s, v) => s + v, 0) || 1
     const dist = [...m.entries()]
       .map(([chain, v]) => ({ chain, usd: Math.round(v), share: +(100 * v / total).toFixed(1) }))
