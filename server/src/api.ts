@@ -250,7 +250,13 @@ export async function registerApi(app: FastifyInstance) {
     // annualises past the whole industry (~$100B+ cumulative). Use the de-distorted
     // per-brand 7d volume instead (attributed, non-suspect; already external-only).
     const cbrands = (await aggCachedAsync('brand:casino', () => aggregateBrands('casino'), 120_000)) as any[]
-    const verifiedVol7d = cbrands.filter((b) => b.attributed && !b.volumeSuspect).reduce((s, b) => s + (b.volume7d || 0), 0)
+    const credible = cbrands.filter((b) => b.attributed && !b.volumeSuspect)
+    const verifiedVol7d = credible.reduce((s, b) => s + (b.volume7d || 0), 0)
+    // Players on the SAME credible universe as volume (attributed + non-suspect), so the
+    // headline player count can't include unattributed Casino-pattern wallets or suspect
+    // operators' churn counterparties. Falls back to the background-maintained all-entity
+    // count only on a cold start (before the brand aggregate's player map fills).
+    const credPlayers = credible.reduce((s, b) => s + (b.players || 0), 0)
     // Credible chain split too — derive from the de-distorted per-brand byChain
     // (external-only, attributed, non-suspect) instead of the raw all-category
     // GROUP BY chain (which Rollbit-style churn otherwise dominates).
@@ -271,7 +277,7 @@ export async function registerApi(app: FastifyInstance) {
         totalVolume: verifiedVol7d,
         volume7d: verifiedVol7d,
         totalTransfers: cas.tx ?? 0,
-        uniquePlayers: players.casino,
+        uniquePlayers: credPlayers > 0 ? credPlayers : players.casino,
         reserves: casReserves,
         entities: casEntities,
         chainSplit: credibleChainSplit,
