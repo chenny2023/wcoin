@@ -207,17 +207,24 @@ export async function generateMarketSnapshot(): Promise<void> {
     // aggregated whale groups (default display) + raw events (expand) — see queries above
     whaleGroups: whaleGroups.map((g) => ({ label: g.label, chain: g.chain, direction: g.direction, count: g.cnt, total: g.total, largest: g.largest })),
     whales: whales.map((w) => ({ label: w.label, chain: w.chain, usd: w.usd, direction: w.direction, ts: w.ts })),
-    // pattern-detected flow not attributed to a verified brand — shown separately
-    unattributed: {
-      count: unattr.length,
-      vol24h: unattr.reduce((s, b) => s + (b.volume24h ?? 0), 0),
-      vol7d: unattr.reduce((s, b) => s + (b.volume7d ?? 0), 0),
-      top: unattr
-        .slice()
-        .sort((a, b) => (b.volume7d ?? 0) - (a.volume7d ?? 0))
-        .slice(0, 5)
-        .map((b) => ({ label: b.brand, vol7d: b.volume7d ?? 0 })),
-    },
+    // pattern-detected flow not attributed to a verified brand — shown separately.
+    // De-distort it the same way as verified: drop clusters whose AVERAGE transfer is
+    // treasury/market-making sized (likely mislabeled exchange/MM wallets, not player
+    // flow) so this "observed" figure can't balloon to a multiple of the verified
+    // market and mislead — it was ~$6B/7d vs ~$1.3B verified, dominated by churn.
+    unattributed: (() => {
+      const real = unattr.filter((b) => !((b.txCount7d ?? 0) > 0 && (b.volume7d ?? 0) / (b.txCount7d as number) > AVG_TX_CEILING))
+      return {
+        count: real.length,
+        vol24h: real.reduce((s, b) => s + (b.volume24h ?? 0), 0),
+        vol7d: real.reduce((s, b) => s + (b.volume7d ?? 0), 0),
+        top: real
+          .slice()
+          .sort((a, b) => (b.volume7d ?? 0) - (a.volume7d ?? 0))
+          .slice(0, 5)
+          .map((b) => ({ label: b.brand, vol7d: b.volume7d ?? 0 })),
+      }
+    })(),
   }
 
   // confidence: lower when we have thin coverage today

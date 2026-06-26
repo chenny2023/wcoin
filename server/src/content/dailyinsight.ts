@@ -52,8 +52,11 @@ export function startDailyInsight() {
     console.log('[insight] off (no OPENROUTER_API_KEY)')
     return
   }
-  const run = () => generateDailyInsight().catch((e) => console.warn('[insight] failed:', (e as Error).message))
-  setTimeout(run, 260_000) // after the first snapshot warms (snapshot fires ~150s)
-  setInterval(run, 6 * 3600_000).unref?.() // re-check across the day (only writes when missing)
+  const run = (force = false) => generateDailyInsight(force).catch((e) => console.warn('[insight] failed:', (e as Error).message))
+  // First run after a (re)deploy FORCES a refresh so today's insight always reflects the
+  // current data basis (e.g. a credibility fix to the payload) instead of a stale read
+  // generated earlier in the day under the old code. Later re-checks only fill if missing.
+  setTimeout(() => run(true), 260_000) // after the first snapshot warms (snapshot fires ~150s)
+  setInterval(() => run(false), 6 * 3600_000).unref?.() // re-check across the day (only writes when missing)
   console.log('[insight] daily market-read generator active')
 }

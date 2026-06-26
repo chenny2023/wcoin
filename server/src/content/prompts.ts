@@ -60,7 +60,8 @@ function snapshotInput(): { input: any; brands: string[]; values: string[]; repo
     return { brand: g.label, chain: g.chain, direction: g.direction === 'in' ? 'inflow' : 'outflow', events: g.count, total: v(fmtUsd(g.total)) }
   })
   // concentration shares — registered as allowed values so the insight may cite e.g.
-  // "ETH = 96.0% of chain volume" and still pass the number-consistency QA check.
+  // "ETH = 47.1% of chain volume" (the credible de-distorted split) and still pass the
+  // number-consistency QA check.
   const pctPlain = (f: number) => `${((f ?? 0) * 100).toFixed(1)}%`
   const c = p.concentration
   const concentration = c
