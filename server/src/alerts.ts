@@ -1,4 +1,4 @@
-import { db } from './db.ts'
+import { db, externalFlowClause } from './db.ts'
 import { workerAll } from './readpool.ts'
 import { bus, TransferEvent } from './bus.ts'
 import { webFetch } from './net.ts'
@@ -136,7 +136,7 @@ async function evalNetflow() {
       `SELECT watch_id, label, chain,
               SUM(CASE WHEN direction='out' THEN usd ELSE 0 END) -
               SUM(CASE WHEN direction='in'  THEN usd ELSE 0 END) AS netOut
-       FROM transfers WHERE ts >= ? ${where} GROUP BY watch_id`,
+       FROM transfers WHERE ts >= ? ${where} ${externalFlowClause()} GROUP BY watch_id`,
       [since],
     )) as { watch_id: number; label: string; chain: string; netOut: number }[]
     const bucket = Math.floor(Date.now() / (rule.window_h * 3_600_000)) // one alert per window

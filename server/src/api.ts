@@ -551,6 +551,7 @@ export async function registerApi(app: FastifyInstance) {
           .prepare(
             `SELECT label, chain, direction, usd, ts FROM transfers
              WHERE ts >= ? AND category='casino' AND usd >= 50000 ${externalFlowClause()}
+               AND label NOT LIKE 'Casino-pattern%' AND label NOT LIKE '0x%' AND label NOT LIKE 'Unknown%' AND label NOT LIKE 'Unnamed%'
              ORDER BY ts DESC LIMIT 80`,
           )
           .all(since) as any[]
@@ -707,12 +708,20 @@ export async function registerApi(app: FastifyInstance) {
     const bucketMs = days <= 7 ? 6 * 3600_000 : 24 * 3600_000 // 6h buckets ≤7d, daily beyond
     const catFilter = cat !== 'all' ? ' AND category = ?' : ''
     const catArg = catFilter ? [cat] : []
+    // Credible basis (consistent with the headline total): external-facing flow only,
+    // volume-suspect operators dropped — otherwise the chart annualises past the whole
+    // industry and contradicts the tracked-volume headline.
+    const brands = (await aggCachedAsync('brand:casino', () => aggregateBrands('casino'), 120_000)) as any[]
+    const suspect = new Set<string>()
+    for (const b of brands) if (b.volumeSuspect) { suspect.add(b.brand); for (const m of b.members ?? []) suspect.add(m.label) }
+    const suspectArr = [...suspect]
+    const suspectNotIn = suspectArr.length ? `AND label NOT IN (${suspectArr.map(() => '?').join(',')})` : ''
     const rows = (await workerAll(
       `SELECT CAST((ts - ?) / ? AS INTEGER) AS b,
               SUM(CASE WHEN direction='in'  THEN usd ELSE 0 END) deposits,
               SUM(CASE WHEN direction='out' THEN usd ELSE 0 END) withdrawals
-       FROM transfers WHERE ts >= ?${catFilter} GROUP BY b ORDER BY b`,
-      [from, bucketMs, from, ...catArg],
+       FROM transfers WHERE ts >= ?${catFilter} ${externalFlowClause()} ${suspectNotIn} GROUP BY b ORDER BY b`,
+      [from, bucketMs, from, ...catArg, ...suspectArr],
     )) as any[]
     const map = new Map(rows.map((r) => [r.b, r]))
     const out: { t: number; deposits: number; withdrawals: number }[] = []

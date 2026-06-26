@@ -109,7 +109,9 @@ export async function startStatsMaintenance(): Promise<void> {
   // Run them through the read worker so they execute OFF the main event loop — when
   // READ_WORKER is disabled, workerGet transparently runs them on the main thread
   // (same as before). Either way the loop yields between every entity.
-  const P_SQL = 'SELECT COUNT(DISTINCT counterparty) p FROM transfers WHERE watch_id=? AND ts>=?'
+  // external-facing only: a counterparty that is itself a watched casino wallet is
+  // internal consolidation, NOT a player — counting it inflates the player headline.
+  const P_SQL = `SELECT COUNT(DISTINCT counterparty) p FROM transfers WHERE watch_id=? AND ts>=? ${externalFlowClause()}`
   const F_SQL = 'SELECT MIN(ts) f FROM transfers WHERE watch_id=?'
   const yield_ = () => new Promise((r) => setImmediate(r))
   for (;;) {
