@@ -160,7 +160,7 @@ footer{border-top:1px solid var(--line);margin-top:30px}footer .wrap{display:fle
 </style></head><body>
 <header class="nav"><div class="wrap">
 <a class="brand" href="/">WCOIN.CASINO</a>
-<nav class="navlinks"><a href="/best-crypto-casinos">Best casinos</a><a href="/rankings">Rankings</a><a href="/risk">Risk</a><a href="/daily">Daily report</a><a href="/about">About</a><a class="cta" href="/app">Live dashboard →</a></nav>
+<nav class="navlinks"><a href="/best-crypto-casinos">Best casinos</a><a href="/rankings">Rankings</a><a href="/data">Data</a><a href="/guide">Guides</a><a href="/risk">Risk</a><a href="/daily">Daily report</a><a class="cta" href="/app">Live dashboard →</a></nav>
 </div></header>
 <main class="wrap">
 <div class="crumb">${crumbHtml}</div>
@@ -1571,6 +1571,44 @@ function reservesReportPage(chainRes: { chain: string; v: number; casinos: numbe
   }
 }
 
+// Net-flow report — external deposits minus withdrawals per operator over 7d. A
+// neutral on-chain liquidity signal (not a verdict), shown as data.
+function netFlowReportPage(rows: { v: CasinoView; slug: string; net: number; inflow: number; outflow: number }[]): { title: string; description: string; html: string } {
+  const path = '/data/crypto-casino-net-flow'
+  const url = SITE + path
+  const title = `Crypto Casino Net Flow Report ${YEAR} — On-Chain Deposits vs Withdrawals | WCOIN.CASINO`
+  const description = `Which crypto casinos are net-receiving vs net-paying-out on-chain in ${YEAR}. 7-day external deposits minus withdrawals per operator — a neutral liquidity signal, verified and wash/treasury-excluded.`
+  const body =
+    `<p class="sub">Net on-chain flow = external <strong>deposits − withdrawals</strong> over 7 days. Positive means more money flowed in than out; negative means the operator paid out more than it took in. It's a liquidity signal, not a verdict — read it alongside <a href="/proof-of-reserves">reserves</a>.</p>` +
+    `<p class="upd">External-facing flow only (internal churn, double-counts and wash/treasury volume excluded). Live data, refreshed ~every 30 min.</p>` +
+    `<table><thead><tr><th>Operator</th><th style="text-align:right">Deposits (7d)</th><th style="text-align:right">Withdrawals (7d)</th><th style="text-align:right">Net flow (7d)</th></tr></thead><tbody>` +
+    rows.map((r) => `<tr><td><a href="/casino/${r.slug}">${esc(r.v.name)}</a></td><td class="n">${fmtUsd(r.inflow)}</td><td class="n">${fmtUsd(r.outflow)}</td><td class="n ${r.net >= 0 ? 'mint' : 'rose'}">${r.net >= 0 ? '+' : '−'}${fmtUsd(Math.abs(r.net))}</td></tr>`).join('') +
+    `</tbody></table>` +
+    `<p class="prose" style="margin-top:14px">How to read this: sustained net <em>outflow</em> usually means an operator is honouring withdrawals (healthy) — but combined with falling <a href="/data/crypto-casino-reserves">reserves</a> it can signal drain. Sustained net <em>inflow</em> can mean growth or that withdrawals are being throttled. Context matters; see <a href="/guide/how-to-verify-a-crypto-casino">how to verify a casino on-chain</a>.</p>`
+  return {
+    title,
+    description,
+    html: layout({ title, description, canonical: url, jsonLd: [datasetLd('Crypto Casino On-Chain Net Flow', description, url, Date.now(), ['7d external deposits (USD)', '7d external withdrawals (USD)', '7d net flow (USD)'])], breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: 'Data', url }], h1: `Crypto casino net flow report ${YEAR}`, updated: Date.now(), body }),
+  }
+}
+
+// /data hub — indexes the on-chain data stories (hub-spoke for the data cluster).
+function dataHubPage(): { title: string; description: string; html: string } {
+  const url = SITE + '/data'
+  const title = `Crypto Casino On-Chain Data & Reports ${YEAR} | WCOIN.CASINO`
+  const description = `Unique on-chain data on the crypto-casino industry: deposit currencies, reserves, and net flow — verified, wash/treasury-excluded. Independent reports you can cite.`
+  const body =
+    `<p class="sub">Original, verifiable on-chain data on the crypto-casino industry — not affiliate marketing. Every figure is external-facing flow with wash/treasury churn excluded.</p>` +
+    `<h2>Reports</h2><div class="prose"><p><a href="/data/crypto-casino-deposit-currencies">Deposit currency breakdown</a> — where casino money actually moves (spoiler: stablecoins dominate). <a href="/data/crypto-casino-reserves">Reserves report</a> — how much operators hold on-chain, by chain and operator. <a href="/data/crypto-casino-net-flow">Net flow report</a> — deposits vs withdrawals per operator.</p></div>` +
+    `<h2>Rankings & live data</h2><div class="chips"><a class="pill" href="/best-crypto-casinos">Best casinos</a><a class="pill" href="/highest-volume-crypto-casinos">Verified volume</a><a class="pill" href="/crypto-casinos-with-proof-of-reserves">Proof of reserves</a><a class="pill" href="/daily">Daily report</a><a class="pill" href="/methodology/address-attribution">Methodology</a></div>` +
+    `<p class="prose" style="margin-top:14px">Want to cite this data? It updates continuously from public on-chain activity; see our <a href="/methodology/proof-of-reserves">methodology</a> for exactly how each figure is produced.</p>`
+  return {
+    title,
+    description,
+    html: layout({ title, description, canonical: url, breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: 'Data', url }], h1: `Crypto casino on-chain data & reports`, updated: Date.now(), body }),
+  }
+}
+
 // High-intent topic leaderboards — each a distinct angle (verified volume / proof of
 // reserves / multi-chain) over the same ≥medium-confidence operator set, so they
 // don't duplicate the trust hub. Each ranks by its own metric and shows the column
@@ -1886,6 +1924,14 @@ export async function generateSeoPages(): Promise<void> {
     .map((v) => ({ v, slug: slugOfView(v) }))
   if (resTotal > 0 && resTop.length >= 3)
     add('/data/crypto-casino-reserves', 'data', reservesReportPage(chainResRows, resTotal, resTop), 'featured_core')
+  // net-flow report + /data hub
+  const netRows = ranked
+    .filter((v) => !v.onchain?.volumeSuspect && ((v.onchain?.inflow7d ?? 0) > 0 || (v.onchain?.outflow7d ?? 0) > 0))
+    .map((v) => ({ v, slug: slugOfView(v), inflow: v.onchain?.inflow7d ?? 0, outflow: v.onchain?.outflow7d ?? 0, net: (v.onchain?.inflow7d ?? 0) - (v.onchain?.outflow7d ?? 0) }))
+    .sort((a, b) => Math.abs(b.net) - Math.abs(a.net))
+    .slice(0, 30)
+  if (netRows.length >= 5) add('/data/crypto-casino-net-flow', 'data', netFlowReportPage(netRows), 'featured_core')
+  add('/data', 'data', dataHubPage(), 'featured_core')
   // Programmatic currency pages — one "Best {stablecoin} Casinos" per token with ≥5
   // operators (stablecoins are cross-chain, so not covered by the per-chain pages).
   const CURRENCIES: { token: string; slug: string; name: string; blurb: string }[] = [
@@ -2041,6 +2087,35 @@ export async function generateSeoPages(): Promise<void> {
     ],
     related: `Use the <a href="/best-crypto-casinos">best crypto casinos</a> ranking, <a href="/crypto-casinos-with-proof-of-reserves">proof-of-reserves list</a>, and <a href="/data/crypto-casino-reserves">reserves report</a>.`,
   }), 'featured_core')
+  add('/guide/crypto-casino-bonuses-explained', 'guide', guidePage({
+    path: '/guide/crypto-casino-bonuses-explained', h1: 'Crypto casino bonuses & wagering requirements explained',
+    title: `Crypto Casino Bonuses & Wagering Requirements Explained (${YEAR}) | WCOIN.CASINO`,
+    description: `How crypto casino bonuses really work: deposit matches, rakeback, no-deposit offers — and the wagering requirements, max-bet and game-weighting fine print that decides whether a bonus is worth taking.`,
+    intro: `A "200% bonus" can be worth a lot or nothing — the headline number rarely matters; the terms do. Here's how to read a crypto casino bonus before you take it.`,
+    sections: [
+      { h: 'The main bonus types', body: `<p><strong>Deposit match</strong> (e.g. 100% up to $1,000) adds bonus funds proportional to your deposit. <strong>No-deposit</strong> bonuses give a small amount to try the site. <strong>Rakeback / cashback</strong> returns a % of your wagering or losses — often the most honest value because it has fewer strings. <strong>Reload / VIP</strong> offers reward ongoing play.</p>` },
+      { h: 'Wagering requirements — the part that matters', body: `<p>A wagering requirement (e.g. "35×") is how many times you must bet the bonus (sometimes bonus + deposit) before you can withdraw. A $100 bonus at 35× means $3,500 of wagering. The higher the multiple, the less the bonus is really worth — anything above ~40× is steep. Always compute the real wagering before opting in.</p>` },
+      { h: 'The fine print that voids bonuses', body: `<p>Watch for <strong>max-bet caps</strong> while wagering (bet over it and the bonus is voided), <strong>game weighting</strong> (slots usually count 100%, table games 10% or less — so "wager $3,500" can mean far more on blackjack), <strong>time limits</strong>, and <strong>max cashout</strong> limits on winnings from no-deposit bonuses.</p>` },
+      { h: 'A simple rule', body: `<p>Prefer low-wagering or rakeback offers from operators that actually pay out — a great bonus from an insolvent casino is worthless. Check the operator's <a href="/proof-of-reserves">reserves</a> and <a href="/guide/crypto-casino-withdrawal-times">withdrawal record</a> first, then weigh the bonus terms. 18+; <a href="/responsible-gambling">play responsibly</a>.</p>` },
+    ],
+    faqs: [
+      { q: 'What does 35x wagering mean at a crypto casino?', a: 'You must wager the bonus 35 times before withdrawing — a $100 bonus at 35× requires $3,500 of bets. Game weighting can make the effective requirement even higher on table games.' },
+      { q: 'Are crypto casino bonuses worth it?', a: 'Only if the wagering requirement is reasonable (ideally under ~40×) and the operator reliably pays withdrawals. Low-wagering and rakeback offers usually beat big headline match percentages.' },
+    ],
+    related: `Check operators first: <a href="/crypto-casinos-with-proof-of-reserves">proof of reserves</a> and <a href="/rankings/trust">trust ranking</a>.`,
+  }), 'featured_core')
+  add('/guide/crypto-gambling-glossary', 'guide', guidePage({
+    path: '/guide/crypto-gambling-glossary', h1: 'Crypto gambling glossary',
+    title: `Crypto Gambling Glossary (${YEAR}) — Key Terms Explained | WCOIN.CASINO`,
+    description: `Plain-English definitions of the crypto-casino terms that matter: proof of reserves, provably fair, hot/cold wallet, RTP, house edge, wagering requirement, rakeback, on-chain volume and more.`,
+    intro: `The crypto-casino world mixes gambling and blockchain jargon. Here are the terms that actually matter, in plain English.`,
+    sections: [
+      { h: 'On-chain & solvency terms', body: `<p><strong>Proof of reserves</strong> — verifiable on-chain wallet balances showing what an operator holds (<a href="/guide/crypto-casino-proof-of-reserves">explainer</a>). <strong>Hot wallet</strong> — the operator's online wallet that processes deposits/withdrawals. <strong>Cold wallet</strong> — offline storage for reserves. <strong>On-chain volume</strong> — value moved through an operator's wallets; only meaningful when internal churn and wash/treasury flow are excluded (which is why most trackers overstate it).</p>` },
+      { h: 'Fairness & game terms', body: `<p><strong>Provably fair</strong> — a cryptographic scheme letting you verify a game outcome wasn't manipulated (<a href="/guide/provably-fair-explained">explainer</a>). <strong>RTP (return to player)</strong> — the % of wagers a game pays back over time. <strong>House edge</strong> — the casino's built-in mathematical advantage (100% − RTP). <strong>RNG</strong> — random number generator behind game outcomes.</p>` },
+      { h: 'Money & bonus terms', body: `<p><strong>Wagering requirement</strong> — how many times a bonus must be bet before withdrawal (<a href="/guide/crypto-casino-bonuses-explained">explainer</a>). <strong>Rakeback / cashback</strong> — a % of wagers or losses returned. <strong>Stablecoin</strong> — a dollar-pegged crypto (USDT, USDC) that's the dominant casino deposit currency. <strong>TRC20 / ERC20</strong> — the Tron and Ethereum token standards USDT runs on; TRC20 is cheaper and faster.</p>` },
+    ],
+    related: `Put it to use: <a href="/guide/how-to-choose-a-crypto-casino">how to choose a crypto casino</a> and the <a href="/data/crypto-casino-deposit-currencies">on-chain data</a>.`,
+  }), 'featured_core')
   add('/guide', 'guide', guidePage({
     path: '/guide', h1: 'Crypto casino guides',
     title: `Crypto Casino Guides — On-Chain Data, Reserves & Deposits (${YEAR}) | WCOIN.CASINO`,
@@ -2051,6 +2126,7 @@ export async function generateSeoPages(): Promise<void> {
       { h: 'Safety & solvency', body: `<p><a href="/guide/are-crypto-casinos-safe">Are crypto casinos safe?</a> — the real risks and how to judge an operator. <a href="/guide/crypto-casino-proof-of-reserves">Proof of reserves explained</a> — what it proves and how we measure it. <a href="/guide/how-to-verify-a-crypto-casino">How to verify a crypto casino on-chain</a> — a step-by-step you can follow yourself.</p>` },
       { h: 'Deposits & currencies', body: `<p><a href="/guide/usdt-vs-bitcoin-casino-deposits">USDT vs Bitcoin for casino deposits</a> — what the on-chain data shows and which to use. See live data in the <a href="/data/crypto-casino-deposit-currencies">deposit currency breakdown</a>, and operators in the <a href="/best-usdt-casinos">best USDT casinos</a> ranking.</p>` },
       { h: 'Games & withdrawals', body: `<p><a href="/guide/provably-fair-explained">Provably fair, explained</a> — how to verify game outcomes, and why fairness isn't safety. <a href="/guide/crypto-casino-withdrawal-times">Crypto casino withdrawal times</a> — what to expect by network, and the on-chain signals of a slow-payout operator.</p>` },
+      { h: 'Bonuses & terms', body: `<p><a href="/guide/crypto-casino-bonuses-explained">Bonuses & wagering requirements explained</a> — how to tell a real offer from a trap. <a href="/guide/crypto-gambling-glossary">Crypto gambling glossary</a> — the key terms in plain English.</p>` },
     ],
     related: `Explore the <a href="/best-crypto-casinos">best crypto casinos</a> ranking and the daily <a href="/daily">market report</a>.`,
   }), 'featured_core')
@@ -2230,8 +2306,12 @@ export function registerSeo(app: FastifyInstance) {
   app.get('/best-usdc-casinos', serve('rankings'))
   app.get('/data/crypto-casino-deposit-currencies', serve('data'))
   app.get('/data/crypto-casino-reserves', serve('data'))
+  app.get('/data/crypto-casino-net-flow', serve('data'))
+  app.get('/data', serve('data'))
   app.get('/guide/what-is-a-crypto-casino', serve('guide'))
   app.get('/guide/how-to-choose-a-crypto-casino', serve('guide'))
+  app.get('/guide/crypto-casino-bonuses-explained', serve('guide'))
+  app.get('/guide/crypto-gambling-glossary', serve('guide'))
   app.get('/guide', serve('guide'))
   app.get('/guide/crypto-casino-proof-of-reserves', serve('guide'))
   app.get('/guide/usdt-vs-bitcoin-casino-deposits', serve('guide'))
