@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { db } from './db.ts'
 import { aggregateBrands, type BrandAgg } from './aggregate.ts'
+import { workerAll } from './readpool.ts'
 import { runDataQualityChecks } from './dataquality.ts'
 import { brandKey, brandName, matchCasinoMeta, type CasinoMeta } from './casinometa.ts'
 import { reviewScores, type ReviewScore } from './collectors/reviews.ts'
@@ -1962,9 +1963,13 @@ export async function generateSeoPages(): Promise<void> {
   for (const b of onchainBrands) if (b.volumeSuspect) { suspectSeo.add(b.brand); for (const m of b.members ?? []) suspectSeo.add(m.label) }
   const labelToView = new Map<string, CasinoView>()
   for (const v of ranked) for (const m of v.onchain?.members ?? []) labelToView.set(m.label, v)
-  const tokRows = db
-    .prepare(`SELECT chain, label, token, SUM(usd) v, COUNT(*) n FROM transfers WHERE category='casino' AND ts>=? ${EXT_SEO} GROUP BY chain, label, token`)
-    .all(D7w) as { chain: string; label: string; token: string; v: number; n: number }[]
+  // Run via the read worker — the NOT EXISTS scan over millions of casino transfers
+  // is heavy and better-sqlite3 is synchronous, so on the main thread it blocked the
+  // event loop for seconds during each regen (health latency spikes). Off-loop now.
+  const tokRows = (await workerAll(
+    `SELECT chain, label, token, SUM(usd) v, COUNT(*) n FROM transfers WHERE category='casino' AND ts>=? ${EXT_SEO} GROUP BY chain, label, token`,
+    [D7w],
+  )) as { chain: string; label: string; token: string; v: number; n: number }[]
   const chainFlow = new Map<string, number>()
   const byTokenView = new Map<string, Map<CasinoView, number>>() // token → (view → 7d external settled)
   for (const r of tokRows) {
