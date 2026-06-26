@@ -7,6 +7,7 @@ import { reviewScores, type ReviewScore } from './collectors/reviews.ts'
 import { reserveSeries } from './reservehistory.ts'
 import { brandRiskEvents, recentRiskEvents, type RiskEvent } from './riskevents.ts'
 import { pingIndexNow } from './indexnow.ts'
+import type { TokenInfo } from './collectors/casinotokens.ts'
 import sharp from 'sharp'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -1637,6 +1638,7 @@ function dataHubPage(): { title: string; description: string; html: string } {
     `<p><strong><a href="/data/crypto-casino-deposit-currencies">Deposit currency breakdown</a></strong> — where crypto-casino money actually moves across chains. The headline finding: stablecoins (USDT on Tron and Ethereum) dominate deposits and withdrawals, while native Bitcoin is a small share of real deposit flow.</p>` +
     `<p><strong><a href="/data/crypto-casino-reserves">Reserves report</a></strong> — how much operators hold on-chain, aggregated and broken down by chain and by operator. Proof of reserves at an industry level: wallet balances anyone can verify, not self-reported claims.</p>` +
     `<p><strong><a href="/data/crypto-casino-net-flow">Net flow report</a></strong> — external deposits minus withdrawals per operator over 7 days, a neutral liquidity signal that helps spot operators paying out versus taking in.</p>` +
+    `<p><strong><a href="/data/crypto-casino-tokens">Casino tokens report</a></strong> — the native tokens crypto casinos issue, by market cap: live price, change and which run buyback-and-burn.</p>` +
     `</div>` +
     `<h2>What makes this data different</h2><div class="prose"><p>Most "crypto casino volume" figures you'll see elsewhere are inflated several times over by internal hot-wallet churn, double-counting (a transfer recorded under both watched sides), and a handful of operators' treasury and market-making movements. We strip all of that out — counting only flow whose counterparty is an external user or exchange — and flag anomalous-volume operators rather than featuring them. The result is a smaller but honest number you can actually cite.</p></div>` +
     `<h2>Rankings & live data</h2><div class="chips"><a class="pill" href="/best-crypto-casinos">Best casinos</a><a class="pill" href="/highest-volume-crypto-casinos">Verified volume</a><a class="pill" href="/crypto-casinos-with-proof-of-reserves">Proof of reserves</a><a class="pill" href="/daily">Daily report</a><a class="pill" href="/methodology/address-attribution">Methodology</a></div>` +
@@ -1645,6 +1647,35 @@ function dataHubPage(): { title: string; description: string; html: string } {
     title,
     description,
     html: layout({ title, description, canonical: url, breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: 'Data', url }], h1: `Crypto casino on-chain data & reports`, updated: Date.now(), body }),
+  }
+}
+
+// Casino-token report — operators that issue their own token (CoinGecko market data).
+// Unique market data + high-intent ("crypto casino tokens", "{TOKEN} price").
+function casinoTokensPage(rows: { v: CasinoView; slug: string; t: TokenInfo }[]): { title: string; description: string; html: string } {
+  const path = '/data/crypto-casino-tokens'
+  const url = SITE + path
+  const title = `Crypto Casino Tokens ${YEAR} — Prices, Market Caps & Buybacks | WCOIN.CASINO`
+  const description = `The native tokens of crypto casinos, ranked by market cap: live price, 24h/7d change, fully-diluted valuation and which run buyback-and-burn. Independent market data, updated continuously.`
+  const totalMcap = rows.reduce((s, r) => s + (r.t.marketCap || 0), 0)
+  const body =
+    `<p class="sub">Many crypto casinos issue their own token — for rewards, rakeback, revenue-share or governance. Here are the ones we track, ranked by market cap (<strong>${fmtUsd(totalMcap)}</strong> combined), with live market data.</p>` +
+    `<p class="upd">Market data via CoinGecko, refreshed continuously. A token's market cap is not the casino's reserves or revenue — treat it as a separate, speculative asset.</p>` +
+    `<table><thead><tr><th>Token</th><th>Casino</th><th style="text-align:right">Price</th><th style="text-align:right">Market cap</th><th style="text-align:right">24h</th><th style="text-align:right">Buyback</th></tr></thead><tbody>` +
+    rows
+      .map((r) => {
+        const ch = r.t.change24h
+        const chCell = ch == null ? '—' : `<span class="${ch >= 0 ? 'mint' : 'rose'}">${ch >= 0 ? '+' : ''}${ch.toFixed(1)}%</span>`
+        const price = r.t.price >= 1 ? fmtUsd(r.t.price) : `$${r.t.price.toPrecision(2)}`
+        return `<tr><td><span class="pill">${esc(r.t.symbol)}</span></td><td><a href="/casino/${r.slug}">${esc(r.v.name)}</a></td><td class="n">${price}</td><td class="n">${fmtUsd(r.t.marketCap)}</td><td class="n">${chCell}</td><td class="n">${r.t.buyback ? '✓' : '—'}</td></tr>`
+      })
+      .join('') +
+    `</tbody></table>` +
+    `<p class="prose" style="margin-top:14px">A casino token's value reflects market speculation about that operator — it is <strong>not</strong> proof of solvency or a claim on reserves. For solvency, see the <a href="/data/crypto-casino-reserves">reserves report</a>; "Buyback ✓" marks tokens with a known buyback-and-burn or revenue-share mechanism. Not investment advice.</p>`
+  return {
+    title,
+    description,
+    html: layout({ title, description, canonical: url, jsonLd: [datasetLd('Crypto Casino Native Tokens', description, url, Date.now(), ['token price (USD)', 'market cap (USD)', '24h/7d change', 'buyback mechanism'])], breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: 'Data', url }], h1: `Crypto casino tokens ${YEAR}`, updated: Date.now(), body }),
   }
 }
 
@@ -1825,7 +1856,7 @@ export async function generateSeoPages(): Promise<void> {
     if (a) a.push(val)
     else m.set(k, [val])
   }
-  const COMPARE_TOP_K = Number(process.env.SEO_COMPARE_TOP_K ?? 18)
+  const COMPARE_TOP_K = Number(process.env.SEO_COMPARE_TOP_K ?? 22)
   const strong = cap.filter((v) => dataConfidence(v) !== 'low')
   const qScore = (v: CasinoView) => (blendedTrust(v)?.score ?? 0) * 1e12 + (v.onchain?.volume7d ?? 0)
   const topK = strong.slice().sort((a, b) => qScore(b) - qScore(a)).slice(0, COMPARE_TOP_K)
@@ -1970,6 +2001,13 @@ export async function generateSeoPages(): Promise<void> {
     .sort((a, b) => Math.abs(b.net) - Math.abs(a.net))
     .slice(0, 30)
   if (netRows.length >= 5) add('/data/crypto-casino-net-flow', 'data', netFlowReportPage(netRows), 'featured_core')
+  // casino-token report — operators with their own token (CoinGecko market data)
+  const tokenRows = ranked
+    .filter((v) => v.onchain?.token && (v.onchain.token.marketCap || 0) > 0)
+    .map((v) => ({ v, slug: slugOfView(v), t: v.onchain!.token as TokenInfo }))
+    .sort((a, b) => (b.t.marketCap || 0) - (a.t.marketCap || 0))
+    .slice(0, 40)
+  if (tokenRows.length >= 5) add('/data/crypto-casino-tokens', 'data', casinoTokensPage(tokenRows), 'featured_core')
   add('/data', 'data', dataHubPage(), 'featured_core')
   // Programmatic currency pages — one "Best {stablecoin} Casinos" per token with ≥5
   // operators (stablecoins are cross-chain, so not covered by the per-chain pages).
@@ -2360,6 +2398,7 @@ export function registerSeo(app: FastifyInstance) {
   app.get('/data/crypto-casino-deposit-currencies', serve('data'))
   app.get('/data/crypto-casino-reserves', serve('data'))
   app.get('/data/crypto-casino-net-flow', serve('data'))
+  app.get('/data/crypto-casino-tokens', serve('data'))
   app.get('/data', serve('data'))
   app.get('/guide/what-is-a-crypto-casino', serve('guide'))
   app.get('/guide/how-to-choose-a-crypto-casino', serve('guide'))
