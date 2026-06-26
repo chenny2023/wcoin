@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify'
-import { db, stmt, stateGet, stateSet } from './db.ts'
+import { db, stmt, stateGet, stateSet, externalFlowClause } from './db.ts'
 import { bus, TransferEvent } from './bus.ts'
 import { aggregateEntities, aggregateBrands, maintainedPlayers } from './aggregate.ts'
 import { runDataQualityChecks, lastDataQuality } from './dataquality.ts'
@@ -736,8 +736,7 @@ export async function registerApi(app: FastifyInstance) {
       const from = now - days * 86_400_000
       const rows = (await workerAll(
         `SELECT chain, CAST((ts - ?) / 86400000 AS INTEGER) AS b, SUM(usd) v
-         FROM transfers WHERE watch_id = ? AND ts >= ?
-           AND NOT EXISTS (SELECT 1 FROM watchlist cpw WHERE cpw.address = transfers.counterparty AND cpw.category='casino')
+         FROM transfers WHERE watch_id = ? AND ts >= ? ${externalFlowClause()}
          GROUP BY chain, b`,
         [from, Number(id), from],
       )) as { chain: string; b: number; v: number }[]
@@ -813,8 +812,7 @@ export async function registerApi(app: FastifyInstance) {
     const rows = (await workerAll(
       `SELECT CASE WHEN usd >= 100000 THEN 0 WHEN usd >= 10000 THEN 1 WHEN usd >= 500 THEN 2 ELSE 3 END AS b,
               COUNT(*) cnt, SUM(usd) vol, COUNT(DISTINCT counterparty) players
-       FROM transfers WHERE ts >= ?${catFilter}
-         AND NOT EXISTS (SELECT 1 FROM watchlist cpw WHERE cpw.address = transfers.counterparty AND cpw.category='casino')
+       FROM transfers WHERE ts >= ?${catFilter} ${externalFlowClause()}
        GROUP BY b`,
       [d7, ...catArg],
     )) as any[]
@@ -1123,8 +1121,7 @@ export async function registerApi(app: FastifyInstance) {
              SUM(CASE WHEN direction='out' THEN usd ELSE 0 END) AS withdrawals,
              SUM(usd) AS total, COUNT(*) AS txns
            FROM transfers
-           WHERE chain=? AND category='casino' AND ts>=?
-             AND NOT EXISTS (SELECT 1 FROM watchlist cpw WHERE cpw.address = transfers.counterparty AND cpw.category='casino')
+           WHERE chain=? AND category='casino' AND ts>=? ${externalFlowClause()}
            GROUP BY label ORDER BY total DESC`,
         )
         .all(chain, since) as { label: string; deposits: number; withdrawals: number; total: number; txns: number }[]
@@ -1162,7 +1159,7 @@ export async function registerApi(app: FastifyInstance) {
       `SELECT chain, label, SUM(usd) v, COUNT(*) n FROM transfers
        WHERE category='casino' AND ts>=?
          AND label NOT LIKE 'Casino-pattern%' AND label NOT LIKE '0x%' AND label NOT LIKE 'Unknown%' AND label NOT LIKE 'Unnamed%'
-         AND NOT EXISTS (SELECT 1 FROM watchlist cpw WHERE cpw.address = transfers.counterparty AND cpw.category='casino')
+         ${externalFlowClause()}
        GROUP BY chain, label`,
     ).all(d7) as { chain: string; label: string; v: number; n: number }[]
     const AVG_TX_CEILING = Number(process.env.DEPOSIT_AVG_TX_CEILING ?? 50_000)
@@ -1196,6 +1193,34 @@ export async function registerApi(app: FastifyInstance) {
       { addresses: 0, clustered: 0 },
     )
     return { operators: rows.length, ...totals, perOperator: rows }
+  })
+
+  // internal-flow marker audit — proves the precomputed `cp_internal` flag is
+  // complete enough to replace the slow per-row NOT EXISTS on the volume hot path.
+  // Computes the 7d volume three ways over the same window: gross (no filter),
+  // cp_internal=0 (the fast flag), and NOT EXISTS (the authoritative-but-slow
+  // definition). When cpInternal ≈ notExists the marker has caught up and the
+  // cheap filter is safe to make the default. All scans run off the main loop.
+  app.get('/api/diag/internal-flow', async () => {
+    const d7 = Date.now() - 7 * 86_400_000
+    const NE = "SELECT SUM(usd) v FROM transfers WHERE ts>=? AND NOT EXISTS (SELECT 1 FROM watchlist cpw WHERE cpw.address=transfers.counterparty AND cpw.category='casino')"
+    const [gross, cpInternal, notExists] = await Promise.all([
+      workerGet<{ v: number }>('SELECT SUM(usd) v FROM transfers WHERE ts>=?', [d7]),
+      workerGet<{ v: number }>('SELECT SUM(usd) v FROM transfers WHERE ts>=? AND cp_internal=0', [d7]),
+      workerGet<{ v: number }>(NE, [d7]),
+    ])
+    const g = gross?.v ?? 0
+    const ci = cpInternal?.v ?? 0
+    const ne = notExists?.v ?? 0
+    // how closely the cheap flag reproduces the authoritative definition (1 = identical)
+    const agreement = ne > 0 ? 1 - Math.abs(ci - ne) / ne : ci === ne ? 1 : 0
+    return {
+      firstpass: stateGet('internalflow:firstpass') === '1',
+      vol7d: { gross: g, cpInternal: ci, notExists: ne },
+      internalExcluded: { byFlag: g - ci, byNotExists: g - ne },
+      agreement: Number(agreement.toFixed(4)), // ≥0.98 → marker complete, safe to flip default
+      ready: agreement >= 0.98,
+    }
   })
 
   // mention-attribution audit — top watch_labels in the mentions table (7d) and

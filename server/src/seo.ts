@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify'
-import { db } from './db.ts'
+import { db, externalFlowClause } from './db.ts'
 import { aggregateBrands, type BrandAgg } from './aggregate.ts'
 import { workerAll } from './readpool.ts'
 import { runDataQualityChecks } from './dataquality.ts'
@@ -1958,7 +1958,7 @@ export async function generateSeoPages(): Promise<void> {
   // ── currency page + data-story + guides (all on the credible external-only,
   // suspect/churn-excluded basis, consistent with the rest of the site) ─────────
   const D7w = Date.now() - 7 * 86_400_000
-  const EXT_SEO = "AND NOT EXISTS (SELECT 1 FROM watchlist cpw WHERE cpw.address = transfers.counterparty AND cpw.category='casino')"
+  const EXT_SEO = externalFlowClause()
   const suspectSeo = new Set<string>()
   for (const b of onchainBrands) if (b.volumeSuspect) { suspectSeo.add(b.brand); for (const m of b.members ?? []) suspectSeo.add(m.label) }
   const labelToView = new Map<string, CasinoView>()

@@ -1,4 +1,4 @@
-import { db } from './db.ts'
+import { db, externalFlowClause } from './db.ts'
 import { aggregateBrands } from './aggregate.ts'
 import { workerGet, workerAll } from './readpool.ts'
 
@@ -62,8 +62,8 @@ export async function generateMarketSnapshot(): Promise<void> {
   // they double-count (a casino-A→casino-B transfer is recorded once under each side),
   // which is exactly what inflated ETH volume to a nonsensical ~$22B/7d and crushed
   // every other chain's share. What's left ≈ real deposits + withdrawals (users/CEXs).
-  const EXTERNAL_ONLY =
-    "AND NOT EXISTS (SELECT 1 FROM watchlist cpw WHERE cpw.address = transfers.counterparty AND cpw.category='casino')"
+  // One shared definition with aggregate.ts (default = precomputed cp_internal flag).
+  const EXTERNAL_ONLY = externalFlowClause()
 
   // Volume-suspect + treasury-churn operators must be excluded from EVERY headline
   // volume figure — total, net flow AND chain split — not just the chain share, or the

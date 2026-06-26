@@ -635,6 +635,24 @@ export function stateSet(key: string, value: string | number) {
   setState.run(key, String(value))
 }
 
+// ── external-flow filter (shared by every volume query) ───────────────────────
+// "External" flow = a transfer whose counterparty is NOT itself a watched casino
+// address — i.e. real deposits/withdrawals, not casino↔casino consolidation/churn
+// or the double-count where one transfer is recorded under each watched side.
+// The authoritative test is a per-row NOT EXISTS over the watchlist, but that was
+// too slow on the 57M-row hot path, so internalflow.ts precomputes it into the
+// `cp_internal` column. Returns a clause appended to a `WHERE … ` over `transfers`.
+//   VOLUME_EXTERNAL_ONLY=0          → '' (gross, no exclusion — escape hatch)
+//   VOLUME_EXTERNAL_ONLY=notexists  → original slow definition (verification/diff)
+//   unset / anything else           → fast precomputed `cp_internal=0` (default)
+export function externalFlowClause(): string {
+  const m = process.env.VOLUME_EXTERNAL_ONLY
+  if (m === '0') return ''
+  if (m === 'notexists')
+    return "AND NOT EXISTS (SELECT 1 FROM watchlist cpw WHERE cpw.address = transfers.counterparty AND cpw.category='casino')"
+  return 'AND cp_internal=0'
+}
+
 // ── prepared statements reused by collectors/api ──────────────────────────────
 export const stmt = {
   insertTransfer: db.prepare(`

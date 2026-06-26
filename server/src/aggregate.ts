@@ -1,5 +1,5 @@
 import { config } from './config.ts'
-import { db, stmt, stateGet, stateSet, WatchRow } from './db.ts'
+import { db, stmt, stateGet, stateSet, externalFlowClause, WatchRow } from './db.ts'
 import { workerGet, workerAll } from './readpool.ts'
 import { evmBalanceUsd } from './collectors/evm.ts'
 import { tronBalanceUsd } from './collectors/tron.ts'
@@ -182,11 +182,9 @@ async function computeEntities(): Promise<EntityAgg[]> {
   // same transfer is recorded under each watched side. This is what made volume
   // credible at the chain level; applied here it makes every per-casino volume number
   // (rankings, casino pages, SEO, daily report) reflect real deposits/withdrawals.
-  // Env kill-switch in case the per-row NOT EXISTS ever costs too much on the hot path.
-  const EXT =
-    process.env.VOLUME_EXTERNAL_ONLY === '0'
-      ? ''
-      : "AND NOT EXISTS (SELECT 1 FROM watchlist cpw WHERE cpw.address = transfers.counterparty AND cpw.category='casino')"
+  // External-facing flow only (drops casino↔casino internal churn + double-count).
+  // Defaults to the precomputed `cp_internal` flag; see externalFlowClause for modes.
+  const EXT = externalFlowClause()
   const chainRows = (await workerAll(
     `SELECT watch_id, chain, SUM(usd) v FROM transfers WHERE ts >= ? ${EXT} GROUP BY watch_id, chain`,
     [params.d7],
