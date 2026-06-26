@@ -207,13 +207,20 @@ export async function generateMarketSnapshot(): Promise<void> {
     // aggregated whale groups (default display) + raw events (expand) — see queries above
     whaleGroups: whaleGroups.map((g) => ({ label: g.label, chain: g.chain, direction: g.direction, count: g.cnt, total: g.total, largest: g.largest })),
     whales: whales.map((w) => ({ label: w.label, chain: w.chain, usd: w.usd, direction: w.direction, ts: w.ts })),
-    // pattern-detected flow not attributed to a verified brand — shown separately.
-    // De-distort it the same way as verified: drop clusters whose AVERAGE transfer is
-    // treasury/market-making sized (likely mislabeled exchange/MM wallets, not player
-    // flow) so this "observed" figure can't balloon to a multiple of the verified
-    // market and mislead — it was ~$6B/7d vs ~$1.3B verified, dominated by churn.
+    // pattern-detected flow not attributed to a verified brand — shown separately, and
+    // de-distorted so this "observed" figure can't mislead (it was ~$6B/7d vs ~$1.3B
+    // verified). Two plausibility gates drop near-certain false positives — mislabeled
+    // exchange/bridge/MM wallets the casino-pattern heuristic over-caught:
+    //   (a) average transfer is treasury/market-making sized (not player flow), and
+    //   (b) the cluster out-volumes the #1 VERIFIED casino — no unnamed operator
+    //       realistically settles more than the largest named brand in the market.
     unattributed: (() => {
-      const real = unattr.filter((b) => !((b.txCount7d ?? 0) > 0 && (b.volume7d ?? 0) / (b.txCount7d as number) > AVG_TX_CEILING))
+      const maxVerVol7d = Math.max(0, ...verified.filter((b) => !b.volumeSuspect).map((b) => b.volume7d ?? 0))
+      const real = unattr.filter((b) => {
+        const churn = (b.txCount7d ?? 0) > 0 && (b.volume7d ?? 0) / (b.txCount7d as number) > AVG_TX_CEILING
+        const implausible = maxVerVol7d > 0 && (b.volume7d ?? 0) > maxVerVol7d
+        return !churn && !implausible
+      })
       return {
         count: real.length,
         vol24h: real.reduce((s, b) => s + (b.volume24h ?? 0), 0),
