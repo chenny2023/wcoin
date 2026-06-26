@@ -536,31 +536,40 @@ export async function registerApi(app: FastifyInstance) {
 
   // public — recent noteworthy on-chain activity (whale deposits/withdrawals),
   // surfaced as the header notification feed. Real transfers, cached 1 min.
-  app.get('/api/notifications', async () =>
-    aggCached(
+  app.get('/api/notifications', async () => {
+    // Same credible basis as the headline volume: external-facing flow only, and drop
+    // volume-suspect operators — otherwise the feed is flooded by treasury/market-making
+    // churn (e.g. Rollbit ~$4M/tx) that the rest of the site already excludes.
+    const brands = (await aggCachedAsync('brand:casino', () => aggregateBrands('casino'), 120_000)) as any[]
+    const suspect = new Set<string>()
+    for (const b of brands) if (b.volumeSuspect) { suspect.add(b.brand); for (const m of b.members ?? []) suspect.add(m.label) }
+    return aggCached(
       'notifications',
       () => {
         const since = Date.now() - 48 * 3600_000
         const rows = db
           .prepare(
             `SELECT label, chain, direction, usd, ts FROM transfers
-             WHERE ts >= ? AND category='casino' AND usd >= 50000
-             ORDER BY ts DESC LIMIT 25`,
+             WHERE ts >= ? AND category='casino' AND usd >= 50000 ${externalFlowClause()}
+             ORDER BY ts DESC LIMIT 80`,
           )
           .all(since) as any[]
         return {
-          items: rows.map((r) => ({
-            type: r.direction === 'in' ? 'deposit' : 'withdrawal',
-            title: `${r.direction === 'in' ? 'Large deposit' : 'Large withdrawal'} · ${r.label}`,
-            detail: `$${Math.round(r.usd).toLocaleString()} on ${r.chain}`,
-            ts: r.ts,
-            href: '/app/blockchain',
-          })),
+          items: rows
+            .filter((r) => !suspect.has(r.label))
+            .slice(0, 25)
+            .map((r) => ({
+              type: r.direction === 'in' ? 'deposit' : 'withdrawal',
+              title: `${r.direction === 'in' ? 'Large deposit' : 'Large withdrawal'} · ${r.label}`,
+              detail: `$${Math.round(r.usd).toLocaleString()} on ${r.chain}`,
+              ts: r.ts,
+              href: '/app/blockchain',
+            })),
         }
       },
       60_000,
-    ),
-  )
+    )
+  })
 
   // public — on-chain iGaming protocol landscape (prediction markets, lotteries…)
   app.get('/api/protocols', async (req) => {
@@ -808,13 +817,20 @@ export async function registerApi(app: FastifyInstance) {
     ]
     const catFilter = cat && cat !== 'all' ? ' AND category = ?' : ''
     const catArg = catFilter ? [cat] : []
+    // Drop volume-suspect operators so the Whale tier isn't inflated by treasury/
+    // market-making churn (consistent with every other headline figure).
+    const brands = (await aggCachedAsync('brand:casino', () => aggregateBrands('casino'), 120_000)) as any[]
+    const suspect = new Set<string>()
+    for (const b of brands) if (b.volumeSuspect) { suspect.add(b.brand); for (const m of b.members ?? []) suspect.add(m.label) }
+    const suspectArr = [...suspect]
+    const suspectNotIn = suspectArr.length ? `AND label NOT IN (${suspectArr.map(() => '?').join(',')})` : ''
     // bucket + COUNT(DISTINCT) in SQL, run in the read worker (off the main loop)
     const rows = (await workerAll(
       `SELECT CASE WHEN usd >= 100000 THEN 0 WHEN usd >= 10000 THEN 1 WHEN usd >= 500 THEN 2 ELSE 3 END AS b,
               COUNT(*) cnt, SUM(usd) vol, COUNT(DISTINCT counterparty) players
-       FROM transfers WHERE ts >= ?${catFilter} ${externalFlowClause()}
+       FROM transfers WHERE ts >= ?${catFilter} ${externalFlowClause()} ${suspectNotIn}
        GROUP BY b`,
-      [d7, ...catArg],
+      [d7, ...catArg, ...suspectArr],
     )) as any[]
     const byB = new Map(rows.map((r) => [r.b, r]))
     const res = meta.map((m, i) => {

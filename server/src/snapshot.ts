@@ -117,10 +117,18 @@ export async function generateMarketSnapshot(): Promise<void> {
     .all() as { chain: string; v: number; casinos: number }[]
   const totChainReserves = chainReserveRows.reduce((s, c) => s + (c.v ?? 0), 0) || 1
 
+  // Whale activity MUST use the same credible basis as the headline total, or it
+  // dwarfs it nonsensically: unfiltered, a single suspect operator's treasury/market-
+  // making churn (e.g. Rollbit ~$4M/tx, in≈out) and internal/double-count made 24h
+  // "whale activity" ≈ $3B against a ~$193M tracked total. So: external-facing flow
+  // only (drops internal/double-count) AND drop volume-suspect operators (the same
+  // wash/treasury-churn brands excluded from every headline figure).
+  const suspectArr = [...suspectLabels]
+  const suspectNotIn = suspectArr.length ? `AND label NOT IN (${suspectArr.map(() => '?').join(',')})` : ''
   // recent verified whale transfers (worker; indexed by usd)
   const whales = (await workerAll(
-    `SELECT label, chain, usd, direction, ts FROM transfers WHERE category='casino' AND ts>=? AND usd>=50000 ${NOT_UNATTR} ORDER BY ts DESC LIMIT 40`,
-    [d1],
+    `SELECT label, chain, usd, direction, ts FROM transfers WHERE category='casino' AND ts>=? AND usd>=50000 ${NOT_UNATTR} ${EXTERNAL_ONLY} ${suspectNotIn} ORDER BY ts DESC LIMIT 40`,
+    [d1, ...suspectArr],
   )) as { label: string; chain: string; usd: number; direction: string; ts: number }[]
 
   // AGGREGATED whale activity — grouped by (brand, chain, direction) so the report
@@ -128,9 +136,9 @@ export async function generateMarketSnapshot(): Promise<void> {
   // spamming the same brand+amount. Raw events stay in `whales` for the expand view.
   const whaleGroups = (await workerAll(
     `SELECT label, chain, direction, COUNT(*) cnt, SUM(usd) total, MAX(usd) largest
-     FROM transfers WHERE category='casino' AND ts>=? AND usd>=50000 ${NOT_UNATTR}
+     FROM transfers WHERE category='casino' AND ts>=? AND usd>=50000 ${NOT_UNATTR} ${EXTERNAL_ONLY} ${suspectNotIn}
      GROUP BY label, chain, direction ORDER BY total DESC LIMIT 12`,
-    [d1],
+    [d1, ...suspectArr],
   )) as { label: string; chain: string; direction: string; cnt: number; total: number; largest: number }[]
 
   // reserves (small tables — main thread is fine)
