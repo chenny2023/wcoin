@@ -29,6 +29,8 @@ import { pingIndexNow } from './indexnow.ts'
 const SITE = 'https://wcoin.casino'
 // current year for rolling leaderboard titles (variable, never hard-coded) — §3.3
 const YEAR = new Date().getUTCFullYear()
+// stable publish date for evergreen guides (dateModified tracks the live refresh)
+const GUIDE_PUBLISHED = '2026-06-25T00:00:00Z'
 
 // §3.2 JSON-LD helpers. Dataset = highest information-gain schema for a data site;
 // ItemList = leaderboards. Only VERIFIED on-chain figures feed these (never claimed).
@@ -432,6 +434,10 @@ function casinoPage(
     ? `<p class="prose" style="margin-top:24px">Explore the full live picture — real-time deposits &amp; withdrawals, whale flow and reserve history — on the <a href="/app/casinos">live casino dashboard</a>, or see the whole market in today's <a href="/daily">daily report</a>.</p>`
     : `<p class="prose" style="margin-top:24px">Compare operators by <a href="/rankings/trust">third-party trust rating</a> (our recommended ranking — on-chain volume is easily inflated by wash trading), or browse the live <a href="/app/casinos">casino dashboard</a>.</p>`
 
+  // contextual guides — distribute link equity from every casino page to the data/
+  // guide clusters, and help readers act on what they're seeing
+  const guideLinks = `<h2>Judge ${esc(v.name)} for yourself</h2><div class="chips"><a class="pill" href="/guide/how-to-verify-a-crypto-casino">How to verify a casino on-chain</a><a class="pill" href="/guide/are-crypto-casinos-safe">Are crypto casinos safe?</a><a class="pill" href="/guide/crypto-casino-proof-of-reserves">Proof of reserves explained</a><a class="pill" href="/data/crypto-casino-reserves">Reserves report</a></div>`
+
   // limited (noindex) pages get an honest banner explaining the thin data
   const limitedNote = noindex
     ? `<p class="prose" style="margin:0 0 4px;padding:9px 13px;background:#ffffff08;border:1px solid var(--line);border-radius:10px;font-size:13px;color:var(--dim)">Limited profile — we don't yet have enough independent data to feature ${esc(v.name)}. It will be expanded as on-chain activity and additional rating sources are added.</p>`
@@ -498,7 +504,7 @@ function casinoPage(
         .join('')}<p class="prose" style="font-size:12px"><a href="/risk">Full risk registry →</a></p>`
     : ''
 
-  const body = `${limitedNote}${suspectNote}${sub}${trustLine}${stats}${solvency}${riskSection}${chainTable}${ratingsTable}${refTable}${website}${rel}${compareLinks}${chainBestLinks}${faqHtml}${alertForm}${cta}`
+  const body = `${limitedNote}${suspectNote}${sub}${trustLine}${stats}${solvency}${riskSection}${chainTable}${ratingsTable}${refTable}${website}${rel}${compareLinks}${chainBestLinks}${faqHtml}${guideLinks}${alertForm}${cta}`
 
   const pageUpdated = Date.now()
   const jsonLd: object[] = [
@@ -1514,10 +1520,26 @@ function guidePage(cfg: {
     `<div class="prose" style="margin-top:16px">${cfg.related}</div>`
   const jsonLd: object[] = []
   if (cfg.faqs?.length) jsonLd.push({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: cfg.faqs.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a.replace(/<[^>]+>/g, '') } })) })
+  // Article schema for E-E-A-T + freshness: org-authored, continuously updated. Stable
+  // publish date; dateModified tracks the live refresh (consistent with the site's
+  // "updated continuously" framing).
+  const updated = Date.now()
+  jsonLd.push({
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: cfg.h1,
+    description: cfg.description,
+    datePublished: GUIDE_PUBLISHED,
+    dateModified: new Date(updated).toISOString(),
+    author: { '@type': 'Organization', name: 'WCOIN.CASINO', url: SITE },
+    publisher: { '@type': 'Organization', name: 'WCOIN.CASINO', url: SITE, logo: { '@type': 'ImageObject', url: SITE + '/og.svg' } },
+    mainEntityOfPage: url,
+    isAccessibleForFree: true,
+  })
   return {
     title: cfg.title,
     description: cfg.description,
-    html: layout({ title: cfg.title, description: cfg.description, canonical: url, jsonLd, breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: 'Guides', url: SITE + '/guide' }, { name: cfg.h1, url }], h1: cfg.h1, updated: Date.now(), body }),
+    html: layout({ title: cfg.title, description: cfg.description, canonical: url, jsonLd, breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: 'Guides', url: SITE + '/guide' }, { name: cfg.h1, url }], h1: cfg.h1, updated, body }),
   }
 }
 
