@@ -7,6 +7,9 @@ import { reviewScores, type ReviewScore } from './collectors/reviews.ts'
 import { reserveSeries } from './reservehistory.ts'
 import { brandRiskEvents, recentRiskEvents, type RiskEvent } from './riskevents.ts'
 import { pingIndexNow } from './indexnow.ts'
+import sharp from 'sharp'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 2 — data-led SEO pages. We pre-render REAL, indexable HTML for high-value
@@ -120,8 +123,8 @@ function layout(opts: {
 <meta name="theme-color" content="#0a0a0f">
 <meta property="og:type" content="website"><meta property="og:site_name" content="WCOIN.CASINO">
 <meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}">
-<meta property="og:url" content="${esc(canonical)}"><meta property="og:image" content="${esc(ogImage || SITE + '/og.svg')}">
-<meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${esc(ogImage || SITE + '/og.svg')}">
+<meta property="og:url" content="${esc(canonical)}"><meta property="og:image" content="${esc(ogImage || SITE + '/og.png')}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${esc(ogImage || SITE + '/og.png')}">
 <meta property="article:modified_time" content="${new Date(updated).toISOString()}">
 <meta name="rating" content="adult">
 <script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@graph': graph })}</script>
@@ -2322,6 +2325,20 @@ export function registerSeo(app: FastifyInstance) {
       .header('Cache-Control', 'no-store')
       .send(`<!doctype html><meta charset="utf-8"><meta name="robots" content="noindex"><title>Not found — WCOIN.CASINO</title><body style="background:#0a0a0f;color:#e8e8ee;font:16px/1.6 system-ui;text-align:center;padding:80px"><h1 style="color:#f5b100">404</h1><p>This ${esc(kind)} page isn't available.</p><p><a style="color:#f5b100" href="/">← WCOIN.CASINO home</a></p></body>`)
   }
+  // OG image as PNG — Twitter/Facebook don't render an SVG og:image, so social
+  // previews showed no image. Convert the static og.svg once via sharp, cache it.
+  let ogPng: Buffer | null = null
+  app.get('/og.png', async (_req, reply) => {
+    if (!ogPng) {
+      try {
+        const svg = readFileSync(fileURLToPath(new URL('../../dist/og.svg', import.meta.url)))
+        ogPng = await sharp(svg, { density: 144 }).resize(1200, 630, { fit: 'cover' }).png().toBuffer()
+      } catch {
+        return reply.code(404).send()
+      }
+    }
+    return reply.header('Content-Type', 'image/png').header('Cache-Control', 'public, max-age=86400').send(ogPng)
+  })
   app.get('/casino/:slug', serve('casino'))
   app.get('/compare/:slug', serve('compare'))
   app.get('/rankings', serve('rankings'))
