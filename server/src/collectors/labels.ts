@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { db, stmt, stateGet, stateSet, externalFlowClause, attributedClause } from '../db.ts'
 import { workerAll, workerGet } from '../readpool.ts'
+import { aggregateEntities, isUnattributed } from '../aggregate.ts'
 import { webFetch, tronscanAccountKind } from '../net.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -362,32 +363,22 @@ export async function classifyServices(): Promise<number> {
 // safety bit) does NOT rewrite the millions of transfers those high-throughput wallets
 // hold, which would freeze the loop. Idempotent via a state flag.
 export async function demoteImplausibleCasinos(): Promise<number> {
-  if (stateGet('labels:demoted_infra') === 'v1') return 0
-  const d7 = Date.now() - 7 * 86_400_000
-  const ceilRow = (await workerGet(
-    `SELECT MAX(v) m FROM (SELECT SUM(usd) v FROM transfers WHERE category='casino' AND ts>=? ${externalFlowClause()} ${attributedClause()} GROUP BY label)`,
-    [d7],
-  )) as { m: number } | undefined
-  const ceiling = ceilRow?.m ?? 0
-  if (ceiling <= 0) return 0 // aggregate not warm yet — retry on the next cycle, don't latch the flag
-  const cands = db
-    .prepare(
-      "SELECT id, label FROM watchlist WHERE active=1 AND category='casino' AND (label LIKE 'Casino-pattern%' OR label LIKE '0x%' OR label LIKE 'Unknown%' OR label LIKE 'Unnamed%')",
-    )
-    .all() as { id: number; label: string }[]
-  let demoted = 0
-  for (const c of cands) {
-    const vr = (await workerGet('SELECT SUM(usd) v FROM transfers WHERE watch_id=? AND ts>=?', [c.id, d7])) as { v: number } | undefined
-    if ((vr?.v ?? 0) > ceiling) {
-      db.prepare('UPDATE watchlist SET active=0 WHERE id=?').run(c.id)
-      demoted++
-      console.log(`[labels] deactivated mislabeled infra ${c.label} — $${Math.round(vr?.v ?? 0).toLocaleString()}/7d > top verified casino ($${Math.round(ceiling).toLocaleString()})`)
-    }
-    await yieldLoop()
+  if (stateGet('labels:demoted_infra') === 'v2') return 0
+  // Use the already-computed, cached per-entity aggregate (external-only volumes) — NO
+  // heavy ad-hoc SUM over the 1.4M-row infra wallets (that risks blocking the loop).
+  const ents = await aggregateEntities('casino')
+  if (ents.length === 0) return 0
+  const ceiling = Math.max(0, ...ents.filter((e) => !isUnattributed(e.label)).map((e) => e.volume7d ?? 0))
+  if (ceiling <= 0) return 0 // aggregate cold — retry next cycle, don't latch the flag
+  const infra = ents.filter((e) => isUnattributed(e.label) && (e.volume7d ?? 0) > ceiling)
+  const upd = db.prepare('UPDATE watchlist SET active=0 WHERE id=?')
+  for (const e of infra) {
+    upd.run(e.id)
+    console.log(`[labels] deactivated mislabeled infra ${e.label} — $${Math.round(e.volume7d).toLocaleString()}/7d > top verified casino ($${Math.round(ceiling).toLocaleString()})`)
   }
-  stateSet('labels:demoted_infra', 'v1')
-  console.log(`[labels] infra demotion pass complete — deactivated ${demoted}`)
-  return demoted
+  stateSet('labels:demoted_infra', 'v2')
+  console.log(`[labels] infra demotion pass complete — deactivated ${infra.length}`)
+  return infra.length
 }
 
 export async function runLabelHarvest(force = false) {
