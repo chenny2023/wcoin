@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { db, stmt, stateGet, stateSet, externalFlowClause, attributedClause } from './db.ts'
 import { bus, TransferEvent } from './bus.ts'
-import { aggregateEntities, aggregateBrands, maintainedPlayers } from './aggregate.ts'
+import { aggregateEntities, aggregateBrands, maintainedPlayers, isUnattributed } from './aggregate.ts'
 import { runDataQualityChecks, lastDataQuality } from './dataquality.ts'
 import { brandHistory } from './brandstore.ts'
 import { renderDailyShareCard } from './content/card.ts'
@@ -1223,6 +1223,33 @@ export async function registerApi(app: FastifyInstance) {
       { addresses: 0, clustered: 0 },
     )
     return { operators: rows.length, ...totals, perOperator: rows }
+  })
+
+  // infra-demotion audit — shows the plausibility ceiling (largest verified non-suspect
+  // brand 7d volume) and which unattributed casino entities out-volume it (mislabeled
+  // exchange/bridge/MM infra the overlap classifier over-caught). ?run=1 deactivates
+  // them (active=0 — bounded to infra>ceiling, reversible, idempotent).
+  app.get('/api/diag/infra-demote', async (req) => {
+    const run = (req.query as any)?.run === '1'
+    const brands = (await aggregateBrands('casino')) as any[]
+    const ceiling = Math.max(0, ...brands.filter((b) => b.attributed && !b.volumeSuspect).map((b) => b.volume7d ?? 0))
+    const ents = (await aggregateEntities('casino')) as any[]
+    const unattr = ents.filter((e) => isUnattributed(e.label))
+    const infra = unattr.filter((e) => (e.volume7d ?? 0) > ceiling)
+    let demoted = 0
+    if (run && ceiling > 0) {
+      const upd = db.prepare('UPDATE watchlist SET active=0 WHERE id=?')
+      for (const e of infra) { upd.run(e.id); demoted++ }
+      stateSet('labels:demoted_infra', 'v3')
+    }
+    return {
+      flag: stateGet('labels:demoted_infra'),
+      ceiling: Math.round(ceiling),
+      entsCount: ents.length,
+      unattr: unattr.map((e) => ({ id: e.id, label: e.label, vol7d: Math.round(e.volume7d ?? 0) })),
+      infraOverCeiling: infra.map((e) => ({ id: e.id, label: e.label, vol7d: Math.round(e.volume7d ?? 0) })),
+      demoted: run ? demoted : 'dry-run — add ?run=1 to deactivate',
+    }
   })
 
   // internal-flow marker audit — proves the precomputed `cp_internal` flag is
