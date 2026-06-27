@@ -11,6 +11,35 @@ export interface QaInput {
   allowedBrands: string[] // brand names present in the snapshot input
   allowedValues: string[] // every formatted figure we handed the model (e.g. "$1.4B", "12.3%")
   requiredUrl?: string // a tweet/post must link here
+  numberTolerance?: boolean // accept a figure within ~3% (same unit) of a provided one — for
+  // analytical prose that legitimately rounds (e.g. "above 47%" for a provided 47.5%); a
+  // fabricated number is far from every provided value, so this never lets invention through
+}
+
+// numeric magnitude of a figure token, with unit scaling; pct flag so "47%" only ever
+// matches percent values and "$47M" only matches dollar values.
+function parseMag(t: string): { v: number; pct: boolean } | null {
+  const pct = /%|percent/i.test(t)
+  const m = t.replace(/,/g, '').match(/-?\d+\.?\d*/)
+  if (!m) return null
+  let v = Math.abs(Number(m[0]))
+  if (!Number.isFinite(v)) return null
+  if (!pct) {
+    if (/b\b|billion/i.test(t)) v *= 1e9
+    else if (/m\b|million/i.test(t)) v *= 1e6
+    else if (/k\b/i.test(t)) v *= 1e3
+  }
+  return { v, pct }
+}
+function nearAllowed(tok: string, allowedRaw: string[]): boolean {
+  const a = parseMag(tok)
+  if (!a || a.v === 0) return false
+  for (const r of allowedRaw) {
+    const b = parseMag(r)
+    if (!b || b.pct !== a.pct || b.v === 0) continue
+    if (Math.abs(a.v - b.v) / Math.max(a.v, b.v) <= 0.03) return true
+  }
+  return false
 }
 
 export interface QaResult {
@@ -76,8 +105,12 @@ export function qaCheck(output: any, input: QaInput): QaResult {
   const allowed = new Set(input.allowedValues.map(norm))
   for (const tok of dataNumbers(allText)) {
     const n = norm(tok)
-    // accept exact, or matches an allowed value ignoring a leading $ / trailing unit variance
-    const ok = allowed.has(n) || [...allowed].some((a) => a.includes(n) || n.includes(a))
+    // accept exact, substring match (ignoring $ / unit variance), or — when enabled — a
+    // same-unit value within ~3% (analytical rounding, never a fabricated figure)
+    const ok =
+      allowed.has(n) ||
+      [...allowed].some((a) => a.includes(n) || n.includes(a)) ||
+      (input.numberTolerance === true && nearAllowed(tok, input.allowedValues))
     if (!ok) {
       failures.push(`unverified number: "${tok}"`)
       risk = 'high'

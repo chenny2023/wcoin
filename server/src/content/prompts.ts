@@ -204,7 +204,7 @@ export function buildPrompt(contentType: string): BuiltPrompt | null {
     // page/email insight — richer input (history/trends + yesterday's read), no tweet/URL
     const ii = insightInput()
     if (!ii) return null
-    const insightQa: QaInput = { allowedBrands: ii.brands, allowedValues: ii.values }
+    const insightQa: QaInput = { allowedBrands: ii.brands, allowedValues: ii.values, numberTolerance: true }
     const system =
       base +
       `You are writing today's "Market Read" for the daily report PAGE (not social). Inputs: today's verified on-chain snapshot; a recent_trends block (day-over-day & week-over-week deltas, chain-share rotation, concentration drift, biggest 24h movers, new entrants, days_of_history); and yesterday_read_do_not_repeat (yesterday's read).\n${RULES}\n` +
