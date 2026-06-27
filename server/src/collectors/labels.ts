@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { db, stmt, stateGet, stateSet, externalFlowClause, attributedClause } from '../db.ts'
 import { workerAll, workerGet } from '../readpool.ts'
-import { aggregateEntities, isUnattributed } from '../aggregate.ts'
+import { aggregateEntities, aggregateBrands, isUnattributed } from '../aggregate.ts'
 import { webFetch, tronscanAccountKind } from '../net.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -363,20 +363,23 @@ export async function classifyServices(): Promise<number> {
 // safety bit) does NOT rewrite the millions of transfers those high-throughput wallets
 // hold, which would freeze the loop. Idempotent via a state flag.
 export async function demoteImplausibleCasinos(): Promise<number> {
-  if (stateGet('labels:demoted_infra') === 'v2') return 0
-  // Use the already-computed, cached per-entity aggregate (external-only volumes) — NO
-  // heavy ad-hoc SUM over the 1.4M-row infra wallets (that risks blocking the loop).
-  const ents = await aggregateEntities('casino')
-  if (ents.length === 0) return 0
-  const ceiling = Math.max(0, ...ents.filter((e) => !isUnattributed(e.label)).map((e) => e.volume7d ?? 0))
+  if (stateGet('labels:demoted_infra') === 'v3') return 0
+  // Ceiling = the largest VERIFIED, NON-SUSPECT brand's 7d external volume — from the
+  // brand aggregate, because suspect operators (e.g. Rollbit's ~$14B treasury churn) are
+  // attributed and would otherwise inflate the ceiling so high nothing gets caught
+  // (the bug in the entity-only version). Same basis the snapshot uses. Cached → no
+  // heavy ad-hoc SUM over the infra wallets' millions of rows (that risks blocking).
+  const brands = await aggregateBrands('casino')
+  const ceiling = Math.max(0, ...brands.filter((b) => b.attributed && !b.volumeSuspect).map((b) => b.volume7d ?? 0))
   if (ceiling <= 0) return 0 // aggregate cold — retry next cycle, don't latch the flag
+  const ents = await aggregateEntities('casino')
   const infra = ents.filter((e) => isUnattributed(e.label) && (e.volume7d ?? 0) > ceiling)
   const upd = db.prepare('UPDATE watchlist SET active=0 WHERE id=?')
   for (const e of infra) {
     upd.run(e.id)
     console.log(`[labels] deactivated mislabeled infra ${e.label} — $${Math.round(e.volume7d).toLocaleString()}/7d > top verified casino ($${Math.round(ceiling).toLocaleString()})`)
   }
-  stateSet('labels:demoted_infra', 'v2')
+  stateSet('labels:demoted_infra', 'v3')
   console.log(`[labels] infra demotion pass complete — deactivated ${infra.length}`)
   return infra.length
 }
