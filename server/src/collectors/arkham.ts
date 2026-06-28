@@ -46,6 +46,23 @@ function isMainstream(symbol: string): boolean {
   return MAIN_SYMBOLS.has((symbol || '').toLowerCase())
 }
 
+// Arkham is aggressively rate-limited (429). With a big resolve queue the collector would
+// otherwise hammer the same seed every 6s, burning the key and never progressing. Track a
+// shared backoff: on 429 escalate the cool-off (2→30 min), and skip ALL Arkham calls while
+// cooling so the loop idles instead of hammering; a 200 resets it.
+let rateLimitUntil = 0
+let consecutive429 = 0
+const rateLimited = (): boolean => Date.now() < rateLimitUntil
+function noteStatus(status: number): void {
+  if (status === 429) {
+    consecutive429++
+    rateLimitUntil = Date.now() + Math.min(30, 2 * consecutive429) * 60_000
+  } else if (status === 200) {
+    consecutive429 = 0
+    rateLimitUntil = 0
+  }
+}
+
 const upsertSeed = db.prepare('INSERT INTO arkham_casino(key, name, domain) VALUES(@key, @name, @domain) ON CONFLICT(key) DO UPDATE SET domain=COALESCE(arkham_casino.domain, @domain)')
 const setResolved = db.prepare('UPDATE arkham_casino SET entity_id=@id, entity_type=@type, resolved_at=@now WHERE key=@key')
 const setMetrics = db.prepare('UPDATE arkham_casino SET reserves_usd=@reserves, volume7d_usd=COALESCE(@volume, volume7d_usd), updated_at=@now WHERE key=@key')
@@ -114,6 +131,7 @@ async function entityWebsite(id: string): Promise<string | null> {
 // and would otherwise mis-attribute, e.g. "7Bit Casino" → "500-casino"). Accept a
 // candidate only when its name matches OR its real website domain == the casino's.
 async function resolveOne(): Promise<boolean> {
+  if (rateLimited()) return false
   const row = db.prepare('SELECT key, name, domain FROM arkham_casino WHERE resolved_at=0 ORDER BY key LIMIT 1').get() as
     | { key: string; name: string; domain: string | null }
     | undefined
@@ -123,8 +141,9 @@ async function resolveOne(): Promise<boolean> {
     const res = arkhamFetch(`/intelligence/search?query=${encodeURIComponent(row.name)}`, { signal: AbortSignal.timeout(30_000) })
     if (!res) return false
     const r = await res
+    noteStatus(r.status)
     if (r.status !== 200) {
-      console.warn(`[arkham] search ${row.name}: HTTP ${r.status}`) // transient — retry later
+      if (r.status !== 429) console.warn(`[arkham] search ${row.name}: HTTP ${r.status}`) // 429 handled by backoff
       return true
     }
     const j = (await r.json()) as { arkhamEntities?: { id: string; name: string; type: string }[] }
@@ -255,6 +274,7 @@ async function entityVolume7d(entityId: string): Promise<{ total: number; byChai
 
 // pull all-chain portfolio for a resolved entity → mainstream reserves USD
 async function refreshOne(): Promise<boolean> {
+  if (rateLimited()) return false
   const row = db
     .prepare("SELECT key, name, entity_id FROM arkham_casino WHERE entity_id IS NOT NULL AND entity_id != '' AND updated_at < @stale ORDER BY updated_at LIMIT 1")
     .get({ stale: Date.now() - REFRESH_MS }) as { key: string; name: string; entity_id: string } | undefined
@@ -264,6 +284,7 @@ async function refreshOne(): Promise<boolean> {
     const res = arkhamFetch(`/portfolio/entity/${encodeURIComponent(row.entity_id)}?time=${now}`, { signal: AbortSignal.timeout(30_000) })
     if (!res) return false
     const r = await res
+    noteStatus(r.status)
     if (r.status === 200) {
       const pf = (await r.json()) as any
       const reserves = sumReserves(pf)
@@ -313,6 +334,7 @@ async function refreshOne(): Promise<boolean> {
 // how we expand transaction coverage beyond the hand-curated brands. Per-user
 // deposit addresses are skipped (thousands, noisy); we take the labelled wallets.
 async function harvestOne(): Promise<boolean> {
+  if (rateLimited()) return false
   const row = db
     .prepare("SELECT key, name, entity_id FROM arkham_casino WHERE entity_id != '' AND addr_harvested=0 ORDER BY reserves_usd DESC LIMIT 1")
     .get() as { key: string; name: string; entity_id: string } | undefined
@@ -321,6 +343,7 @@ async function harvestOne(): Promise<boolean> {
     const res = arkhamFetch(`/transfers?base=${encodeURIComponent(row.entity_id)}&limit=250`, { signal: AbortSignal.timeout(30_000) })
     if (!res) return false
     const r = await res
+    noteStatus(r.status)
     if (r.status !== 200) return true // transient — retry later (don't mark harvested)
     const j = (await r.json()) as { transfers?: any[] }
     const seen = new Set<string>()
