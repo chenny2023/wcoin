@@ -1225,6 +1225,24 @@ export async function registerApi(app: FastifyInstance) {
     return { operators: rows.length, ...totals, perOperator: rows }
   })
 
+  // coverage audit — on-chain casino coverage by attribution source (curated / dune /
+  // arkham / labels), named-brand count, and the Dune query id. The lever for tracking
+  // more operators than competitors; watch distinctNamedBrands grow as Dune/indexers land.
+  app.get('/api/diag/coverage', async () => {
+    const bySource = db
+      .prepare(
+        "SELECT COALESCE(source,'(curated/seed)') src, COUNT(*) wallets, COUNT(DISTINCT label) brands FROM watchlist WHERE active=1 AND category='casino' GROUP BY src ORDER BY wallets DESC",
+      )
+      .all() as { src: string; wallets: number; brands: number }[]
+    const totalCasinoWallets = (db.prepare("SELECT COUNT(*) n FROM watchlist WHERE active=1 AND category='casino'").get() as any).n
+    const distinctNamedBrands = (
+      db
+        .prepare("SELECT COUNT(DISTINCT label) n FROM watchlist WHERE active=1 AND category='casino' AND label NOT LIKE 'Casino-pattern%' AND label NOT LIKE '0x%' AND label NOT LIKE 'Service %'")
+        .get() as any
+    ).n
+    return { totalCasinoWallets, distinctNamedBrands, duneQueryId: stateGet('dune:casino_qid'), bySource }
+  })
+
   // infra-demotion audit (read-only) — shows the plausibility ceiling (largest verified
   // non-suspect brand 7d volume) and which unattributed casino entities out-volume it
   // (mislabeled exchange/bridge/MM infra). The deactivation itself runs automatically in
