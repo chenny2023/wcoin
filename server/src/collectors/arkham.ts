@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { db, stateGet, stateSet, stmt } from '../db.ts'
+import { db, stateGet, stateSet, stmt, isInfraDenied } from '../db.ts'
 import { arkhamFetch } from '../net.ts'
 
 // Arkham chain → our watchlist chain code. All EVM chains share one 'ETH' row
@@ -305,6 +305,7 @@ async function harvestOne(): Promise<boolean> {
         const owned = a.arkhamEntity?.id === row.entity_id || a.depositServiceID === row.entity_id
         if (!owned) continue
         if (/deposit/i.test(a.arkhamLabel?.name ?? '')) continue // skip per-user deposit addrs
+        if (isInfraDenied(a.address)) continue // never harvest known DEX/infra contracts
         const chain = ourChain(a.chain, a.arkhamLabel?.chainType ?? '')
         if (!chain) continue
         const addr = chain === 'ETH' ? String(a.address).toLowerCase() : String(a.address) // ETH lowercased, TRON base58

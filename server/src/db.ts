@@ -684,6 +684,29 @@ export const stmt = {
   `),
 }
 
+// Known non-casino INFRASTRUCTURE that gets mis-attributed to operators because they
+// interact with it (a casino swapping its own token touches a DEX, so the DEX contract
+// shows up in the casino's transfers and is wrongly harvested as "owned"). These hold
+// huge balances and would inflate a brand's reserves/volume — e.g. the Uniswap V4 Pool
+// Manager was mis-attributed to Rain.gg, making a suspect skin-site the #1 by reserves.
+// Never a casino wallet. Lowercased; add new confirmed cases here.
+export const INFRA_DENYLIST = new Set<string>([
+  '0x000000000004444c5dc75cb358380d2e3de08a90', // Uniswap V4: Pool Manager
+  '0x7f54f05635d15cde17a49502fedb9d1803a3be8a', // 0x Protocol: MainnetSettler
+])
+export const isInfraDenied = (addr: string): boolean => INFRA_DENYLIST.has(String(addr || '').toLowerCase())
+// Deactivate any denylisted infra that slipped into the watchlist — idempotent, cheap,
+// runs every boot. addWatch is INSERT OR IGNORE so a deactivated row is never reactivated.
+try {
+  const addrs = [...INFRA_DENYLIST]
+  if (addrs.length) {
+    const n = db.prepare(`UPDATE watchlist SET active=0 WHERE active=1 AND LOWER(address) IN (${addrs.map(() => '?').join(',')})`).run(...addrs).changes
+    if (n) console.log(`[db] deactivated ${n} mis-attributed infrastructure wallet(s)`)
+  }
+} catch (e) {
+  console.warn('[db] infra denylist prune skipped:', (e as Error).message)
+}
+
 export interface WatchRow {
   id: number
   chain: 'ETH' | 'TRON'
