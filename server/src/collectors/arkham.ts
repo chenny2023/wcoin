@@ -70,6 +70,33 @@ function seedFromRoster() {
   }
 }
 
+// Widen on-chain coverage past the hand-curated roster: seed every RATED casino from our
+// directory (1763 listed) into the Arkham resolve queue. resolveOne validates each by exact
+// name or real website domain and marks no-match seeds done (never retried), so this grows
+// coverage toward and past competitors with NO mis-attribution risk. Idempotent.
+function seedFromDirectory(): void {
+  if ((process.env.ARKHAM_SEED_DIRECTORY ?? '1') === '0') return
+  try {
+    const rows = db
+      .prepare("SELECT name, website, domain FROM casino_directory WHERE name IS NOT NULL AND name != '' AND tp_rating IS NOT NULL")
+      .all() as { name: string; website: string | null; domain: string | null }[]
+    let n = 0
+    const tx = db.transaction(() => {
+      for (const c of rows) {
+        const name = String(c.name).trim()
+        const key = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+        if (!name || key.length < 2) continue
+        const domain = c.domain || hostOf(String(c.website || ''))
+        n += upsertSeed.run({ key, name, domain }).changes
+      }
+    })
+    tx()
+    if (n) console.log(`[arkham] seeded ${n} rated casinos from directory → resolve queue`)
+  } catch (e) {
+    console.warn('[arkham] directory seed failed:', (e as Error).message)
+  }
+}
+
 // fetch an entity's canonical website (search results omit it) for domain validation
 async function entityWebsite(id: string): Promise<string | null> {
   try {
@@ -331,6 +358,7 @@ export function startArkham() {
   }
   console.log('[arkham] entity attribution collector active')
   seedFromRoster()
+  seedFromDirectory() // widen coverage from the rated directory (validated per-seed)
   // one-time accelerated re-sweep: mark resolved entities stale so refreshOne picks them
   // up immediately (verify per-chain BTC/Tron attribution without waiting the 6h cadence).
   // Each refresh sets updated_at=now, so the normal 6h cadence resumes automatically —
