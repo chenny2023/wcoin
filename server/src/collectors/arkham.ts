@@ -92,7 +92,10 @@ function seedFromRoster() {
 // name or real website domain and marks no-match seeds done (never retried), so this grows
 // coverage toward and past competitors with NO mis-attribution risk. Idempotent.
 function seedFromDirectory(): void {
-  if ((process.env.ARKHAM_SEED_DIRECTORY ?? '1') === '0') return
+  // OFF by default: Arkham is rate-limited (429), so the bulk directory expansion now runs
+  // through Dune (collectors/dune.ts), which returns all matches in one query. Set
+  // ARKHAM_SEED_DIRECTORY=1 to also feed the directory into Arkham's slow resolve queue.
+  if ((process.env.ARKHAM_SEED_DIRECTORY ?? '0') === '0') return
   try {
     const rows = db
       .prepare("SELECT name, website, domain FROM casino_directory WHERE name IS NOT NULL AND name != '' AND tp_rating IS NOT NULL")

@@ -34,19 +34,39 @@ const insertDune = db.prepare(
    VALUES(?, ?, ?, 'casino', 'dune', 1, ?)`,
 )
 
-// casino brand names to match against Dune's institution labels: our roster +
-// a few operators Dune labels that aren't in the roster.
+// casino brand names to match against Dune's institution labels: our roster + the rated
+// directory + a few extras Dune labels. Dune's `institution` labels are curated and named
+// after the operator, so matching a real casino brand returns that operator's wallets —
+// Dune already did the attribution, we just select which brands to import. This is the
+// non-Arkham path to widen coverage (Arkham is rate-limited); one query, no per-entity 429.
 function casinoBrands(): string[] {
-  const brands: string[] = ['Bitcasino', '1xBet', 'Sportsbet']
+  const raw: string[] = ['Bitcasino', '1xBet', 'Sportsbet']
   try {
     const path = fileURLToPath(new URL('../data/casino-roster.json', import.meta.url))
     const j = JSON.parse(readFileSync(path, 'utf8'))
     const rows = Array.isArray(j) ? j : (j.casinos ?? j.roster ?? [])
-    for (const r of rows) if (r?.name) brands.push(String(r.name))
+    for (const r of rows) if (r?.name) raw.push(String(r.name))
   } catch {
     /* roster optional */
   }
-  return [...new Set(brands.map((b) => b.replace(/['%_]/g, '').toLowerCase()).filter((b) => b.length >= 4 && !GENERIC.has(b)))]
+  // widen with RATED directory casinos — the ones Dune knows resolve, the rest simply
+  // don't match (no harm). Reviewed operators only, to keep the brand list real.
+  try {
+    const rows = db.prepare("SELECT name FROM casino_directory WHERE name IS NOT NULL AND name != '' AND tp_rating IS NOT NULL").all() as { name: string }[]
+    for (const r of rows) if (r?.name) raw.push(String(r.name))
+  } catch {
+    /* directory optional */
+  }
+  // normalise: drop a trailing " casino"/" sportsbook" word and any TLD so e.g.
+  // "Stake Casino" / "Roobet.com" still prefix-match Dune's "Stake.com" / "Roobet" labels.
+  const norm = (s: string) =>
+    s
+      .replace(/['%_]/g, '')
+      .toLowerCase()
+      .replace(/\s*\b(casino|sportsbook|bet)\b\s*$/i, '')
+      .replace(/\.(com|io|net|org|gg|bet|cc|ag|vip)$/i, '')
+      .trim()
+  return [...new Set(raw.map(norm).filter((b) => b.length >= 4 && !GENERIC.has(b)))]
 }
 
 function buildSql(): string {
