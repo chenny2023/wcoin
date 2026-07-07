@@ -821,6 +821,60 @@ function alternativesPage(
   }
 }
 
+// chain cslug → the asset slug used by the /best-{asset}-casinos pages (they differ:
+// eth→ethereum, bsc→bnb, arb→arbitrum, etc.). Falls back to the cslug itself.
+const BEST_ASSET_SLUG: Record<string, string> = { eth: 'ethereum', sol: 'solana', btc: 'bitcoin', bsc: 'bnb', arb: 'arbitrum', avax: 'avalanche' }
+const bestAssetSlug = (cslug: string) => BEST_ASSET_SLUG[cslug] ?? cslug
+
+// ── "{chainA} vs {chainB} for crypto casinos" — data-led chain settlement compare ─
+// Answers "which chain should I deposit on?" with real on-chain settlement facts
+// (operators tracked, 7d external settlement) + network characteristics from
+// CHAIN_FACTS. Deliberately does NOT compare things we can't measure (payout speed).
+function chainVsChainPage(
+  a: { cslug: string; name: string; ops: number; settled: number },
+  b: { cslug: string; name: string; ops: number; settled: number },
+): { title: string; description: string; html: string } {
+  const path = `/${a.cslug}-vs-${b.cslug}-casinos`
+  const url = SITE + path
+  const fa = CHAIN_FACTS[a.cslug]
+  const fb = CHAIN_FACTS[b.cslug]
+  const title = `${a.name} vs ${b.name} for Crypto Casinos ${YEAR} — Which Chain to Deposit On | WCOIN.CASINO`
+  const description = `${a.name} vs ${b.name} for crypto-casino deposits: ${a.ops} vs ${b.ops} operators settling on-chain, ${fmtUsd(a.settled)} vs ${fmtUsd(b.settled)} of tracked 7-day settlement, plus real confirmation speed and fees. Data-led and neutral.`
+  const row = (label: string, av: string, bv: string) => `<tr><td>${esc(label)}</td><td class="n">${av}</td><td class="n">${bv}</td></tr>`
+  const rows =
+    row('Operators settling here (tracked)', String(a.ops), String(b.ops)) +
+    row('7d external settlement (tracked)', fmtUsd(a.settled), fmtUsd(b.settled)) +
+    row('Confirmation speed', esc(fa?.speed ?? '—'), esc(fb?.speed ?? '—')) +
+    row('Typical fee', esc(fa?.fee ?? '—'), esc(fb?.fee ?? '—'))
+  const body =
+    `<p class="sub">A neutral, on-chain look at <strong>${esc(a.name)}</strong> vs <strong>${esc(b.name)}</strong> as crypto-casino deposit rails — how many operators actually settle on each, how much real money we can see moving, and the network characteristics that matter for depositing.</p>` +
+    `<p class="upd">Settlement figures are external-facing flow (real deposits/withdrawals, wash/treasury volume excluded), updated continuously from indexed on-chain data.</p>` +
+    `<table><thead><tr><th>Metric</th><th style="text-align:right">${esc(a.name)}</th><th style="text-align:right">${esc(b.name)}</th></tr></thead><tbody>${rows}</tbody></table>` +
+    `<h2>${esc(a.name)} for casino deposits</h2><div class="prose"><p>${esc(fa?.why ?? '')}</p></div>` +
+    `<h2>${esc(b.name)} for casino deposits</h2><div class="prose"><p>${esc(fb?.why ?? '')}</p></div>` +
+    `<h2>Which should you choose?</h2><div class="prose"><p>There is no universal winner — it depends on how you play. For frequent, small stablecoin deposits, the cheaper and faster chain wins because fees compound; for large, infrequent transfers, deep liquidity and network reputation matter more than saving a few cents of gas. What actually protects you is not the chain but the <strong>operator's solvency</strong>: check <a href="/proof-of-reserves">proof of reserves</a> and independent <a href="/rankings/trust">trust ratings</a> before depositing on either. See the full <a href="/data/crypto-casino-deposit-currencies">deposit-currency breakdown</a> for where money really moves.</p></div>` +
+    `<h2>Explore</h2><div class="chips"><a class="pill" href="/best-${bestAssetSlug(a.cslug)}-casinos">Best ${esc(a.name)} casinos</a><a class="pill" href="/best-${bestAssetSlug(b.cslug)}-casinos">Best ${esc(b.name)} casinos</a><a class="pill" href="/chains/${a.cslug}">${esc(a.name)} activity</a><a class="pill" href="/chains/${b.cslug}">${esc(b.name)} activity</a></div>`
+  const upd = Date.now()
+  return {
+    title,
+    description,
+    html: layout({
+      title,
+      description,
+      canonical: url,
+      jsonLd: [datasetLd(`${a.name} vs ${b.name} crypto-casino settlement`, description, url, upd, ['operators settling per chain', '7d external settlement per chain'])],
+      breadcrumb: [
+        { name: 'Home', url: SITE + '/' },
+        { name: 'Rankings', url: SITE + '/rankings' },
+        { name: `${a.name} vs ${b.name}`, url },
+      ],
+      h1: `${a.name} vs ${b.name} for crypto casinos`,
+      updated: upd,
+      body,
+    }),
+  }
+}
+
 // ── "best crypto casinos on {chain}" — trust-ranked, per network ───────────────
 // Distinct from /chains/{chain} (which is volume-by-network): this is an editorial,
 // TRUST-ranked shortlist of the operators actually settling on that chain.
@@ -3368,6 +3422,29 @@ export async function generateSeoPages(): Promise<void> {
   for (const { target, slug, alts } of altByKey.values()) {
     add(`/${slug}-alternatives`, 'rankings', alternativesPage(target, slug, alts), 'featured_core')
     if (++altN % 10 === 0) await yieldLoop()
+  }
+  await yieldLoop()
+  // "{chainA} vs {chainB} for crypto casinos" — data-led chain settlement comparisons.
+  // Per-chain stats (operators + 7d external settlement) from byChainView; curated set
+  // of the most-searched chain pairs, gated on ≥5 tracked operators BOTH sides so no
+  // page is thin. Canonical: cslug order is fixed by the curated list.
+  const chainStat = new Map<string, { cslug: string; name: string; ops: number; settled: number }>()
+  for (const [chain, m] of byChainView) {
+    const cslug = slugify(chain)
+    let ops = 0
+    let settled = 0
+    for (const [v, val] of m) if (val > 0 && dataConfidence(v) !== 'low') { ops++; settled += val }
+    chainStat.set(cslug, { cslug, name: chainName(chain), ops, settled })
+  }
+  const CHAIN_PAIRS: [string, string][] = [
+    ['eth', 'tron'], ['tron', 'bsc'], ['eth', 'sol'], ['tron', 'sol'],
+    ['base', 'arb'], ['eth', 'base'], ['eth', 'polygon'], ['btc', 'eth'],
+  ]
+  for (const [x, y] of CHAIN_PAIRS) {
+    const sa = chainStat.get(x)
+    const sb = chainStat.get(y)
+    if (!sa || !sb || sa.ops < 5 || sb.ops < 5 || !CHAIN_FACTS[x] || !CHAIN_FACTS[y]) continue
+    add(`/${x}-vs-${y}-casinos`, 'rankings', chainVsChainPage(sa, sb), 'featured_core')
   }
   await yieldLoop()
   // daily report archive (prev = older, next = newer)
