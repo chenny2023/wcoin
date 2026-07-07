@@ -202,8 +202,10 @@ export default function Layout({ children }: { children: ReactNode }) {
         <div className="fixed inset-0 z-30 bg-black/60 lg:hidden" onClick={() => setOpen(false)} />
       )}
 
-      {/* Main */}
-      <div className="flex min-h-screen flex-1 flex-col lg:pl-64">
+      {/* Main. min-w-0 is load-bearing: without it, flex children keep min-width:auto,
+          wide tables can't shrink-to-scroll inside their overflow-x-auto wrappers, and
+          the whole page gains a horizontal scrollbar on tablet/mobile. */}
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col lg:pl-64">
         <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-white/7 bg-ink-950/70 px-4 backdrop-blur-xl sm:px-6">
           <button className="lg:hidden text-white/70" onClick={() => setOpen(true)}>
             <Menu size={22} />
@@ -226,7 +228,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
 
         <footer className="border-t border-white/6 px-6 py-5 text-center text-[12px] text-white/30">
           © 2026 WCOIN.CASINO — The Intelligence Layer for iGaming · Live on-chain data across 9 chains

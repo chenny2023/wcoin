@@ -19,6 +19,7 @@ export interface Stats {
   reserves: number
   entities: number
   liveStreamers: number
+  casinosTracked?: number // total operators covered (directory: rated or live-site verified)
   chainSplit: { chain: string; value: number }[]
   casino?: CategoryStats // iGaming-only headline figures (exchanges/whales excluded)
 }
@@ -157,10 +158,14 @@ export interface StreamerRow {
   viewers: number
   live: number
   title: string
-  game: string
-  thumbnail: string
+  game?: string
+  thumbnail?: string
   followers: number
   affiliation: string | null
+  bio?: string | null
+  socials?: string | null
+  verified?: number
+  since?: string | null
 }
 
 export interface StreamerProfile {
@@ -418,7 +423,7 @@ export const api = {
   flow: (category = 'casino') =>
     getJson<FlowBucket[]>('/flow' + (category && category !== 'all' ? `?category=${category}` : '')),
   streamers: () =>
-    getJson<{ enabled: boolean; twitch: boolean; roster: number; streamers: StreamerRow[]; offline: StreamerRow[] }>(
+    getJson<{ enabled: boolean; twitch: boolean; roster: number; collected?: number; streamers: StreamerRow[]; offline: StreamerRow[] }>(
       '/streamers',
     ),
   sentiment: (category = 'casino') =>
@@ -606,6 +611,19 @@ let liveBuffer: Transfer[] = []
 const liveListeners = new Set<() => void>()
 let es: EventSource | null = null
 
+// Real connection state for the UI's "Live" indicator — so the badge reflects the
+// actual stream instead of always claiming "live". 'connecting' before the first
+// open, 'live' once the SSE handshake succeeds, 'down' when it drops (EventSource
+// auto-reconnects, so 'down' means "reconnecting"). lastEventAt drives a pulse on
+// each on-chain event so the badge visibly reacts to real activity.
+export type LiveStatus = 'connecting' | 'live' | 'down'
+let liveStatus: LiveStatus = 'connecting'
+let lastEventAt = 0
+const statusListeners = new Set<() => void>()
+function notifyStatus() {
+  statusListeners.forEach((l) => l())
+}
+
 // The stream carries EVERY watched transfer (all chains/categories) and can burst
 // to tens of events/sec. Re-rendering subscribers on each event melts the UI (the
 // feed appears to freeze / "not load"). Coalesce notifications to ~5 Hz — the
@@ -622,19 +640,49 @@ function notifyLive() {
 
 function ensureStream() {
   if (es || typeof window === 'undefined') return
+  liveStatus = 'connecting'
+  notifyStatus()
   es = new EventSource(BASE + '/stream')
+  es.onopen = () => {
+    if (liveStatus !== 'live') {
+      liveStatus = 'live'
+      notifyStatus()
+    }
+  }
   es.onmessage = (ev) => {
     try {
       const t = JSON.parse(ev.data) as Transfer
       liveBuffer = [t, ...liveBuffer].slice(0, 300)
+      lastEventAt = Date.now()
+      if (liveStatus !== 'live') liveStatus = 'live'
       notifyLive()
+      notifyStatus()
     } catch {
       /* ignore */
     }
   }
   es.onerror = () => {
-    // EventSource auto-reconnects; nothing to do
+    // EventSource auto-reconnects under the hood; surface the gap as 'down' so the
+    // badge shows "reconnecting" until the next open/message restores 'live'.
+    if (liveStatus !== 'down') {
+      liveStatus = 'down'
+      notifyStatus()
+    }
   }
+}
+
+// Subscribe to live-stream connection state for the header "Live" indicator.
+export function useLiveStatus(): { status: LiveStatus; lastEventAt: number } {
+  const [, force] = useState(0)
+  useEffect(() => {
+    ensureStream()
+    const l = () => force((n) => n + 1)
+    statusListeners.add(l)
+    return () => {
+      statusListeners.delete(l)
+    }
+  }, [])
+  return { status: liveStatus, lastEventAt }
 }
 
 // Seed the buffer once from REST so the feed isn't empty before the first SSE push

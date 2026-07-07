@@ -592,6 +592,17 @@ for (const ddl of [
   'ALTER TABLE daily_market_snapshot ADD COLUMN ai_notable_signals TEXT',
   'ALTER TABLE streamers ADD COLUMN followers INTEGER NOT NULL DEFAULT 0',
   'ALTER TABLE streamers ADD COLUMN affiliation TEXT',
+  // streamer profile enrichment — bio, cross-platform/social links (JSON), platform
+  // verified/partner flag, and account-created date. All fetched keyless from each
+  // platform's own public API, so every field is verifiable.
+  // behaviour-inferred wallet role for the open-data export (hot_wallet /
+  // deposit_address / dormant / NULL=ambiguous) — computed by rolesinfer.ts
+  'ALTER TABLE watchlist ADD COLUMN role TEXT',
+  'ALTER TABLE watchlist ADD COLUMN role_at INTEGER',
+  'ALTER TABLE streamers ADD COLUMN bio TEXT',
+  'ALTER TABLE streamers ADD COLUMN socials TEXT',
+  'ALTER TABLE streamers ADD COLUMN verified INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE streamers ADD COLUMN since TEXT',
   // Trustpilot consumer signal merged onto each directory casino (per-domain /review/ enricher)
   'ALTER TABLE casino_directory ADD COLUMN tp_rating REAL',
   'ALTER TABLE casino_directory ADD COLUMN tp_reviews INTEGER',

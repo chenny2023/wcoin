@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify'
-import { db, stmt, stateGet, stateSet, externalFlowClause, attributedClause } from './db.ts'
+import { db, stmt, stateGet, stateSet, externalFlowClause, attributedClause, INFRA_DENYLIST } from './db.ts'
 import { bus, TransferEvent } from './bus.ts'
 import { aggregateEntities, aggregateBrands, maintainedPlayers, isUnattributed } from './aggregate.ts'
 import { runDataQualityChecks, lastDataQuality } from './dataquality.ts'
@@ -245,6 +245,14 @@ export async function registerApi(app: FastifyInstance) {
     const casEntities = (
       db.prepare("SELECT COUNT(*) n FROM watchlist WHERE active=1 AND category='casino'").get() as any
     ).n
+    // total operators we cover (directory: rated or live-site verified) — our free-coverage
+    // headline. Far larger than on-chain-only competitors that paywall most of their list.
+    let casinosTracked = 0
+    try {
+      casinosTracked = (db.prepare("SELECT COUNT(*) n FROM casino_directory WHERE tp_rating IS NOT NULL OR site_ok=1").get() as any).n
+    } catch {
+      /* directory optional */
+    }
     // Headline "volume" must be the CREDIBLE figure — the raw all-time SUM(usd) over
     // EVERY transfer (all categories, no external-only, no suspect/churn exclusion)
     // annualises past the whole industry (~$100B+ cumulative). Use the de-distorted
@@ -272,6 +280,7 @@ export async function registerApi(app: FastifyInstance) {
       reserves,
       entities: wl,
       liveStreamers,
+      casinosTracked,
       chainSplit: credibleChainSplit,
       casino: {
         totalVolume: verifiedVol7d,
@@ -280,6 +289,7 @@ export async function registerApi(app: FastifyInstance) {
         uniquePlayers: credPlayers > 0 ? credPlayers : players.casino,
         reserves: casReserves,
         entities: casEntities,
+        casinosTracked,
         chainSplit: credibleChainSplit,
       },
     }
@@ -471,6 +481,20 @@ export async function registerApi(app: FastifyInstance) {
   // 1.0 content layer: precomputed daily market snapshot (homepage + email source).
   // Reads the snapshot table, never raw transfers — instant, no compute on request.
   app.get('/api/snapshot/market', async () => latestMarketSnapshot() ?? { error: 'no snapshot yet' })
+
+  // Full daily-snapshot archive (one row per day since the daily report launched).
+  // The transfers table only retains a rolling window, so THIS is the long-run
+  // trend source — used by the whitepaper/open-data exports. Public read-only.
+  app.get('/api/snapshot/archive', async (_req, reply) => {
+    const rows = db
+      .prepare(
+        `SELECT snapshot_date, tracked_volume_24h, net_flow_24h, active_casinos, active_chains,
+                live_streamers, reserves_total, reserve_change_7d, confidence_level
+         FROM daily_market_snapshot ORDER BY snapshot_date`,
+      )
+      .all()
+    return reply.header('Cache-Control', 'public, max-age=3600').send({ days: rows.length, rows })
+  })
 
   // public — branded daily share / OG card (1200×630 PNG) with the day's verified
   // headline figures. ?date=YYYY-MM-DD for an archived report; default = latest.
@@ -882,12 +906,20 @@ export async function registerApi(app: FastifyInstance) {
 
   // ── streamers (REAL: Kick keyless + Twitch when configured) ──────────────────
   app.get('/api/streamers', async () => {
-    const live = db.prepare('SELECT * FROM streamers WHERE live=1 ORDER BY viewers DESC LIMIT 48').all()
-    const offline = db
-      .prepare('SELECT * FROM streamers WHERE live=0 ORDER BY followers DESC LIMIT 24')
-      .all()
+    // The list shows REAL streamers — not the long tail of tiny/empty channels the
+    // category-discovery seeds bring in. Quality bar: live now, OR platform-verified,
+    // OR has a detected casino affiliation, OR a genuine following (≥10k). The list
+    // view is lightweight (no images) so it renders the full quality set fine. Lean
+    // columns only (heavy bio/title/thumbnail aren't needed by the list). `collected`
+    // stays the honest full count of everything we've fetched data for.
+    const MIN_FOLLOWERS = Number(process.env.STREAMER_MIN_FOLLOWERS ?? 10000)
+    const QUALITY = `(verified=1 OR (affiliation IS NOT NULL AND affiliation != '') OR followers >= ${MIN_FOLLOWERS})`
+    const COLS = 'id, handle, platform, viewers, live, title, followers, affiliation, socials, verified'
+    const live = db.prepare(`SELECT ${COLS} FROM streamers WHERE live=1 ORDER BY viewers DESC`).all()
+    const offline = db.prepare(`SELECT ${COLS} FROM streamers WHERE live=0 AND ${QUALITY} ORDER BY followers DESC LIMIT 3000`).all()
     const roster = (db.prepare('SELECT COUNT(*) n FROM streamer_roster WHERE active=1').get() as any).n
-    return { enabled: true, twitch: twitchEnabled(), roster, streamers: live, offline }
+    const collected = (db.prepare('SELECT COUNT(*) n FROM streamers').get() as any).n
+    return { enabled: true, twitch: twitchEnabled(), roster, collected, streamers: live, offline }
   })
 
   // ── streamer detail: curated profile (bio + socials) + live status ───────────
@@ -1241,6 +1273,29 @@ export async function registerApi(app: FastifyInstance) {
         .get() as any
     ).n
     return { totalCasinoWallets, distinctNamedBrands, duneQueryId: stateGet('dune:casino_qid'), bySource }
+  })
+
+  // ── open-data export: per-wallet provenance ──────────────────────────────────
+  // Public, read-only. Feeds github.com/chenny2023/wcoin-casino-data: every active
+  // casino wallet with its evidence source and first-seen date, plus the infra
+  // denylist (known non-casino contracts excluded from attribution). Lean columns;
+  // brand grouping/metrics come from /api/brands and are joined at export time.
+  app.get('/api/labels/export', async (req, reply) => {
+    const rows = db
+      .prepare("SELECT chain, address, label, COALESCE(source,'curated') source, created_at, role, role_at FROM watchlist WHERE active=1 AND category='casino' ORDER BY label, chain, address")
+      .all() as { chain: string; address: string; label: string; source: string; created_at: number; role: string | null; role_at: number | null }[]
+    const wallets = rows.map((r) => ({
+      chain: r.chain,
+      address: r.address,
+      label: r.label,
+      source: r.source,
+      first_seen_at: r.created_at ? new Date(r.created_at).toISOString().slice(0, 10) : null,
+      // behaviour-inferred over a rolling window (rolesinfer.ts); null = ambiguous, no claim
+      wallet_role: r.role ?? null,
+      role_inferred_at: r.role_at ? new Date(r.role_at).toISOString().slice(0, 10) : null,
+    }))
+    const excluded = [...INFRA_DENYLIST].map((address) => ({ address, reason: 'known_non_casino_infrastructure' }))
+    return reply.header('Cache-Control', 'public, max-age=600').send({ as_of: new Date().toISOString(), count: wallets.length, wallets, excluded })
   })
 
   // infra-demotion audit (read-only) — shows the plausibility ceiling (largest verified

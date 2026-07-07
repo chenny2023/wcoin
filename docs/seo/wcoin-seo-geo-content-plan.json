@@ -1,0 +1,105 @@
+{
+  "meta": {
+    "title": "wcoin.casino SEO/GEO content plan",
+    "source": "Whale Growth social-intel (real demand signals + clustered topics + competitor-gap insights)",
+    "snapshot_date": "2026-06-28",
+    "consumer": "wcoin.casino content agent (SEO + GEO build-out)",
+    "note": "Snapshot; classifier backlog still re-judging + collection ongoing — high-intent pool will grow, re-export periodically."
+  },
+  "positioning": {
+    "what": "On-chain solvency & safety intelligence platform for crypto casinos.",
+    "moat": "Proactive, machine-verifiable on-chain data (proof of reserves, real-time solvency monitoring, predictive risk scoring) vs AskGamblers/Casino Guru reactive post-incident complaint boards.",
+    "content_thesis": "Verify before you play — every page helps a player avoid risk BEFORE depositing, using verifiable on-chain data.",
+    "tone": "Neutral, data-driven, no subjective accusations; label sources/confidence; trust-first."
+  },
+  "entity_review_pages": {
+    "rationale": "Players search brand name + safety/payout; these pages are the most explicit-intent, easiest to rank, and most likely to be cited by AI answer engines as a factual source. Build FIRST. Keep neutral and data-backed.",
+    "entities": ["Stake", "Roobet", "BC.Game", "Rollbit", "Metaspins", "Duelbits", "Gamdom", "Shuffle", "Cloudbet", "TrustDice"],
+    "page_types": [
+      { "type": "is_safe", "slug": "is-{entity}-safe", "h1": "Is {entity} safe & legit? (on-chain data)", "primary_keyword": "is {entity} safe", "secondary": ["is {entity} legit", "{entity} scam or legit", "{entity} review"] },
+      { "type": "does_pay", "slug": "does-{entity}-pay-out", "h1": "Does {entity} pay out? Withdrawal & payout reliability", "primary_keyword": "{entity} withdrawal problems", "secondary": ["{entity} not paying", "{entity} payout time", "{entity} cashout"] },
+      { "type": "proof_of_reserves", "slug": "{entity}-proof-of-reserves", "h1": "{entity} proof of reserves & solvency", "primary_keyword": "{entity} proof of reserves", "secondary": ["{entity} reserves", "{entity} solvency", "is {entity} solvent"] }
+    ],
+    "page_template": {
+      "answer_first": "Open with a one-line verdict + as-of date + the on-chain data basis.",
+      "sections": ["Verdict (answer-first)", "On-chain reserves / solvency data", "Withdrawal & payout track record", "Complaint trend vs live solvency", "Red flags / risk score", "How we verified (methodology)", "FAQ (schema)"]
+    }
+  },
+  "intent_clusters": [
+    {
+      "id": "A", "name": "Is this casino safe/legit (core safety check)",
+      "search_intent": "A player vetting a specific casino before depositing.",
+      "evidence": ["How can players identify crypto casinos that refuse to pay winners?", "Best Crypto Casino Sites: What Players Should Look For Before Choosing a Platform"],
+      "content_types": ["Per-casino safety answer page", "How to tell if a crypto casino is safe (guide)"],
+      "keywords": ["is [casino] safe", "is [casino] legit", "crypto casino safety check", "[casino] scam or legit"],
+      "geo_note": "Lead with a clear safe/at-risk verdict + data basis; answer-first wins AI citations."
+    },
+    {
+      "id": "B", "name": "Proof of reserves / solvency (strongest differentiator — own it)",
+      "search_intent": "Players & informed users wanting to verify a casino actually holds funds.",
+      "evidence": ["The distinction between 'proof of reserves' and 'proof of custody' is critical", "No competitor publishes machine-verifiable reserve proofs"],
+      "content_types": ["Definitional/educational long-form (proof of reserves vs custody)", "How to verify a crypto casino's reserves (tool page)"],
+      "keywords": ["casino proof of reserves", "crypto casino solvency", "proof of reserves vs proof of custody", "how to verify casino reserves"],
+      "geo_note": "Clear definitions + comparison tables = high AI-citation frequency; this is an uncontested authority slot."
+    },
+    {
+      "id": "C", "name": "Payout / withdrawal failures",
+      "search_intent": "Player hit (or fearing) a blocked/slow withdrawal.",
+      "evidence": ["months-long unresolved withdrawal blocks", "a delayed withdrawal or failed deposit costs you trust", "Lost $6,000 ... Cashout 4 min to 2 hours"],
+      "content_types": ["[casino] withdrawal problems guide", "Signs a crypto casino will stall your withdrawal", "Predict payout risk before depositing"],
+      "keywords": ["[casino] withdrawal problems", "casino not paying out", "crypto casino slow withdrawal", "casino won't let me withdraw"],
+      "geo_note": "Use real complaint phrasing as H2 questions; pair with on-chain reserve context."
+    },
+    {
+      "id": "D", "name": "Scam detection / red flags",
+      "search_intent": "Player wary of a casino flagged as a scam.",
+      "evidence": ["repeated fraud/scammer tags on Roobet/Stake/Metaspins", "How can players identify crypto casinos that refuse to pay"],
+      "content_types": ["On-chain signals a crypto casino is about to exit-scam (checklist)", "Data-driven scam case breakdowns (neutral)"],
+      "keywords": ["crypto casino scam signs", "how to spot a casino exit scam", "[casino] scam complaints"],
+      "geo_note": "Checklist + verifiable signals; keep neutral/data-based, never bare accusation."
+    },
+    {
+      "id": "E", "name": "Comparison / ranking by data (not votes)",
+      "search_intent": "Player choosing between casinos; wants an objective basis.",
+      "evidence": ["awards rely on votes and subjective evaluation, easily manipulated", "compare the odds before you place a single wager"],
+      "content_types": ["Data-driven comparison pages (by reserves / on-chain activity / complaint trend)", "[A] vs [B]: which is safer"],
+      "keywords": ["[A] vs [B] casino", "safest crypto casino", "crypto casino rankings by reserves"],
+      "geo_note": "Structured comparison tables are the most AI-extractable format."
+    },
+    {
+      "id": "F", "name": "Crypto / stablecoin payment safety",
+      "search_intent": "Player evaluating crypto/stablecoin deposit-withdrawal risk.",
+      "evidence": ["treat payment choice as a risk-control decision", "users repeatedly lose deposits with no visibility"],
+      "content_types": ["Stablecoin casino deposit/withdrawal risk & self-check", "What to check before funding a crypto casino"],
+      "keywords": ["stablecoin casino safety", "usdt casino withdrawal", "crypto casino deposit risk"],
+      "geo_note": "Frame payment choice as risk-control; concrete checklist."
+    }
+  ],
+  "priority_topics": [
+    { "title": "How to identify crypto casinos that refuse to pay winners", "target_question": "How can players identify crypto casinos that refuse to pay winners?", "keyword": "crypto casino payout scam", "angle": "Red-flag checklist + on-chain verifiable cross-check" },
+    { "title": "How fast & safe are stablecoin casino withdrawals", "target_question": "How fast and safe are stablecoin withdrawals from crypto casinos?", "keyword": "stablecoin casino fast withdrawal", "angle": "Real complaints + risk self-check" },
+    { "title": "Payout speed vs support quality at crypto casinos", "target_question": "Is fast payout more important than responsive support at crypto casinos?", "keyword": "crypto casino support", "angle": "Player trade-offs + evaluation dimensions" },
+    { "title": "Choosing a multi-crypto / stablecoin casino safely", "target_question": "Which platforms accept the widest crypto range safely?", "keyword": "crypto casino multiple coins", "angle": "Safety dimensions comparison" },
+    { "title": "World Cup crypto betting platforms compared", "target_question": "What is the best crypto casino/sportsbook for World Cup bets?", "keyword": "crypto world cup betting", "angle": "Odds + safety comparison (event traffic)" }
+  ],
+  "competitor_gaps": [
+    { "theme": "Reactive complaint board vs pre-deposit alert", "gap": "AskGamblers/Casino Guru only log incidents after funds are lost.", "our_angle": "Pre-deposit on-chain solvency alerts.", "severity": "high" },
+    { "theme": "No machine-verifiable reserve proofs", "gap": "No competitor publishes auditable reserve proofs.", "our_angle": "Auditable, blockchain-native solvency & uptime intelligence.", "severity": "high" },
+    { "theme": "Proof of reserves vs custody education gap", "gap": "Players conflate the terms; nobody explains clearly.", "our_angle": "Own the definitional/educational content.", "severity": "high" },
+    { "theme": "Complaint rate not tied to live solvency", "gap": "Resolution % (e.g. BCGame 32%) not linked to reserves/activity.", "our_angle": "Complaint data x on-chain reserves -> predictive risk score.", "severity": "med" },
+    { "theme": "Vote-based rankings are manipulable", "gap": "Awards rely on votes/subjective evaluation.", "our_angle": "Rankings driven by real on-chain transactions + reserves.", "severity": "med" }
+  ],
+  "geo_guidelines": [
+    "Answer-first: open each page with a direct verdict + as-of date + data basis.",
+    "FAQ / Q&A structure with FAQ schema; use real user question phrasings as H2s.",
+    "Definitional content for key terms (proof of reserves vs custody, solvency, RTP).",
+    "Structured comparison tables (most AI-extractable format).",
+    "Cite verifiable data points (reserve figures, wallet addresses, snapshot timestamps) to raise factual-source weight.",
+    "One clear conclusion + supporting data per page; avoid vague hedging."
+  ],
+  "rollout_order": [
+    "1. Entity review pages (entity_review_pages) — highest explicit intent, easiest to rank + AI-cite.",
+    "2. Competitor-gap authority pages (competitor_gaps) — uncontested differentiation.",
+    "3. Intent-cluster guides/FAQ (intent_clusters A-F)."
+  ]
+}

@@ -1,14 +1,40 @@
+# wcoin.casino — open data-media site. Everything public is crawlable.
+# NOTE: if a "Cloudflare Managed content" / "Block AI Scrapers" block appears ABOVE
+# this in the served file, it is injected by Cloudflare and overrides these rules for
+# the bots it lists (GPTBot, ClaudeBot, Google-Extended…). Disable it in the
+# Cloudflare dashboard (Security → Bots → AI Scrapers & Crawlers / AI Crawl Control)
+# so the intent below — welcome AI answer engines — actually applies.
+
 User-agent: *
 Allow: /
 
-# AI answer engines (GEO) are welcome — see /llms.txt for a structured summary
+# AI answer / search engines (GEO) are explicitly welcome — we WANT to be cited as a
+# source. See /llms.txt for a structured summary of the site.
+User-agent: OAI-SearchBot
+Allow: /
+User-agent: ChatGPT-User
+Allow: /
 User-agent: GPTBot
 Allow: /
 User-agent: PerplexityBot
 Allow: /
+User-agent: Perplexity-User
+Allow: /
 User-agent: ClaudeBot
 Allow: /
+User-agent: Claude-Web
+Allow: /
+User-agent: anthropic-ai
+Allow: /
 User-agent: Google-Extended
+Allow: /
+User-agent: Applebot
+Allow: /
+User-agent: Applebot-Extended
+Allow: /
+User-agent: Bingbot
+Allow: /
+User-agent: CCBot
 Allow: /
 
 Sitemap: https://wcoin.casino/sitemap.xml

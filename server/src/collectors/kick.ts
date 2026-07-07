@@ -44,14 +44,28 @@ const CASINO_BRANDS = [
 ]
 
 const upsert = db.prepare(`
-  INSERT INTO streamers(id, handle, platform, viewers, live, title, game, thumbnail, followers, affiliation, updated_at)
-  VALUES(@id, @handle, 'Kick', @viewers, @live, @title, @game, @thumbnail, @followers, @affiliation, @updated_at)
+  INSERT INTO streamers(id, handle, platform, viewers, live, title, game, thumbnail, followers, affiliation, bio, socials, verified, updated_at)
+  VALUES(@id, @handle, 'Kick', @viewers, @live, @title, @game, @thumbnail, @followers, @affiliation, @bio, @socials, @verified, @updated_at)
   ON CONFLICT(id) DO UPDATE SET
     viewers=excluded.viewers, live=excluded.live, title=excluded.title,
     game=excluded.game, thumbnail=excluded.thumbnail, followers=excluded.followers,
     affiliation=COALESCE(excluded.affiliation, streamers.affiliation),
+    bio=COALESCE(excluded.bio, streamers.bio),
+    socials=COALESCE(excluded.socials, streamers.socials),
+    verified=excluded.verified,
     updated_at=excluded.updated_at
 `)
+
+// Build a {network: handle} JSON blob from the platform's own social fields,
+// dropping empties. Returns null when nothing is set so COALESCE keeps prior data.
+function socialsJson(obj: Record<string, unknown>): string | null {
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(obj)) {
+    const s = typeof v === 'string' ? v.trim() : ''
+    if (s) out[k] = s
+  }
+  return Object.keys(out).length ? JSON.stringify(out) : null
+}
 
 export function seedRoster() {
   // top-up: new seeds reach existing installs too; INSERT OR IGNORE keeps
@@ -107,21 +121,74 @@ export async function runKickOnce(): Promise<void> {
     const d = await res.json()
     const ls = d.livestream
     const title: string | null = ls?.session_title ?? null
+    const u = d.user ?? {}
+    const bio: string | null = typeof u.bio === 'string' && u.bio.trim() ? u.bio.trim().slice(0, 400) : null
+    const socials = socialsJson({
+      twitter: u.twitter,
+      instagram: u.instagram,
+      youtube: u.youtube,
+      tiktok: u.tiktok,
+      discord: u.discord,
+      facebook: u.facebook,
+    })
     upsert.run({
       id: 'kick:' + d.slug,
-      handle: d.user?.username ?? d.slug,
+      handle: u.username ?? d.slug,
       viewers: ls?.viewer_count ?? 0,
       live: ls ? 1 : 0,
       title,
       game: ls?.categories?.[0]?.name ?? null,
-      thumbnail: ls?.thumbnail?.url ?? d.user?.profile_pic ?? null,
+      thumbnail: ls?.thumbnail?.url ?? u.profile_pic ?? null,
       followers: d.followers_count ?? 0,
-      affiliation: detectAffiliation(title, d.user?.bio),
+      affiliation: detectAffiliation(title, bio),
+      bio,
+      socials,
+      verified: d.verified ? 1 : 0,
       updated_at: Date.now(),
     })
     if (ls) console.log(`[kick] ${d.slug}: LIVE ${ls.viewer_count} viewers`)
   } catch (e) {
     console.warn(`[kick] ${entry.slug} failed:`, (e as Error).message)
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Kick discovery — auto-grow the Kick roster with live gambling channels.
+//
+// Kick's own category-filtered livestreams endpoint is no longer publicly
+// reachable (the legacy /stream/livestreams/<cat> path ignores the category and
+// the v2 category paths 404). circus.fyi exposes a working "Slots & Casino"
+// (category id 28) livestreams feed, so we use it as a DISCOVERY SEED only: we
+// take the channel slugs and poll each one against Kick's OWN public API in
+// runKickOnce — the live status, viewers, followers and affiliation we store are
+// all re-fetched and verified from Kick directly, never copied from circus. Bad
+// slugs 404 and self-deactivate. Override the source via KICK_DISCOVER_URL; set
+// to '0' to disable.
+// ─────────────────────────────────────────────────────────────────────────────
+const KICK_DISCOVER_URL = process.env.KICK_DISCOVER_URL ?? 'https://www.circus.fyi/api/kick/livestreams'
+
+export async function runKickDiscovery(): Promise<void> {
+  if (KICK_DISCOVER_URL === '0') return
+  try {
+    const res = await webFetch(KICK_DISCOVER_URL, {
+      headers: { 'User-Agent': UA, Accept: 'application/json', Referer: 'https://www.circus.fyi/streamers' },
+      signal: AbortSignal.timeout(20_000),
+    })
+    if (!res.ok) return
+    const rows = ((await res.json()) as any)?.data ?? []
+    const slugs = (rows as any[]).map((r) => String(r?.slug ?? '').trim().toLowerCase()).filter((s) => /^[a-z0-9_]{2,32}$/.test(s))
+    if (slugs.length) {
+      const now = Date.now()
+      const ins = db.prepare('INSERT OR IGNORE INTO streamer_roster(platform, slug, active, created_at) VALUES(?, ?, 1, ?)')
+      let added = 0
+      const tx = db.transaction(() => {
+        for (const s of slugs) added += ins.run('Kick', s, now).changes
+      })
+      tx()
+      if (added) console.log(`[kick] discovered ${added} new live gambling channels (of ${slugs.length} seen)`)
+    }
+  } catch {
+    /* transient — Kick data is still re-verified per-channel in runKickOnce */
   }
 }
 
@@ -132,4 +199,10 @@ export function startKick() {
     setTimeout(loop, 8_000) // one channel per 8s — polite, full roster sweep ≈ 1 min
   }
   loop()
+  // discovery: seed the roster from the live gambling category, then refresh every
+  // 5 min so newly-live casino streamers get picked up continuously
+  setTimeout(() => {
+    runKickDiscovery()
+    setInterval(runKickDiscovery, 300_000)
+  }, 30_000)
 }

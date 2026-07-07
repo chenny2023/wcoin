@@ -292,7 +292,7 @@ function MarketConcentration({ c }: { c: any }) {
         <Tip text="How concentrated the day's verified volume is among the top brands and the leading chain. High concentration = the day was driven by a few players, not broad activity." />
       </h3>
       <p className="mb-3 text-[12px] text-white/45">Share of 24h verified volume.</p>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-3">
         {items.map((it) => (
           <div key={it.k} className="rounded-xl border border-white/8 bg-white/[0.02] p-3 text-center">
             <div className="font-display text-xl font-bold tabular-nums text-gradient-gold">{it.v}</div>

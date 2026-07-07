@@ -50,9 +50,10 @@ import { startAggregation } from './aggregate.ts'
 import { startAlerts } from './alerts.ts'
 import { startRetention } from './retention.ts'
 import { startInternalFlow } from './internalflow.ts'
+import { startRoleInference } from './rolesinfer.ts'
 import { startReserveHistory } from './reservehistory.ts'
 import { startSnapshots } from './snapshot.ts'
-import { registerSeo, startSeo } from './seo.ts'
+import { registerSeo, startSeo, getPage } from './seo.ts'
 import { registerIndexNow } from './indexnow.ts'
 import { startBrandStore } from './brandstore.ts'
 import { startDailyInsight } from './content/dailyinsight.ts'
@@ -142,6 +143,15 @@ async function main() {
     })
     app.setNotFoundHandler((req, reply) => {
       if (req.url.startsWith('/api')) return reply.code(404).send({ error: 'not found' })
+      // Serve SSR SEO pages with keyword slugs that have no explicit route (e.g.
+      // /is-<casino>-safe, /does-<casino>-pay-out, /<casino>-proof-of-reserves for
+      // the data-rich roster) straight from seo_page — so the answer-page surface
+      // can grow with the data without registering a route per operator. Misses
+      // fall through to the SPA shell, which renders its own client-side 404.
+      if (req.method === 'GET') {
+        const page = getPage(req.url.split('?')[0])
+        if (page) return reply.type('text/html; charset=utf-8').header('Cache-Control', 'public, max-age=600, stale-while-revalidate=86400').send(page.html)
+      }
       return reply.header('Cache-Control', 'no-cache').sendFile('index.html')
     })
     console.log('[web] serving built SPA from /dist')
@@ -249,6 +259,7 @@ async function main() {
   startAlerts() // user-defined alert rules: whale stream + net-flow / reserve checks
   startRetention() // periodic prune of transfers past the retention window
   startInternalFlow() // mark casino↔casino internal transfers (cp_internal) for fast credible volume
+  startRoleInference() // behaviour-inferred wallet_role for the open-data export
   startReserveHistory() // daily solvency snapshots → reserve-adequacy trend
   startCasinoAlerts() // per-casino reserve-drop alert emails to public subscribers
   startRiskEvents() // risk-event registry: auto on-chain signals + curated incidents

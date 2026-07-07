@@ -104,7 +104,7 @@ export default function Blockchain() {
             </label>
           </div>
 
-          <div className="max-h-[560px] overflow-y-auto">
+          <div className="max-h-[560px] overflow-y-auto overflow-x-auto">
             {rows.length === 0 ? (
               <EmptyState title="Listening for on-chain transfers…" hint="New USDT/USDC events stream in live as blocks are indexed." />
             ) : (

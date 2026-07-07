@@ -6,7 +6,7 @@ import { tronBalanceUsd } from './collectors/tron.ts'
 import { tronRpcBalanceUsd } from './collectors/tronrpc.ts'
 import { evmChainsBalanceUsd } from './collectors/evmchains.ts'
 import { matchCasinoMeta, brandKey, brandName, CasinoMeta } from './casinometa.ts'
-import { isVolumeSuspect } from './brandaliases.ts'
+import { isVolumeSuspect, volumeSuspectReasons } from './brandaliases.ts'
 import { reviewScores } from './collectors/reviews.ts'
 import { tokenData, TokenInfo } from './collectors/casinotokens.ts'
 import { priorCoverage } from './reservehistory.ts'
@@ -306,6 +306,7 @@ export interface BrandAgg {
   attributed: boolean // false for auto-detected 'Casino-pattern 0x…' / raw-address labels
   confidence: 'high' | 'medium' | 'low' // data confidence for public display
   volumeSuspect: boolean // anomalous on-chain volume (wash/internal) — keep out of volume rankings
+  volumeSuspectReasons: string[] // machine-readable why (empty when not suspect)
   wallets: number
   chains: string[]
   volume24h: number
@@ -386,7 +387,8 @@ async function computeBrands(): Promise<BrandAgg[]> {
     const edV = members.map((e) => e.editorial).find((s) => s != null) ?? null
     const ratingCount = [safetyV, tpV, agV, edV].filter((v) => v != null).length
     const attributed = !isUnattributed(bName) && !isUnattributed(head.label)
-    const volumeSuspect = attributed && isVolumeSuspect(bName, vol7, sum((e) => e.players), playersPassComplete, sum((e) => e.txCount7d))
+    const suspectReasons = attributed ? volumeSuspectReasons(bName, vol7, sum((e) => e.players), playersPassComplete, sum((e) => e.txCount7d)) : []
+    const volumeSuspect = suspectReasons.length > 0
     const confidence: 'high' | 'medium' | 'low' = !attributed
       ? 'low'
       : metaV || ratingCount >= 2 || (vol7 > 0 && brReserves > 0)
@@ -400,6 +402,7 @@ async function computeBrands(): Promise<BrandAgg[]> {
       attributed,
       confidence,
       volumeSuspect,
+      volumeSuspectReasons: suspectReasons,
       wallets: members.length,
       chains: [...new Set(members.flatMap((e) => e.byChain.map((c) => c.chain)))].sort(),
       volume24h: vol24,

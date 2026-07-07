@@ -27,12 +27,13 @@ const ROSTER_SEED = [
 ]
 
 const upsert = db.prepare(`
-  INSERT INTO streamers(id, handle, platform, viewers, live, title, game, thumbnail, followers, affiliation, updated_at)
-  VALUES(@id, @handle, 'YouTube', @viewers, @live, @title, @game, @thumbnail, @followers, @affiliation, @now)
+  INSERT INTO streamers(id, handle, platform, viewers, live, title, game, thumbnail, followers, affiliation, bio, updated_at)
+  VALUES(@id, @handle, 'YouTube', @viewers, @live, @title, @game, @thumbnail, @followers, @affiliation, @bio, @now)
   ON CONFLICT(id) DO UPDATE SET
     viewers=excluded.viewers, live=excluded.live, title=excluded.title,
     thumbnail=excluded.thumbnail, followers=excluded.followers,
-    affiliation=COALESCE(excluded.affiliation, streamers.affiliation), updated_at=excluded.updated_at
+    affiliation=COALESCE(excluded.affiliation, streamers.affiliation),
+    bio=COALESCE(excluded.bio, streamers.bio), updated_at=excluded.updated_at
 `)
 
 function parseSubs(html: string): number | null {
@@ -85,16 +86,19 @@ export async function runYouTubeOnce(): Promise<void> {
     }
     const live = /BADGE_STYLE_TYPE_LIVE_NOW|"text":"LIVE"|"label":"LIVE"/.test(html) ? 1 : 0
     const subs = parseSubs(html)
+    const desc = meta(html, 'og:description')
+    const bio: string | null = desc && desc.trim() ? desc.trim().slice(0, 400) : null
     upsert.run({
       id: 'youtube:' + entry.slug,
       handle: name,
       viewers: 0, // channel page doesn't reliably expose live viewer count
       live,
-      title: live ? meta(html, 'og:description')?.slice(0, 200) ?? null : null,
+      title: live ? desc?.slice(0, 200) ?? null : null,
       game: null,
       thumbnail: meta(html, 'og:image'),
       followers: subs ?? 0,
-      affiliation: detectAffiliation(name, meta(html, 'og:description')),
+      affiliation: detectAffiliation(name, desc),
+      bio,
       now: Date.now(),
     })
     console.log(`[youtube] @${entry.slug}: ${subs ? (subs / 1e6).toFixed(2) + 'M' : '?'} subs${live ? ' · LIVE' : ''}`)

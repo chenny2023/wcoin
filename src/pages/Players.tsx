@@ -33,7 +33,7 @@ function Tip({ active, payload, label }: any) {
 export default function Players() {
   const { data: flow } = usePoll(api.flow, 20_000)
   const { data: stats } = usePoll(api.stats, 15_000)
-  const { data: entities } = usePoll(api.casinos, 15_000)
+  const { data: brands } = usePoll(() => api.brands('casino'), 15_000)
 
   const buckets = flow ?? []
   const whaleBucket = buckets.find((b) => b.name === 'Whale')
@@ -41,7 +41,13 @@ export default function Players() {
   const whaleShare = whaleBucket ? (whaleBucket.volume / totalVol) * 100 : 0
   const totalTx = buckets.reduce((s, b) => s + b.count, 0)
   const avgTx = totalTx ? totalVol / totalTx : 0
-  const byCounterparties = (entities ?? []).slice().sort((a, b) => b.players - a.players).slice(0, 8)
+  // brand-MERGED (one row per operator, not per wallet/entity) + credibility-filtered,
+  // so the ranking can't list "Stake" five times. attributed + non-suspect, real players.
+  const byCounterparties = (brands ?? [])
+    .filter((b) => b.attributed && !b.volumeSuspect && b.players > 0)
+    .sort((a, b) => b.players - a.players)
+    .slice(0, 8)
+    .map((b) => ({ id: b.members[0]?.id ?? b.brand, label: b.brand, players: b.players }))
 
   return (
     <div className="fade-up">

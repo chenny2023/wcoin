@@ -1,7 +1,8 @@
-import { ReactNode, HTMLAttributes, MouseEvent } from 'react'
+import { ReactNode, HTMLAttributes, MouseEvent, useEffect, useRef, useState } from 'react'
 import { ArrowDownRight, ArrowUpRight } from 'lucide-react'
 import { CHAIN_COLOR } from '../data/format'
 import { CountUp } from './motion'
+import { useLiveStatus } from '../data/api'
 
 // ── Brand mark ────────────────────────────────────────────────────────────────
 export function Logo({ size = 30, withText = true }: { size?: number; withText?: boolean }) {
@@ -83,13 +84,30 @@ export function StatCard({
       : accent === 'violet'
         ? 'from-violet-500/20'
         : 'from-mint-400/20'
+  // Flash green/red when the live (polled) value changes — pairs with the count-up
+  // roll so headline numbers visibly react to fresh data, not just silently update.
+  const [flash, setFlash] = useState<'up' | 'down' | null>(null)
+  const prevRaw = useRef(raw)
+  useEffect(() => {
+    if (raw == null) return
+    if (prevRaw.current != null && raw !== prevRaw.current) {
+      const dir = raw > prevRaw.current ? 'up' : 'down'
+      // null → dir on the next frame so the CSS animation restarts even on
+      // consecutive same-direction ticks (re-adding an identical class won't).
+      setFlash(null)
+      const r = requestAnimationFrame(() => setFlash(dir))
+      prevRaw.current = raw
+      return () => cancelAnimationFrame(r)
+    }
+    prevRaw.current = raw
+  }, [raw])
   return (
     <Card hover spotlight className="p-4 sm:p-5 relative overflow-hidden">
       <div className={`absolute -top-10 -right-10 h-28 w-28 rounded-full bg-gradient-to-br ${ring} to-transparent blur-2xl`} />
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[12px] uppercase tracking-wider text-white/45">{label}</div>
-          <div className="mt-1.5 font-display text-2xl font-bold">
+          <div className={`mt-1.5 inline-block rounded font-display text-2xl font-bold ${flash === 'up' ? 'flash-up' : flash === 'down' ? 'flash-down' : ''}`}>
             {raw != null && format ? <CountUp value={raw} format={format} /> : value}
           </div>
         </div>
@@ -196,11 +214,34 @@ export function PageHead({
   )
 }
 
+// Connection-aware live indicator: reflects the real SSE stream state and pulses
+// a ring whenever a fresh on-chain event lands, so "Live" is honest, not cosmetic.
 export function LiveBadge() {
+  const { status, lastEventAt } = useLiveStatus()
+  const [ping, setPing] = useState(false)
+  useEffect(() => {
+    if (!lastEventAt) return
+    setPing(true)
+    const t = setTimeout(() => setPing(false), 700)
+    return () => clearTimeout(t)
+  }, [lastEventAt])
+
+  const style =
+    status === 'live'
+      ? { wrap: 'border-mint-400/30 bg-mint-400/10 text-mint-400', dot: 'bg-mint-400', label: 'Live', pulse: true }
+      : status === 'connecting'
+        ? { wrap: 'border-gold-400/30 bg-gold-400/10 text-gold-400', dot: 'bg-gold-400', label: 'Connecting', pulse: true }
+        : { wrap: 'border-rose-400/30 bg-rose-400/10 text-rose-400', dot: 'bg-rose-400', label: 'Reconnecting', pulse: false }
+
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-mint-400/30 bg-mint-400/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-mint-400">
-      <span className="live-dot h-1.5 w-1.5 rounded-full bg-mint-400" />
-      Live
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider ${style.wrap}`}>
+      <span className="relative inline-flex h-1.5 w-1.5">
+        {style.pulse && ping && (
+          <span className={`absolute inline-flex h-full w-full animate-ping rounded-full ${style.dot} opacity-75`} />
+        )}
+        <span className={`relative inline-flex h-1.5 w-1.5 rounded-full ${style.dot} ${style.pulse ? 'live-dot' : ''}`} />
+      </span>
+      {style.label}
     </span>
   )
 }

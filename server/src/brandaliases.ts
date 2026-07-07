@@ -47,13 +47,21 @@ const SUSPECT_AVG_TX = Number(process.env.SUSPECT_AVG_TX ?? 50_000)
 // reliable. Before that, `players` is ~0 for everyone, which would false-flag every
 // large casino — so the heuristic stays OFF until warm (the config list still fires).
 export function isVolumeSuspect(label: string, volume7d: number, players: number, warm: boolean, txCount = 0): boolean {
-  if (VOLUME_SUSPECT_KEYS.has(brandKey(label))) return true
-  if (volume7d < SUSPECT_VOL_FLOOR) return false
-  // treasury/market-making churn — huge average transfer (independent of `warm`,
-  // since it doesn't rely on the players count)
-  if (txCount > 0 && volume7d / txCount > SUSPECT_AVG_TX) return true
-  if (!warm) return false
-  return volume7d / Math.max(players, 1) > SUSPECT_VOL_PER_CP
+  return volumeSuspectReasons(label, volume7d, players, warm, txCount).length > 0
+}
+
+// The machine-readable WHY behind a suspect flag — single source of truth for the
+// flag, the API and the open-data export. Empty array = not suspect.
+export function volumeSuspectReasons(label: string, volume7d: number, players: number, warm: boolean, txCount = 0): string[] {
+  const reasons: string[] = []
+  if (VOLUME_SUSPECT_KEYS.has(brandKey(label))) reasons.push('manually_flagged_wash_or_treasury_pattern')
+  if (volume7d >= SUSPECT_VOL_FLOOR) {
+    // treasury/market-making churn — huge average transfer (independent of `warm`,
+    // since it doesn't rely on the players count)
+    if (txCount > 0 && volume7d / txCount > SUSPECT_AVG_TX) reasons.push('abnormal_avg_transfer_size')
+    if (warm && volume7d / Math.max(players, 1) > SUSPECT_VOL_PER_CP) reasons.push('high_volume_per_counterparty')
+  }
+  return reasons
 }
 
 // brandKey(alias) → {canonical, slug}

@@ -36,13 +36,29 @@ const ROSTER_SEED = [
 ]
 
 const upsert = db.prepare(`
-  INSERT INTO streamers(id, handle, platform, viewers, live, title, game, thumbnail, followers, affiliation, updated_at)
-  VALUES(@id, @handle, 'Twitch', @viewers, @live, @title, @game, @thumbnail, @followers, @affiliation, @now)
+  INSERT INTO streamers(id, handle, platform, viewers, live, title, game, thumbnail, followers, affiliation, bio, socials, verified, since, updated_at)
+  VALUES(@id, @handle, 'Twitch', @viewers, @live, @title, @game, @thumbnail, @followers, @affiliation, @bio, @socials, @verified, @since, @now)
   ON CONFLICT(id) DO UPDATE SET
     viewers=excluded.viewers, live=excluded.live, title=excluded.title, game=excluded.game,
     thumbnail=excluded.thumbnail, followers=excluded.followers,
-    affiliation=COALESCE(excluded.affiliation, streamers.affiliation), updated_at=excluded.updated_at
+    affiliation=COALESCE(excluded.affiliation, streamers.affiliation),
+    bio=COALESCE(excluded.bio, streamers.bio),
+    socials=COALESCE(excluded.socials, streamers.socials),
+    verified=excluded.verified,
+    since=COALESCE(excluded.since, streamers.since),
+    updated_at=excluded.updated_at
 `)
+
+// {network: url} from Twitch's channel social-media list, dropping empties.
+function socialsJson(list: { name?: string; url?: string }[] | null | undefined): string | null {
+  const out: Record<string, string> = {}
+  for (const s of list ?? []) {
+    const net = String(s?.name ?? '').trim().toLowerCase()
+    const url = String(s?.url ?? '').trim()
+    if (net && url) out[net] = url
+  }
+  return Object.keys(out).length ? JSON.stringify(out) : null
+}
 
 let rr = 0
 
@@ -51,7 +67,7 @@ export async function runTwitchOnce(): Promise<void> {
   if (roster.length === 0) return
   const entry = roster[rr++ % roster.length]
   try {
-    const query = `query{user(login:"${entry.slug}"){displayName followers{totalCount} stream{viewersCount title game{name}} profileImageURL(width:300)}}`
+    const query = `query{user(login:"${entry.slug}"){displayName description createdAt roles{isPartner} followers{totalCount} stream{viewersCount title game{name}} profileImageURL(width:300) channel{socialMedias{name url}}}}`
     const res = await webFetch('https://gql.twitch.tv/gql', {
       method: 'POST',
       headers: { 'Client-Id': CLIENT_ID, 'Content-Type': 'application/json' },
@@ -66,6 +82,7 @@ export async function runTwitchOnce(): Promise<void> {
       return
     }
     const s = u.stream
+    const bio: string | null = typeof u.description === 'string' && u.description.trim() ? u.description.trim().slice(0, 400) : null
     upsert.run({
       id: 'twitch:' + entry.slug,
       handle: u.displayName ?? entry.slug,
@@ -75,7 +92,11 @@ export async function runTwitchOnce(): Promise<void> {
       game: s?.game?.name ?? null,
       thumbnail: u.profileImageURL ?? null,
       followers: u.followers?.totalCount ?? 0,
-      affiliation: detectAffiliation(s?.title),
+      affiliation: detectAffiliation(s?.title, bio),
+      bio,
+      socials: socialsJson(u.channel?.socialMedias),
+      verified: u.roles?.isPartner ? 1 : 0,
+      since: typeof u.createdAt === 'string' ? u.createdAt.slice(0, 10) : null,
       now: Date.now(),
     })
     if (s) console.log(`[twitch] ${entry.slug}: LIVE ${s.viewersCount} · ${s.game?.name ?? '?'}`)
@@ -87,25 +108,39 @@ export async function runTwitchOnce(): Promise<void> {
 // Auto-discover live gambling streamers from Twitch's category directories and
 // add them to the roster — so coverage grows itself instead of relying on a
 // hand-typed list. Catches the long tail of active casino streamers continuously.
-const DISCOVER_GAMES = ['Slots', 'Virtual Casino', 'Slots & Casino']
+// Only categories that actually exist on Twitch and resolve to gambling content
+// (verified live: "Slots & Casino"/"Sports Betting" return null on Twitch).
+const DISCOVER_GAMES = ['Slots', 'Virtual Casino', 'Poker']
+const DISCOVER_PAGES = 8 // cursor-paginate each category: ~100/page → deep long tail
 let discoverIdx = 0
 export async function runTwitchDiscovery(): Promise<void> {
   const game = DISCOVER_GAMES[discoverIdx++ % DISCOVER_GAMES.length]
+  const g = game.replace(/"/g, '')
+  let cursor: string | null = null
+  let total = 0
   try {
-    const query = `query{game(name:"${game.replace(/"/g, '')}"){streams(first:80){edges{node{broadcaster{login}}}}}}`
-    const res = await webFetch('https://gql.twitch.tv/gql', {
-      method: 'POST',
-      headers: { 'Client-Id': CLIENT_ID, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query }),
-      signal: AbortSignal.timeout(20_000),
-    })
-    if (!res.ok) return
-    const edges = ((await res.json()) as any)?.data?.game?.streams?.edges ?? []
-    const logins = edges.map((e: any) => e?.node?.broadcaster?.login).filter(Boolean)
-    if (logins.length) {
-      seedRoster('Twitch', logins)
-      console.log(`[twitch] discovered ${logins.length} live "${game}" streamers`)
+    for (let page = 0; page < DISCOVER_PAGES; page++) {
+      const after: string = cursor ? `,after:"${cursor}"` : ''
+      const query = `query{game(name:"${g}"){streams(first:100${after}){edges{cursor node{broadcaster{login}}}pageInfo{hasNextPage}}}}`
+      const res = await webFetch('https://gql.twitch.tv/gql', {
+        method: 'POST',
+        headers: { 'Client-Id': CLIENT_ID, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+        signal: AbortSignal.timeout(20_000),
+      })
+      if (!res.ok) break
+      const streams = ((await res.json()) as any)?.data?.game?.streams
+      const edges = streams?.edges ?? []
+      const logins = edges.map((e: any) => e?.node?.broadcaster?.login).filter(Boolean)
+      if (logins.length) {
+        seedRoster('Twitch', logins)
+        total += logins.length
+      }
+      if (!streams?.pageInfo?.hasNextPage || edges.length === 0) break
+      cursor = edges[edges.length - 1]?.cursor ?? null
+      if (!cursor) break
     }
+    if (total) console.log(`[twitch] discovered ${total} live "${game}" streamers (paged)`)
   } catch {
     /* transient */
   }

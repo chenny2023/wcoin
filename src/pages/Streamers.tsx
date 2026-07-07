@@ -15,12 +15,14 @@ function StreamerDetailModal({ platform, slug, onClose }: { platform: string; sl
   const followers = p?.followers ?? live?.followers ?? 0
   const url = CHANNEL_URL[platform]?.(slug) ?? '#'
   const strip = (v: string) => v.replace(/^@/, '').replace(/^https?:\/\//, '')
+  // values may be a bare handle (Kick) or a full URL (Twitch) — passthrough URLs.
+  const asUrl = (base: (v: string) => string) => (v: string) => (/^https?:\/\//i.test(v) ? v : base(v))
   const socials: { label: string; icon: JSX.Element; val: string | null | undefined; href: (v: string) => string }[] = [
-    { label: 'Twitter / X', icon: <Twitter size={14} />, val: p?.twitter, href: (v) => `https://x.com/${strip(v)}` },
-    { label: 'YouTube', icon: <Youtube size={14} />, val: p?.youtube, href: (v) => (v.startsWith('http') ? v : `https://${strip(v)}`) },
-    { label: 'Discord', icon: <MessageCircle size={14} />, val: p?.discord, href: (v) => (v.startsWith('http') ? v : `https://${strip(v)}`) },
-    { label: 'Telegram', icon: <Send size={14} />, val: p?.telegram, href: (v) => `https://t.me/${strip(v)}` },
-    { label: 'Instagram', icon: <Instagram size={14} />, val: p?.instagram, href: (v) => `https://instagram.com/${strip(v)}` },
+    { label: 'Twitter / X', icon: <Twitter size={14} />, val: p?.twitter, href: asUrl((v) => `https://x.com/${strip(v)}`) },
+    { label: 'YouTube', icon: <Youtube size={14} />, val: p?.youtube, href: asUrl((v) => ytUrl(strip(v))) },
+    { label: 'Discord', icon: <MessageCircle size={14} />, val: p?.discord, href: asUrl((v) => `https://discord.gg/${strip(v)}`) },
+    { label: 'Telegram', icon: <Send size={14} />, val: p?.telegram, href: asUrl((v) => `https://t.me/${strip(v)}`) },
+    { label: 'Instagram', icon: <Instagram size={14} />, val: p?.instagram, href: asUrl((v) => `https://instagram.com/${strip(v)}`) },
   ]
   const present = socials.filter((s) => s.val)
   return (
@@ -38,6 +40,7 @@ function StreamerDetailModal({ platform, slug, onClose }: { platform: string; sl
         <div className="p-5">
           <div className="flex items-center gap-2">
             <h3 className="font-display text-xl font-bold">{name}</h3>
+            {live?.verified === 1 && <span title={`Verified on ${platform}`} className="text-gold-400">✓</span>}
             <span className="rounded-md px-1.5 py-0.5 text-[10px] font-bold" style={{ background: `${PLATFORM_COLOR[platform]}22`, color: PLATFORM_COLOR[platform] }}>{platform}</span>
             <a href={url} target="_blank" rel="noreferrer" className="ml-auto text-white/40 hover:text-gold-400"><ExternalLink size={16} /></a>
           </div>
@@ -78,44 +81,96 @@ const CHANNEL_URL: Record<string, (h: string) => string> = {
   YouTube: (h) => `https://youtube.com/@${h}`,
 }
 
-function StreamerCard({ s, onOpen }: { s: StreamerRow; onOpen: () => void }) {
+// real channel slug from the stored id ("twitch:roshtein" → "roshtein"); the display
+// handle can differ in case/spacing, so the id is the reliable source for the URL.
+const channelSlug = (s: StreamerRow) => (s.id.includes(':') ? s.id.split(':')[1] : s.handle)
+const channelUrlOf = (s: StreamerRow) => CHANNEL_URL[s.platform]?.(channelSlug(s)) ?? '#'
+
+// YouTube social values vary: a bare handle ("Roshtein"), an @handle, or a path
+// fragment ("channel/UC…", "c/Name", "user/Name"). Only @-prefix bare handles.
+function ytUrl(h: string): string {
+  const v = h.replace(/^@/, '')
+  return /^(channel|c|user)\//i.test(v) ? `https://youtube.com/${v}` : `https://youtube.com/@${v}`
+}
+const SOC_BASE: Record<string, (h: string) => string> = {
+  twitter: (h) => `https://x.com/${h.replace(/^@/, '')}`,
+  x: (h) => `https://x.com/${h.replace(/^@/, '')}`,
+  youtube: (h) => ytUrl(h),
+  instagram: (h) => `https://instagram.com/${h.replace(/^@/, '')}`,
+  discord: (h) => `https://discord.gg/${h.replace(/^.*\//, '')}`,
+  tiktok: (h) => `https://www.tiktok.com/@${h.replace(/^@/, '')}`,
+  facebook: (h) => `https://facebook.com/${h.replace(/^@/, '')}`,
+}
+const SOC_ICON: Record<string, JSX.Element> = {
+  twitter: <Twitter size={13} />, x: <Twitter size={13} />, youtube: <Youtube size={13} />,
+  instagram: <Instagram size={13} />, discord: <MessageCircle size={13} />, tiktok: <Send size={13} />, facebook: <Send size={13} />,
+}
+function parseSocials(raw?: string | null): { net: string; url: string }[] {
+  if (!raw) return []
+  try {
+    return Object.entries(JSON.parse(raw) as Record<string, string>)
+      .map(([net, v]) => {
+        const val = String(v ?? '').trim()
+        const n = net.toLowerCase()
+        const url = /^https?:\/\//i.test(val) ? val : SOC_BASE[n]?.(val)
+        return url ? { net: n, url } : null
+      })
+      .filter(Boolean) as { net: string; url: string }[]
+  } catch {
+    return []
+  }
+}
+
+// Lightweight list row — no stream-thumbnail images (the old card grid loaded ~48
+// large CDN thumbnails, the page's main cost). CSS-initials avatar instead, so the
+// list paints instantly. Clicking the row opens the live channel directly; the small
+// info button opens the profile drawer (bio + full socials).
+function StreamerListItem({ s, onProfile }: { s: StreamerRow; onProfile: () => void }) {
+  const url = channelUrlOf(s)
+  const socials = parseSocials(s.socials)
+  const open = () => window.open(url, '_blank', 'noopener,noreferrer')
   return (
-    <Card hover onClick={onOpen} className="cursor-pointer overflow-hidden p-0">
-      {s.live === 1 && s.thumbnail ? (
-        <div className="relative h-36 w-full overflow-hidden bg-ink-800">
-          <img src={s.thumbnail} alt={s.handle} className="h-full w-full object-cover" loading="lazy" />
-          <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-md bg-rose-500/90 px-1.5 py-0.5 text-[11px] font-bold text-white">● LIVE</span>
-          <span className="absolute right-2 top-2 inline-flex items-center gap-0.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-semibold text-white"><LiveValue value={s.viewers} format={fmtNum} /> 👁</span>
-        </div>
-      ) : (
-        <div className="relative grid h-24 w-full place-items-center bg-ink-800">
-          <Bubble seed={s.handle} size={44} />
-          {s.live === 0 && <span className="absolute right-2 top-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[11px] text-white/50">offline</span>}
-        </div>
-      )}
-      <div className="p-4">
-        <div className="flex items-center gap-2">
+    <div
+      onClick={open}
+      role="link"
+      tabIndex={0}
+      onKeyDown={(e) => (e.key === 'Enter' ? open() : undefined)}
+      className="group flex cursor-pointer items-center gap-3 border-b border-white/6 px-3 py-2.5 hover:bg-white/[0.04]"
+    >
+      <span className={`h-2 w-2 shrink-0 rounded-full ${s.live === 1 ? 'live-dot bg-rose-400' : 'bg-white/15'}`} title={s.live === 1 ? 'Live now' : 'Offline'} />
+      <Bubble seed={s.handle} size={30} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
           <span className="truncate font-semibold">{s.handle}</span>
-          <span className="rounded-md px-1.5 py-0.5 text-[10px] font-bold" style={{ background: `${PLATFORM_COLOR[s.platform]}22`, color: PLATFORM_COLOR[s.platform] }}>
-            {s.platform}
-          </span>
-          <a href={CHANNEL_URL[s.platform]?.(s.handle)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="ml-auto text-white/40 hover:text-gold-400"><ExternalLink size={14} /></a>
+          {s.verified === 1 && <span title="Verified" className="text-gold-400">✓</span>}
+          <span className="rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ background: `${PLATFORM_COLOR[s.platform]}22`, color: PLATFORM_COLOR[s.platform] }}>{s.platform}</span>
         </div>
-        {s.title && <p className="mt-2 line-clamp-2 text-[12px] text-white/45">{s.title}</p>}
-        <div className="mt-2 flex items-center justify-between text-[12px]">
-          <span className="text-white/40">{fmtNum(s.followers)} followers</span>
-          {s.live === 1 && <span className="font-semibold text-mint-400"><LiveValue value={s.viewers} format={fmtNum} /> viewers</span>}
-        </div>
-        <div className="mt-2 flex items-center justify-between border-t border-white/6 pt-2 text-[12px]">
-          <span className="text-white/40">Affiliation</span>
-          {s.affiliation ? (
-            <span className="rounded-md bg-gold-500/12 px-1.5 py-0.5 font-semibold text-gold-400">{s.affiliation}</span>
-          ) : (
-            <span className="text-white/30">not detected</span>
-          )}
+        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-white/40">
+          <span>{fmtNum(s.followers)} followers</span>
+          {s.affiliation && <span className="rounded bg-gold-500/12 px-1 font-semibold text-gold-400">{s.affiliation}</span>}
         </div>
       </div>
-    </Card>
+      {s.live === 1 && (
+        <span className="hidden shrink-0 items-center gap-1 text-[12px] font-semibold text-mint-400 sm:inline-flex">
+          <LiveValue value={s.viewers} format={fmtNum} /> 👁
+        </span>
+      )}
+      {socials.length > 0 && (
+        <div className="hidden shrink-0 items-center gap-1 sm:flex">
+          {socials.map((x) => (
+            <a key={x.net} href={x.url} target="_blank" rel="noreferrer nofollow" onClick={(e) => e.stopPropagation()} title={x.net} className="grid h-6 w-6 place-items-center rounded text-white/40 hover:bg-white/8 hover:text-white">
+              {SOC_ICON[x.net] ?? <ExternalLink size={13} />}
+            </a>
+          ))}
+        </div>
+      )}
+      <button onClick={(e) => { e.stopPropagation(); onProfile() }} title="Profile" className="grid h-6 w-6 shrink-0 place-items-center rounded text-white/35 hover:bg-white/8 hover:text-white">
+        <Search size={13} />
+      </button>
+      <a href={url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className={`hidden shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 text-[12px] font-semibold sm:inline-flex ${s.live === 1 ? 'bg-rose-500/15 text-rose-300 hover:bg-rose-500/25' : 'bg-white/6 text-white/60 hover:bg-white/10'}`}>
+        {s.live === 1 ? 'Watch' : 'Channel'} <ExternalLink size={12} />
+      </a>
+    </div>
   )
 }
 
@@ -166,7 +221,7 @@ export default function Streamers() {
         }
       />
 
-      <Reveal as="div" className="grid grid-cols-3 gap-3">
+      <Reveal as="div" className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Card spotlight className="p-4">
           <div className="text-[12px] uppercase tracking-wider text-white/45">Live Now</div>
           <div className="mt-1 font-display text-2xl font-bold text-rose-400"><CountUp value={live.length} /></div>
@@ -176,8 +231,8 @@ export default function Streamers() {
           <div className="mt-1 flex items-center gap-2 font-display text-2xl font-bold"><Users size={18} className="text-mint-400" /><LiveValue value={totalViewers} format={fmtNum} /></div>
         </Card>
         <Card spotlight className="p-4">
-          <div className="text-[12px] uppercase tracking-wider text-white/45">Roster Tracked</div>
-          <div className="mt-1 flex items-center gap-2 font-display text-2xl font-bold"><Radio size={18} className="text-violet-400" /><CountUp value={data?.roster ?? 0} /></div>
+          <div className="text-[12px] uppercase tracking-wider text-white/45">Streamers Tracked</div>
+          <div className="mt-1 flex items-center gap-2 font-display text-2xl font-bold"><Radio size={18} className="text-violet-400" /><CountUp value={data?.collected ?? all.length} /></div>
         </Card>
       </Reveal>
 
@@ -226,18 +281,25 @@ export default function Streamers() {
 
       <div className="mt-4">
         {loading ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-44 w-full" />)}</div>
+          <Card className="p-2">{Array.from({ length: 10 }).map((_, i) => <Skeleton key={i} className="mb-1.5 h-12 w-full" />)}</Card>
         ) : all.length === 0 ? (
           <Card className="p-8"><EmptyState icon={<Radio size={34} />} title="Roster is warming up" hint="The Kick collector polls one channel every 8 seconds — first data lands within a minute of boot." /></Card>
         ) : (
-          <Reveal as="div" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {all.map((s) => <StreamerCard key={s.id} s={s} onOpen={() => setSelected({ platform: s.platform, slug: s.id.includes(':') ? s.id.split(':')[1] : s.handle })} />)}
-          </Reveal>
+          <Card className="overflow-hidden p-0">
+            <div className="flex items-center justify-between border-b border-white/8 px-3 py-2 text-[11px] uppercase tracking-wider text-white/40">
+              <span>{all.length} shown{data?.collected ? ` · ${fmtNum(data.collected)} tracked` : ''} · live first</span>
+              <span className="hidden sm:inline">live / verified / affiliated / 10k+ · click to watch</span>
+            </div>
+            {all.map((s) => (
+              <StreamerListItem key={s.id} s={s} onProfile={() => setSelected({ platform: s.platform, slug: channelSlug(s) })} />
+            ))}
+          </Card>
         )}
       </div>
       <p className="mt-3 text-[12px] text-white/35">
-        Kick, Twitch & YouTube data is collected keyless from public sources. Click any streamer for their profile,
-        socials and casino affiliation. Affiliations are detected from stream titles/bios against watchlist casino labels.
+        Kick, Twitch & YouTube data is collected keyless from public sources. Click any row to open the live channel;
+        the search icon opens that streamer's profile (bio, socials, casino affiliation). Affiliations are detected from
+        stream titles/bios against watchlist casino labels.
       </p>
       {selected && <StreamerDetailModal platform={selected.platform} slug={selected.slug} onClose={() => setSelected(null)} />}
     </div>

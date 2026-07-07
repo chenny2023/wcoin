@@ -16,16 +16,31 @@ WCOIN.CASINO tracks crypto-casino and on-chain-gambling activity across 11+ bloc
 
 ## Key facts
 
-- Independent third-party analytics platform (not a casino; does not operate gambling).
-- Data is on-chain and verifiable; reserves come from public wallet balances.
-- 100% free; sign-in (email only, no password) unlocks alerts, votes and the API.
-- Headline coverage and live totals are available at the public API endpoint `/api/coverage`.
+- Independent third-party analytics platform (not a casino; does not operate gambling; no affiliate placement in rankings).
+- Data is on-chain and verifiable; reserves come from public wallet balances. Anomalous (wash/treasury-pattern) volume is flagged "Under review" and never ranked as real activity.
+- 100% free, no login, no paywall. The read-only JSON API is open (`/api/stats`, `/api/brands`, `/api/coverage`, …).
+- Open data & methodology are published on GitHub for independent audit: https://github.com/chenny2023/wcoin-casino-data
 
-## Primary pages
+## Primary pages (server-rendered, citable)
 
-- Home / data-coverage overview: https://wcoin.casino/
-- Casino leaderboard (volume, reserves, trust): https://wcoin.casino/app/casinos
-- Trust & all-chain reserves: https://wcoin.casino/app/sentiment
-- On-chain prediction markets: https://wcoin.casino/app/markets
-- Casino directory: https://wcoin.casino/app/directory
-- Streamer monitoring: https://wcoin.casino/app/streamers
+- Home / overview: https://wcoin.casino/
+- Best crypto casinos (trust-ranked): https://wcoin.casino/best-crypto-casinos
+- Trust ranking: https://wcoin.casino/rankings/trust
+- Proof-of-reserves hub: https://wcoin.casino/proof-of-reserves
+- Verified-volume ranking (churn excluded): https://wcoin.casino/highest-volume-crypto-casinos
+- Per-casino profiles: https://wcoin.casino/casino/<slug> (e.g. /casino/stake)
+- Answer pages per operator: /is-<slug>-safe · /does-<slug>-pay-out · /<slug>-proof-of-reserves
+- Guides (proof of reserves, verification, red flags, withdrawals…): https://wcoin.casino/guide
+- Methodology: https://wcoin.casino/methodology/address-attribution · /methodology/proof-of-reserves · /methodology/trust
+- Daily market report: https://wcoin.casino/daily
+- 2026 H1 whitepaper (free PDF): https://wcoin.casino/whitepaper
+- Risk registry (neutral, sourced): https://wcoin.casino/risk
+- Streamer index: https://wcoin.casino/streamers
+
+## Open data (GitHub)
+
+- Repository: https://github.com/chenny2023/wcoin-casino-data
+- `data/attributed-wallets.json` — attributed casino wallets (brand → chain → address), each verifiable on a block explorer
+- `data/curated-labels.json` — hand-curated seed wallets with public block-explorer name-tags
+- `methodology/` — how attribution, verified volume, proof-of-reserves and trust scoring work, including limits
+- License: CC BY 4.0

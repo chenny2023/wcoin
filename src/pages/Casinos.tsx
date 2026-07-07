@@ -392,7 +392,12 @@ export default function Casinos() {
       .filter((c) => c.attributed !== false) // exclude only KNOWN-unattributed; keep everything else
       .filter((c) => c.name.toLowerCase().includes(q.toLowerCase()))
       .filter((c) => cat === 'all' || c.category === cat)
-      .sort((a, b) => (b[sort] as number) - (a[sort] as number))
+      .sort((a, b) => {
+        // volume sort: suspect (wash/treasury-pattern) volume never ranks as if real —
+        // demote suspect rows below all verified ones, then sort within each group.
+        if (sort === 'volume7d' && !!a.volumeSuspect !== !!b.volumeSuspect) return a.volumeSuspect ? 1 : -1
+        return (b[sort] as number) - (a[sort] as number)
+      })
   }, [view, brandData, entityData, q, sort, cat])
 
   const cats = ['all', 'casino', 'exchange', 'whale', 'other']
@@ -506,7 +511,7 @@ export default function Casinos() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3 font-semibold tabular-nums">{fmtUsd(c.volume7d)}</td>
+                        <td className="px-4 py-3 font-semibold tabular-nums">{c.volumeSuspect ? <span className="text-[12px] font-medium text-white/40" title="Anomalous pattern — not shown as real player volume">Under review</span> : fmtUsd(c.volume7d)}</td>
                         <td className="px-4 py-3"><ChainDist byChain={c.byChain} /></td>
                         <td className="px-4 py-3"><Delta value={c.change24h} /></td>
                         <td className={`px-4 py-3 font-semibold tabular-nums ${c.net7d >= 0 ? 'text-mint-400' : 'text-rose-400'}`}>

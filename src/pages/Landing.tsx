@@ -225,8 +225,9 @@ export default function Landing() {
               The <span className="text-gradient-gold">Intelligence Layer</span><br />for iGaming
             </h1>
             <p className="mx-auto mt-5 max-w-xl text-base text-white/55 sm:text-lg">
-              The most complete on-chain data layer for crypto casinos — real-time volume, all-chain
-              proof-of-reserves, trust ratings & streamer signals. Free, summarised every day.
+              Tracking <span className="font-semibold text-white/80">{fmtNum(stats?.casinosTracked ?? 0)} crypto casinos</span> — real-time on-chain
+              volume, all-chain proof-of-reserves, trust ratings & streamer signals.{' '}
+              <span className="font-semibold text-gold-400">100% free, no paywall.</span>
             </p>
             {/* Lead CTA: daily report email capture */}
             <EmailCapture />
