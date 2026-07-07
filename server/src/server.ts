@@ -69,6 +69,7 @@ import { startStatsMaintenance } from './aggregate.ts'
 // ⚠️ 内部「Whale Growth」社媒情报工具已拆分为独立服务（wcoin-whale，自有 DB/进程/litestream），
 // 不再随主站运行 —— 杜绝采集/分类的重写入与主站抢同一把 SQLite 写锁。源码仍保留在 internal/ 仅供参考。
 // 面板新地址：https://wcoin-whale-production.up.railway.app/internal/social
+import { edanicFastifyHook } from '../../edanic-seo/edanic-ssr.mjs' // Edanic: server-render answer pages (content/*.md)
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const distDir = join(__dirname, '../../dist')
@@ -121,6 +122,7 @@ async function main() {
   registerSeo(app)
   registerIndexNow(app) // serve the IndexNow key file (search-engine ownership proof)
   // registerSocialIntel: 已拆到独立服务 wcoin-whale（/internal/social 不再由主站提供）
+  app.addHook('onRequest', edanicFastifyHook) // Edanic: SSR /answers/* pages BEFORE the SPA fallback (own slugs only, else passthrough)
 
   // Serve the built SPA in production (single-process deploy). Vite emits
   // content-hashed asset filenames, so they're safe to cache hard (immutable);
