@@ -1197,9 +1197,29 @@ ${hasUnattributed ? `<h2>Unattributed flow</h2><p class="prose">Pattern-detected
 }
 
 // ── chains ────────────────────────────────────────────────────────────────────
+// Real per-chain settlement characteristics for crypto-casino deposits/withdrawals.
+// Factual (block time / fee level / stablecoin support / how casinos actually use the
+// chain) — this is context, not padding, and makes every qualifying chain page a
+// substantive, indexable answer rather than a bare table.
+const CHAIN_FACTS: Record<string, { speed: string; fee: string; why: string }> = {
+  eth: { speed: 'blocks every ~12 seconds, final in a minute or two', fee: 'gas can run several dollars and spikes with congestion', why: 'Casinos use Ethereum for larger transfers and for the reputation and deep liquidity of ERC-20 USDT/USDC, less for high-frequency small deposits where the gas fee bites. It is the security-and-liquidity chain, not the cheap-and-fast one.' },
+  tron: { speed: 'confirms in seconds', fee: 'fees of cents or effectively free', why: 'USDT-TRC20 on Tron is the single most-used crypto-casino deposit rail in the world — cheap, fast and dollar-stable. If an operator settles a lot of small player flow, it is almost certainly doing it here. This is the default stablecoin rail for casino play.' },
+  bsc: { speed: '~3-second blocks', fee: 'fees of a few cents', why: 'High throughput and very low cost make BNB Chain a common casino settlement venue for BEP-20 stablecoins — second-tier to Tron for stablecoin deposits but widely supported.' },
+  polygon: { speed: 'a few seconds to confirm', fee: 'fees of a fraction of a cent', why: 'A low-fee EVM network increasingly used by casinos for cheap USDT/USDC play, combining Ethereum-compatible tooling with negligible transaction costs.' },
+  sol: { speed: 'sub-second finality', fee: 'sub-cent fees', why: 'Solana pairs near-instant settlement with tiny fees and native USDC, making it a fast-growing casino deposit and payout venue for players who want speed.' },
+  base: { speed: 'a couple of seconds to confirm', fee: 'fees of a fraction of a cent', why: "Coinbase's Ethereum L2 — cheap, fast and USDC-native. A newer but rapidly-growing casino settlement chain, attractive for low-fee stablecoin play." },
+  btc: { speed: '~10-minute blocks (casinos usually wait 1–3 confirmations)', fee: 'fees that vary with mempool congestion', why: "Native Bitcoin casinos exist and appeal to players who already hold BTC or value censorship-resistance, but Bitcoin is a small single-digit share of actual deposit flow compared with stablecoins — it suits large, infrequent transfers more than frequent play." },
+  arb: { speed: 'fast, near-instant confirmation', fee: 'fees of cents', why: 'An Ethereum L2 with deep USDC/USDT liquidity at low fees — used by casinos that want Ethereum-ecosystem assets without mainnet gas costs.' },
+  avax: { speed: 'sub-second finality', fee: 'low fees', why: 'A fast-finality chain with USDT/USDC support — a smaller but active casino settlement venue.' },
+  op: { speed: 'fast confirmation', fee: 'low fees', why: 'An Ethereum L2 (OP Stack) with USDC support and low fees — a smaller casino settlement venue in the Ethereum L2 family.' },
+  sei: { speed: 'fast finality', fee: 'low fees', why: 'A newer high-performance chain seeing early casino settlement activity.' },
+  xrp: { speed: 'settles in seconds', fee: 'negligible fees', why: 'The XRP Ledger settles quickly and cheaply; a smaller share of casino activity settles here.' },
+}
+
 function chainPage(chain: string, brands: BrandAgg[], slugOfBrand: (b: BrandAgg) => string): { title: string; description: string; html: string } {
   const name = chainName(chain)
-  const url = `${SITE}/chains/${slugify(chain)}`
+  const cslug = slugify(chain)
+  const url = `${SITE}/chains/${cslug}`
   const onChain = brands
     // volume IS the ranking basis here, so anomalous (wash/treasury-pattern) operators
     // are excluded outright — flag+demote, never rank suspect volume as if real.
@@ -1210,21 +1230,36 @@ function chainPage(chain: string, brands: BrandAgg[], slugOfBrand: (b: BrandAgg)
     .slice(0, 30)
   const total = onChain.reduce((s, x) => s + x.v, 0)
   const max = Math.max(...onChain.map((x) => x.v), 1)
-  const title = `${name} crypto casinos — on-chain volume & reserves | WCOIN.CASINO`
-  const description = `Crypto-casino activity on ${name}: ${fmtUsd(total)} tracked 7-day volume across ${onChain.length} operators. Live on-chain data, updated continuously.`
+  const facts = CHAIN_FACTS[cslug]
+  const leader = onChain.slice(0, 3).map((x) => x.e.brand).join(', ')
+  const title = `${name} Crypto Casinos ${YEAR} — On-Chain Volume by Operator | WCOIN.CASINO`
+  const description = `Crypto casinos settling on ${name}: ${fmtUsd(total)} tracked 7-day on-chain volume across ${onChain.length} operators${leader ? ` (top: ${leader})` : ''}. Verified on-chain data — internal churn and wash/treasury flow excluded. Updated continuously.`
   const trows = onChain
     .map(
       (x, i) =>
         `<tr><td class="n" style="text-align:left;color:var(--dim);width:34px">${i + 1}</td><td><a href="/casino/${slugOfBrand(x.e)}">${esc(x.e.brand)}</a></td><td class="n">${fmtUsd(x.v)}</td><td style="width:120px"><div class="bar"><span style="width:${Math.max(3, (x.v / max) * 100)}%"></span></div></td></tr>`,
     )
     .join('')
+  const factsBlock = facts
+    ? `<h2>${esc(name)} for crypto-casino settlement</h2><p class="prose">On ${esc(name)}, transactions ${facts.speed}, with ${facts.fee}. ${facts.why} We track ${onChain.length} operator${onChain.length === 1 ? '' : 's'} with real settlement activity on ${esc(name)}, totalling ${fmtUsd(total)} of verified 7-day volume — internal hot-wallet churn, casino-to-casino double counts and <a href="/guide/wash-trading-in-crypto-casinos-explained">wash/treasury flow</a> excluded, so the figure reflects genuine player activity.</p>`
+    : ''
   const body = `
-<p class="sub">Tracked crypto-casino transaction volume settled on <strong>${esc(name)}</strong>, by operator (7-day window).</p>
-<p class="upd">${onChain.length} operators · ${fmtUsd(total)} total 7d volume · <a href="/rankings">all rankings</a></p>
+<p class="sub">Crypto casinos with tracked on-chain settlement on <strong>${esc(name)}</strong>, ranked by verified 7-day volume.</p>
+<p class="upd">${onChain.length} operators · ${fmtUsd(total)} total verified 7d volume · <a href="/rankings">all rankings</a></p>
 <table><thead><tr><th>#</th><th>Operator</th><th style="text-align:right">7d volume on ${esc(name)}</th><th></th></tr></thead><tbody>${trows}</tbody></table>
-<p class="prose" style="margin-top:22px">This is on-chain settlement volume attributed to casino wallets on ${esc(name)} — see the <a href="/methodology/on-chain-volume">volume methodology</a> for how it's measured, or the live <a href="/app/blockchain">on-chain feed</a>.</p>`
+${factsBlock}
+<h2>How to read this</h2><p class="prose">This is on-chain settlement volume attributed to casino wallets on ${esc(name)} — verified deposits and withdrawals, not inflated throughput. Volume is easily wash-traded, so it is a measure of <em>activity</em>, not trustworthiness: rank operators by independent trust and verifiable <a href="/proof-of-reserves">reserves</a> before depositing, not by volume alone. See the <a href="/methodology/on-chain-volume">volume methodology</a>, the trust-ranked <a href="/rankings/best-on-${cslug}">best ${esc(name)} casinos</a> where available, or the live <a href="/app/blockchain">on-chain feed</a>.</p>`
+  const faqs = [
+    { q: `Which crypto casinos use ${name}?`, a: `We track ${onChain.length} operator${onChain.length === 1 ? '' : 's'} settling real volume on ${name}${leader ? `, led by ${leader}` : ''}. The full ranked list with per-operator 7-day volume is above; each links to that operator's on-chain profile.` },
+    ...(facts ? [{ q: `Is ${name} good for crypto-casino deposits?`, a: `On ${name}, transactions ${facts.speed} with ${facts.fee}. ${facts.why}` }] : []),
+    { q: `How much crypto-casino volume settles on ${name}?`, a: `Currently ${fmtUsd(total)} of verified 7-day volume across ${onChain.length} tracked operator${onChain.length === 1 ? '' : 's'} — with internal churn, double counts and wash/treasury flow excluded, so it reflects genuine player activity rather than inflated throughput.` },
+  ]
   const chUpdated = Date.now()
-  const jsonLd = [datasetLd(`${name} crypto-casino on-chain volume`, description, url, chUpdated, ['7d on-chain volume', 'per-operator settlement'])]
+  const jsonLd = [
+    datasetLd(`${name} crypto-casino on-chain volume`, description, url, chUpdated, ['7d on-chain volume', 'per-operator settlement']),
+    { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faqs.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a.replace(/<[^>]+>/g, '') } })) },
+  ]
+  const bodyWithFaq = body + `<h2>FAQ</h2>` + faqs.map((f) => `<h3 style="font-size:15px;margin:14px 0 4px">${esc(f.q)}</h3><p class="prose">${f.a}</p>`).join('')
   return {
     title,
     description,
@@ -1238,9 +1273,9 @@ function chainPage(chain: string, brands: BrandAgg[], slugOfBrand: (b: BrandAgg)
         { name: 'Chains', url: SITE + '/rankings' },
         { name, url },
       ],
-      h1: `${name} crypto casinos`,
+      h1: `${name} crypto casinos ${YEAR}`,
       updated: chUpdated,
-      body,
+      body: bodyWithFaq,
     }),
   }
 }
