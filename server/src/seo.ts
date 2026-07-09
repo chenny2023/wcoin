@@ -2334,6 +2334,10 @@ export async function generateSeoPages(): Promise<void> {
     if (a) a.push(val)
     else m.set(k, [val])
   }
+  // refresh the slug→view index so /compare/:slug can render on demand (see
+  // renderCompareOnDemand) for any pair of still-profiled operators.
+  compareIndex.clear()
+  for (const v of cap) compareIndex.set(slugOfView(v), v)
   const COMPARE_TOP_K = Number(process.env.SEO_COMPARE_TOP_K ?? 22)
   const strong = cap.filter((v) => dataConfidence(v) !== 'low')
   const qScore = (v: CasinoView) => (blendedTrust(v)?.score ?? 0) * 1e12 + (v.onchain?.volume7d ?? 0)
@@ -3425,7 +3429,33 @@ export async function generateSeoPages(): Promise<void> {
   // chains
   for (const cs of chainSet) if (cs) add(`/chains/${cs}`, 'chains', chainPage(cs, onchainBrands, slugOfBrand))
   await yieldLoop()
-  // high-intent comparison pages ("X vs Y") — top-K strongest operators, all pairs
+  // Sticky compare set: a pair leaves top-K as ranks shift, but if BOTH operators
+  // still have a profile the page must not 404 (Google indexed it). Revive every
+  // already-generated /compare/ page whose two brands still resolve, so the set grows
+  // monotonically and never dead-ends a previously-indexed URL. Bounded: only pages
+  // that already exist are revived — never new pairs beyond top-K.
+  {
+    const slugView = new Map<string, CasinoView>()
+    for (const v of cap) slugView.set(slugOfView(v), v)
+    const queued = new Set(comparePairs.map((p) => `${p.slugA}-vs-${p.slugB}`))
+    const existing = db.prepare("SELECT path FROM seo_page WHERE kind='compare'").all() as { path: string }[]
+    for (const { path } of existing) {
+      const key = path.replace('/compare/', '')
+      if (queued.has(key)) continue
+      const i = key.indexOf('-vs-')
+      if (i < 0) continue
+      const s1 = key.slice(0, i)
+      const s2 = key.slice(i + 4)
+      const v1 = slugView.get(s1)
+      const v2 = slugView.get(s2)
+      if (!v1 || !v2 || v1 === v2) continue // a brand was genuinely delisted → let it 404
+      const [slugA, slugB] = [s1, s2].sort()
+      comparePairs.push({ a: s1 === slugA ? v1 : v2, b: s1 === slugA ? v2 : v1, slugA, slugB })
+      queued.add(key)
+    }
+  }
+  // high-intent comparison pages ("X vs Y") — top-K strongest operators, all pairs,
+  // plus the sticky-revived pairs above.
   for (let i = 0; i < comparePairs.length; i++) {
     const p = comparePairs[i]
     add(`/compare/${p.slugA}-vs-${p.slugB}`, 'compare', comparePage(p.a, p.b, p.slugA, p.slugB))
@@ -3568,6 +3598,33 @@ export function getPage(path: string): { html: string } | null {
   return db.prepare('SELECT html FROM seo_page WHERE path=?').get(path) as { html: string } | null
 }
 
+// In-memory slug→view index, rebuilt on every SEO generation. Lets /compare/:slug
+// render a comparison ON DEMAND when its pre-generated page was pruned — a pair drops
+// out of the top-K set as trust/volume ranks shift, but if BOTH operators still have a
+// profile the page must never 404 (Google may have already indexed it).
+const compareIndex = new Map<string, CasinoView>()
+function renderCompareOnDemand(slug: string): { html: string } | null {
+  const i = slug.indexOf('-vs-')
+  if (i < 0) return null
+  const s1 = slug.slice(0, i)
+  const s2 = slug.slice(i + 4)
+  const v1 = compareIndex.get(s1)
+  const v2 = compareIndex.get(s2)
+  if (!v1 || !v2 || v1 === v2) return null // a brand was genuinely delisted → 404 is correct
+  const [slugA, slugB] = [s1, s2].sort() // canonical order (matches how the page is stored)
+  const a = s1 === slugA ? v1 : v2
+  const b = a === v1 ? v2 : v1
+  const pg = comparePage(a, b, slugA, slugB)
+  // Self-heal: persist so the page re-enters the sitemap and the next regeneration's
+  // sticky pass keeps it alive. Best-effort — a failed write still serves the 200.
+  try {
+    upsert.run({ path: `/compare/${slugA}-vs-${slugB}`, kind: 'compare', title: pg.title, description: pg.description, html: pg.html, hash: contentHash(pg.html), now: Date.now(), lifecycle: 'public_indexable' })
+  } catch {
+    /* best-effort persistence */
+  }
+  return { html: pg.html }
+}
+
 // dynamic sitemap merging the static core URLs + every generated SEO page
 function buildSitemap(): string {
   // Only public, server-rendered pages belong here. The /app/* dashboard routes are
@@ -3599,8 +3656,8 @@ function buildSitemap(): string {
 const HTML_CACHE = 'public, max-age=600, stale-while-revalidate=86400'
 
 export function registerSeo(app: FastifyInstance) {
-  const serve = (kind: string) => async (req: any, reply: any) => {
-    const page = getPage(req.url.split('?')[0])
+  const serve = (kind: string, onMiss?: (req: any) => { html: string } | null) => async (req: any, reply: any) => {
+    const page = getPage(req.url.split('?')[0]) ?? (onMiss ? onMiss(req) : null)
     if (page) return reply.type('text/html; charset=utf-8').header('Cache-Control', HTML_CACHE).send(page.html)
     return reply
       .code(404)
@@ -3623,7 +3680,7 @@ export function registerSeo(app: FastifyInstance) {
     return reply.header('Content-Type', 'image/png').header('Cache-Control', 'public, max-age=86400').send(ogPng)
   })
   app.get('/casino/:slug', serve('casino'))
-  app.get('/compare/:slug', serve('compare'))
+  app.get('/compare/:slug', serve('compare', (req) => renderCompareOnDemand(String(req.params?.slug ?? ''))))
   // entity review pages (keyword-rich slugs need explicit routes; the catch-all SPA
   // would otherwise swallow them) — see ENTITY_REVIEW
   for (const s of ENTITY_REVIEW_SLUGS) {
