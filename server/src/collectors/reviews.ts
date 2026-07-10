@@ -110,12 +110,23 @@ function domainOf(brand: string): string | null {
   }
 }
 
-// brand name → candidate casino.guru slugs ("BC.Game" → bc-game / bcgame)
+// brand name → candidate casino.guru slugs. Generates several forms because the site's
+// slug isn't 1:1 with the brand name: "BC.Game" → bc-game/bcgame; "Bitcasino.io" →
+// bitcasino-io/bitcasino (TLD dropped); "500 Casino"/"Solcasino" → 500/sol (trailing
+// "casino" word dropped, since the URL template re-adds "-casino-review"). Extra
+// candidates are safe — the brand-mismatch guard in the caller rejects wrong pages.
 function slugCandidates(name: string): string[] {
   const base = name.toLowerCase().trim()
-  const hyphen = base.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-  const plain = base.replace(/[^a-z0-9]+/g, '')
-  return [...new Set([hyphen, plain])].filter(Boolean)
+  const forms = new Set<string>([base])
+  forms.add(base.replace(/\.(io|com|gg|us|net|co|org|bet|games?)$/, '')) // drop a TLD-ish suffix
+  forms.add(base.replace(/[\s.]*casino$/, '').trim()) // drop a trailing "casino" word
+  const out = new Set<string>()
+  for (const f of forms) {
+    if (!f) continue
+    out.add(f.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')) // hyphenated
+    out.add(f.replace(/[^a-z0-9]+/g, '')) // squashed
+  }
+  return [...out].filter(Boolean)
 }
 
 function parseSafetyIndex(t: string): { score: number; reviewed: string } | null {
@@ -180,32 +191,45 @@ async function fetchSafetyIndex(slug: string): Promise<GuruTrust | null> {
   // (2) a given random proxy may be slow/dead — so on a timeout/transient HTTP
   // error we RETRY, and since webFetch picks a fresh random agent each call the
   // retry rolls onto a different proxy. A 404 (wrong slug) is a real miss → null.
+  // casino.guru uses TWO URL shapes: "{slug}-casino-review" (most brands) AND
+  // "{slug}-review" (brands whose slug already carries the name, e.g. Bitcasino.io →
+  // "bitcasino-io-review"). We try both before concluding a miss — the old code only
+  // built the first, so a whole class of real casinos 404'd forever.
+  const urls = [`https://casino.guru/${slug}-casino-review`, `https://casino.guru/${slug}-review`]
   let lastErr: Error | null = null
   // 5 (not 3) attempts: webFetch rolls a fresh random proxy each call, so a 403 from a
   // datacenter-flagged IP is retried onto a different one. Extra passes cut the "all
   // proxies bad" miss rate roughly an order of magnitude; the retry path is rare and
   // the page is gzipped (~80KB on the wire), so the added cost is negligible.
   for (let attempt = 0; attempt < 5; attempt++) {
-    try {
-      const res = await webFetch(`https://casino.guru/${slug}-casino-review`, {
-        headers: { 'User-Agent': UA, 'Accept-Encoding': 'gzip, deflate' },
-        signal: AbortSignal.timeout(30_000),
-      })
-      if (res.status === 404) return null
-      if (res.status !== 200) throw new Error(`casino.guru HTTP ${res.status}`)
-      const t = await res.text()
-      const si = parseSafetyIndex(t) // 200 with no rating block → genuine null
-      if (!si) return null
-      return {
-        ...si,
-        complaints: numberBefore(t, 'complaints about this casino'),
-        unresolved: numberNear(t, 'unresolved'),
-        userReviews: numberBefore(t, 'user reviews'),
+    let allDefiniteMiss = true // both shapes returned a real 404 / 200-no-rating (no transient error)
+    for (const url of urls) {
+      try {
+        const res = await webFetch(url, {
+          headers: { 'User-Agent': UA, 'Accept-Encoding': 'gzip, deflate' },
+          signal: AbortSignal.timeout(30_000),
+        })
+        if (res.status === 404) continue // this shape doesn't exist — try the other
+        if (res.status !== 200) {
+          allDefiniteMiss = false
+          throw new Error(`casino.guru HTTP ${res.status}`)
+        }
+        const t = await res.text()
+        const si = parseSafetyIndex(t)
+        if (!si) continue // 200 but no rating block on this shape — try the other
+        return {
+          ...si,
+          complaints: numberBefore(t, 'complaints about this casino'),
+          unresolved: numberNear(t, 'unresolved'),
+          userReviews: numberBefore(t, 'user reviews'),
+        }
+      } catch (e) {
+        allDefiniteMiss = false
+        lastErr = e as Error
       }
-    } catch (e) {
-      lastErr = e as Error
-      await new Promise((r) => setTimeout(r, 500)) // brief pause, then a fresh proxy
     }
+    if (allDefiniteMiss) return null // both shapes are a genuine miss → stop, don't retry
+    await new Promise((r) => setTimeout(r, 500)) // transient error somewhere → fresh proxy, retry
   }
   throw lastErr ?? new Error('casino.guru fetch failed')
 }
@@ -497,6 +521,15 @@ export function startReviews() {
       const n = db.prepare("UPDATE reviews SET updated_at = 0 WHERE source = 'trustpilot'").run().changes
       stateSet('reviews:trustpilot:residential:v1', 1)
       if (n) console.log(`[reviews] marked ${n} trustpilot rows stale to re-fetch live via residential proxy`)
+    }
+    // one-time: drop cached casino.guru misses (score=0) so the new dual-URL slug
+    // logic ({slug}-review as well as {slug}-casino-review) re-attempts them now
+    // instead of waiting out the 7-day refresh — recovers real Safety Indexes for
+    // brands like Bitcasino.io whose URL shape the old fetcher could never build.
+    if (!stateGet('reviews:slugfix:v1')) {
+      const n = db.prepare("DELETE FROM reviews WHERE source = 'casino.guru' AND score = 0").run().changes
+      stateSet('reviews:slugfix:v1', 1)
+      if (n) console.log(`[reviews] cleared ${n} casino.guru 0-score misses to re-fetch with dual-URL slug logic`)
     }
   } catch {
     /* non-fatal */
