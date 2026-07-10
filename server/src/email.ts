@@ -1,5 +1,4 @@
 import nodemailer, { type Transporter } from 'nodemailer'
-import { webFetch } from './net.ts'
 import { config } from './config.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -78,10 +77,17 @@ async function sendViaSmtp(email: string, b: ReturnType<typeof bodies>): Promise
 
 async function sendViaResend(email: string, b: ReturnType<typeof bodies>): Promise<boolean> {
   try {
-    const res = await webFetch('https://api.resend.com/emails', {
+    // DIRECT fetch, NOT the webFetch proxy pool. Railway egress reaches api.resend.com
+    // fine; routing transactional email through the rotating residential proxy only
+    // added an intermittent failure mode (a flaky proxy meant the request never reached
+    // Resend — silent non-delivery with nothing in the Resend dashboard). Verified: a
+    // direct POST returns 200 + an email id. The proxy is for GFW-blocked/IP-blocked
+    // open-web scrapes, not our own outbound API calls.
+    const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${config.resendApiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ from: config.resendFrom, to: [email], subject: b.subject, html: b.html, text: b.text }),
+      signal: AbortSignal.timeout(15_000),
     })
     if (!res.ok) {
       const body = await res.text().catch(() => '')
