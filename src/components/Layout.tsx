@@ -231,7 +231,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
 
         <footer className="border-t border-white/6 px-6 py-5 text-center text-[12px] text-white/30">
-          © 2026 Tekel Data — The Intelligence Layer for iGaming · Live on-chain data across 9 chains
+          © 2026 Tekel Data — The Transparent Data Layer for iGaming · Live on-chain data across 9 chains
         </footer>
       </div>
     </div>

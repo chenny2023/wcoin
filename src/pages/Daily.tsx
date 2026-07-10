@@ -712,7 +712,7 @@ export default function Daily() {
       <footer className="border-t border-white/7 bg-ink-900/40">
         <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 px-5 py-8 sm:flex-row">
           <Logo />
-          <p className="text-sm text-white/40">© 2026 Tekel Data — The Intelligence Layer for iGaming</p>
+          <p className="text-sm text-white/40">© 2026 Tekel Data — The Transparent Data Layer for iGaming</p>
           <Link to="/" className="text-sm text-white/50 hover:text-white">
             ← Back home
           </Link>

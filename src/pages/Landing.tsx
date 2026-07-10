@@ -70,9 +70,9 @@ function CoverageBoard() {
     <section className="mx-auto max-w-7xl px-5 py-14">
       <Reveal className="mx-auto mb-8 max-w-2xl text-center">
         <h2 className="font-display text-2xl font-bold tracking-tight sm:text-3xl">
-          The web's <span className="text-gradient-gold">most complete</span> iGaming dataset
+          Nothing self-reported. <span className="text-gradient-gold">Everything verifiable.</span>
         </h2>
-        <p className="mt-2 text-sm text-white/55">On-chain truth + reviews + social — one layer, fully verifiable.</p>
+        <p className="mt-2 text-sm text-white/55">On-chain reserves + wash-filtered volume + multi-source trust — one transparent layer you can re-check yourself.</p>
       </Reveal>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {tiles.map((t, i) => (
@@ -219,15 +219,17 @@ export default function Landing() {
         <div className="relative mx-auto max-w-7xl px-5 pb-14 pt-16 sm:pt-24">
           <div className="mx-auto max-w-3xl text-center">
             <span className="inline-flex items-center gap-2 rounded-full border border-gold-500/30 bg-gold-500/10 px-3 py-1 text-[12px] font-semibold uppercase tracking-wider text-gold-400">
-              <Globe size={13} /> Predict · Play · Win the World
+              <Globe size={13} /> Weighed in the balance · Transparent iGaming data
             </span>
             <h1 className="mt-5 font-display text-4xl font-bold leading-[1.05] tracking-tight sm:text-6xl">
-              The <span className="text-gradient-gold">Intelligence Layer</span><br />for iGaming
+              The <span className="text-gradient-gold">Transparent</span> Data<br />Layer for iGaming
             </h1>
             <p className="mx-auto mt-5 max-w-xl text-base text-white/55 sm:text-lg">
-              Tracking <span className="font-semibold text-white/80">{fmtNum(stats?.casinosTracked ?? 0)} crypto casinos</span> — real-time on-chain
-              volume, all-chain proof-of-reserves, trust ratings & streamer signals.{' '}
-              <span className="font-semibold text-gold-400">100% free, no paywall.</span>
+              iGaming runs on opacity, fraud &amp; noise. We're the opposite — every operator's
+              reserves, wash-filtered volume &amp; trust across{' '}
+              <span className="font-semibold text-white/80">{fmtNum(stats?.casinosTracked ?? 0)} casinos</span>, measured on-chain and
+              verifiable yourself.{' '}
+              <span className="font-semibold text-gold-400">Weigh the data yourself.</span>
             </p>
             {/* Lead CTA: daily report email capture */}
             <EmailCapture />
@@ -400,7 +402,7 @@ export default function Landing() {
       <footer className="border-t border-white/7 bg-ink-900/40">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-5 py-8 sm:flex-row">
           <Logo />
-          <p className="text-sm text-white/40">© 2026 Tekel Data — The Intelligence Layer for iGaming</p>
+          <p className="text-sm text-white/40">© 2026 Tekel Data — The Transparent Data Layer for iGaming</p>
           <div className="flex gap-5 text-sm text-white/50">
             <Link to="/app" className="hover:text-white">Dashboard</Link>
             <Link to="/daily" className="hover:text-white">Daily report</Link>

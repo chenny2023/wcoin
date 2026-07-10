@@ -19,7 +19,7 @@ Tekel Data tracks crypto-casino and on-chain-gambling activity across 11+ blockc
 - Independent third-party analytics platform (not a casino; does not operate gambling; no affiliate placement in rankings).
 - Data is on-chain and verifiable; reserves come from public wallet balances. Anomalous (wash/treasury-pattern) volume is flagged "Under review" and never ranked as real activity.
 - 100% free, no login, no paywall. The read-only JSON API is open (`/api/stats`, `/api/brands`, `/api/coverage`, …).
-- Open data & methodology are published on GitHub for independent audit: https://github.com/chenny2023/wcoin-casino-data
+- Open data & methodology are published on GitHub for independent audit: https://github.com/chenny2023/tekeldata-open-data
 
 ## Primary pages (server-rendered, citable)
 
@@ -33,13 +33,12 @@ Tekel Data tracks crypto-casino and on-chain-gambling activity across 11+ blockc
 - Guides (proof of reserves, verification, red flags, withdrawals…): https://tekeldata.com/guide
 - Methodology: https://tekeldata.com/methodology/address-attribution · /methodology/proof-of-reserves · /methodology/trust
 - Daily market report: https://tekeldata.com/daily
-- 2026 H1 whitepaper (free PDF): https://tekeldata.com/whitepaper
 - Risk registry (neutral, sourced): https://tekeldata.com/risk
 - Streamer index: https://tekeldata.com/streamers
 
 ## Open data (GitHub)
 
-- Repository: https://github.com/chenny2023/wcoin-casino-data
+- Repository: https://github.com/chenny2023/tekeldata-open-data
 - `data/attributed-wallets.json` — attributed casino wallets (brand → chain → address), each verifiable on a block explorer
 - `data/curated-labels.json` — hand-curated seed wallets with public block-explorer name-tags
 - `methodology/` — how attribution, verified volume, proof-of-reserves and trust scoring work, including limits

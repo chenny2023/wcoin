@@ -484,7 +484,7 @@ export async function registerApi(app: FastifyInstance) {
 
   // Full daily-snapshot archive (one row per day since the daily report launched).
   // The transfers table only retains a rolling window, so THIS is the long-run
-  // trend source — used by the whitepaper/open-data exports. Public read-only.
+  // trend source — used by the open-data exports. Public read-only.
   app.get('/api/snapshot/archive', async (_req, reply) => {
     const rows = db
       .prepare(
@@ -1276,7 +1276,7 @@ export async function registerApi(app: FastifyInstance) {
   })
 
   // ── open-data export: per-wallet provenance ──────────────────────────────────
-  // Public, read-only. Feeds github.com/chenny2023/wcoin-casino-data: every active
+  // Public, read-only. Feeds github.com/chenny2023/tekeldata-open-data: every active
   // casino wallet with its evidence source and first-seen date, plus the infra
   // denylist (known non-casino contracts excluded from attribution). Lean columns;
   // brand grouping/metrics come from /api/brands and are joined at export time.
