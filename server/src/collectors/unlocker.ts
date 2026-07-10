@@ -18,7 +18,7 @@ const TIER_PARAM: Record<string, string> = {
   premium_us: '&premium=true&country_code=us',
   ultra_us: '&ultra_premium=true&country_code=us',
 }
-const DEFAULT_TIER: Record<string, string> = { trustpilot: 'ultra', reddit: 'premium', askgamblers: 'ultra' }
+const DEFAULT_TIER: Record<string, string> = { trustpilot: 'ultra', reddit: 'premium', askgamblers: 'ultra', casinoguru: 'ultra' }
 
 export function tierName(channel: string): string {
   const env = process.env[`SCRAPER_TIER_${channel.toUpperCase()}`]?.toLowerCase()

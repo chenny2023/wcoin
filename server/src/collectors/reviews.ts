@@ -196,7 +196,7 @@ export interface GuruTrust {
   userReviews: number | null // community-review count (credibility weight)
 }
 
-async function fetchSafetyIndex(slug: string, exactPath?: string): Promise<GuruTrust | null> {
+async function fetchSafetyIndex(slug: string, exactPath?: string, unlockBudget?: { n: number }): Promise<GuruTrust | null> {
   // casino.guru 403s datacenter IPs (Cloudflare), but the rotating proxy pool in
   // net.ts bypasses that (verified HTTP 200 through the pool). Two things make the
   // production fetch flaky where a local curl is instant: (1) the page is ~600KB,
@@ -222,10 +222,17 @@ async function fetchSafetyIndex(slug: string, exactPath?: string): Promise<GuruT
     let allDefiniteMiss = true // both shapes returned a real 404 / 200-no-rating (no transient error)
     for (const url of urls) {
       try {
-        const res = await webFetch(url, {
-          headers: { 'User-Agent': UA, 'Accept-Encoding': 'gzip, deflate' },
-          signal: AbortSignal.timeout(30_000),
-        })
+        const hdr = { 'User-Agent': UA, 'Accept-Encoding': 'gzip, deflate' }
+        let res = await webFetch(url, { headers: hdr, signal: AbortSignal.timeout(30_000) })
+        // Cloudflare blocks the plain proxy (403/503/429) → fall back to the paid
+        // web-unlocker for THIS fetch only, capped by a per-brand budget so a blanket
+        // block can't drain credits. Counted so the daily system report shows the spend.
+        if ((res.status === 403 || res.status === 503 || res.status === 429) && unlockBudget && unlockBudget.n > 0) {
+          unlockBudget.n--
+          recordOp('casino.guru.unlocked')
+          const u = await unlockedFetch('casinoguru', url, { headers: hdr, signal: AbortSignal.timeout(90_000) }).catch(() => null)
+          if (u) res = u
+        }
         if (res.status === 404) continue // this shape doesn't exist — try the other
         if (res.status !== 200) {
           allDefiniteMiss = false
@@ -375,8 +382,11 @@ export async function runReviewsOnce() {
     const attempts: { slug: string; exact?: string }[] = []
     if (GURU_URL_OVERRIDE[bk]) attempts.push({ slug: '', exact: GURU_URL_OVERRIDE[bk] })
     for (const s of slugCandidates(name)) attempts.push({ slug: s })
+    // per-brand paid-unlocker budget: at most 2 unlocker calls per brand per sweep, so a
+    // blanket Cloudflare block can't multiply candidate×shape into a credit drain.
+    const unlockBudget = { n: Number(process.env.GURU_UNLOCK_BUDGET ?? 2) }
     for (const { slug, exact } of attempts) {
-      const r = await fetchSafetyIndex(slug, exact)
+      const r = await fetchSafetyIndex(slug, exact, unlockBudget)
       if (r != null && r.score > 0) {
         // guard against slug collisions: the casino the page reviews must match
         // the brand we asked for, or we'd attribute another casino's score.
