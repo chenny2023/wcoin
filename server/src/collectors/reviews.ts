@@ -129,6 +129,21 @@ function slugCandidates(name: string): string[] {
   return [...out].filter(Boolean)
 }
 
+// casino.guru URL paths are CASE-SENSITIVE and inconsistent — some are TitleCase
+// ("Bovada-Casino-review", "Bitsler-Casino-review", "Bitcasino-io-review"), some are
+// lowercase ("500-casino-review", "coincasino-com-review"), and the "-casino-" segment
+// is sometimes absent. A lowercased generated slug 404s on the TitleCase ones, so these
+// (verified real casino.guru pages) get an exact-path override keyed by brandKey. The
+// brand-mismatch guard in the caller still validates the fetched page.
+const GURU_URL_OVERRIDE: Record<string, string> = {
+  bovada: 'Bovada-Casino-review',
+  bitsler: 'Bitsler-Casino-review',
+  bitcasinoio: 'Bitcasino-io-review',
+  '500casino': '500-casino-review',
+  coincasino: 'coincasino-com-review',
+  betstrike: 'betstrike-casino-review',
+}
+
 function parseSafetyIndex(t: string): { score: number; reviewed: string } | null {
   for (const m of t.matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/g)) {
     try {
@@ -181,7 +196,7 @@ export interface GuruTrust {
   userReviews: number | null // community-review count (credibility weight)
 }
 
-async function fetchSafetyIndex(slug: string): Promise<GuruTrust | null> {
+async function fetchSafetyIndex(slug: string, exactPath?: string): Promise<GuruTrust | null> {
   // casino.guru 403s datacenter IPs (Cloudflare), but the rotating proxy pool in
   // net.ts bypasses that (verified HTTP 200 through the pool). Two things make the
   // production fetch flaky where a local curl is instant: (1) the page is ~600KB,
@@ -195,7 +210,9 @@ async function fetchSafetyIndex(slug: string): Promise<GuruTrust | null> {
   // "{slug}-review" (brands whose slug already carries the name, e.g. Bitcasino.io →
   // "bitcasino-io-review"). We try both before concluding a miss — the old code only
   // built the first, so a whole class of real casinos 404'd forever.
-  const urls = [`https://casino.guru/${slug}-casino-review`, `https://casino.guru/${slug}-review`]
+  const urls = exactPath
+    ? [`https://casino.guru/${exactPath}`]
+    : [`https://casino.guru/${slug}-casino-review`, `https://casino.guru/${slug}-review`]
   let lastErr: Error | null = null
   // 5 (not 3) attempts: webFetch rolls a fresh random proxy each call, so a 403 from a
   // datacenter-flagged IP is retried onto a different one. Extra passes cut the "all
@@ -354,8 +371,12 @@ export async function runReviewsOnce() {
     let fetchOk = true // false on a transient fetch error → don't cache a miss, retry next cycle
     const bk = brandKey(name)
     try {
-    for (const slug of slugCandidates(name)) {
-      const r = await fetchSafetyIndex(slug)
+    // exact-path override (case-sensitive casino.guru URLs) first, then generated slugs
+    const attempts: { slug: string; exact?: string }[] = []
+    if (GURU_URL_OVERRIDE[bk]) attempts.push({ slug: '', exact: GURU_URL_OVERRIDE[bk] })
+    for (const s of slugCandidates(name)) attempts.push({ slug: s })
+    for (const { slug, exact } of attempts) {
+      const r = await fetchSafetyIndex(slug, exact)
       if (r != null && r.score > 0) {
         // guard against slug collisions: the casino the page reviews must match
         // the brand we asked for, or we'd attribute another casino's score.
@@ -526,10 +547,10 @@ export function startReviews() {
     // logic ({slug}-review as well as {slug}-casino-review) re-attempts them now
     // instead of waiting out the 7-day refresh — recovers real Safety Indexes for
     // brands like Bitcasino.io whose URL shape the old fetcher could never build.
-    if (!stateGet('reviews:slugfix:v1')) {
+    if (!stateGet('reviews:slugfix:v2')) {
       const n = db.prepare("DELETE FROM reviews WHERE source = 'casino.guru' AND score = 0").run().changes
-      stateSet('reviews:slugfix:v1', 1)
-      if (n) console.log(`[reviews] cleared ${n} casino.guru 0-score misses to re-fetch with dual-URL slug logic`)
+      stateSet('reviews:slugfix:v2', 1)
+      if (n) console.log(`[reviews] cleared ${n} casino.guru 0-score misses to re-fetch with dual-URL + exact-path override logic`)
     }
   } catch {
     /* non-fatal */
