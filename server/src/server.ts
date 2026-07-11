@@ -133,6 +133,7 @@ async function main() {
   const LEGACY_PATHS: Record<string, string> = {
     '/wcoin-casino-faq': '/tekel-data-faq',
     '/wcoin-casino-vs-dappradar-vs-l2beat': '/tekel-data-vs-dappradar-vs-l2beat',
+    '/whitepaper': '/daily', // retired WCOIN whitepaper → the living daily market report
   }
   app.addHook('onRequest', (req, reply, done) => {
     const host = String(req.headers.host || '').toLowerCase()
