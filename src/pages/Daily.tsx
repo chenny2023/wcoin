@@ -393,7 +393,7 @@ function ShareBar({ date }: { date?: string }) {
     <Card className="flex flex-wrap items-center gap-2 p-4">
       <span className="mr-1 text-[13px] font-medium text-white/55">Share this report</span>
       <button onClick={copy} className={cls}>{copied ? 'Copied ✓' : 'Copy link'}</button>
-      <a href={imgUrl} download={`wcoin-daily-${date || 'today'}.png`} className={cls}>Download card</a>
+      <a href={imgUrl} download={`tekel-daily-${date || 'today'}.png`} className={cls}>Download card</a>
       <a href={xUrl} target="_blank" rel="noreferrer" className={cls}>Share to X</a>
       <a href="/methodology/data-confidence" className={cls}>Methodology</a>
     </Card>

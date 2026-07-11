@@ -107,7 +107,7 @@ export default function Reports() {
       else if (key === 'entities') rows = await api.casinos('casino')
       else if (key === 'flow') rows = await api.flow('casino')
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
-      const fname = `wcoin_${key}_${stamp}.${fmt}`
+      const fname = `tekel_${key}_${stamp}.${fmt}`
       if (fmt === 'csv') download(fname, toCsv(rows), 'text/csv')
       else if (fmt === 'json') download(fname, JSON.stringify(rows, null, 2), 'application/json')
       else {
