@@ -733,7 +733,12 @@ export async function registerApi(app: FastifyInstance) {
   // ── time-series flow chart (REAL) — ?days=7|14|30, bucket scales with window ─
   const computeSeries = async (days: number, cat: string) => {
     const now = Date.now()
-    const from = now - days * 86_400_000
+    // Clamp the window to the data we actually have — deepBackfillDays is ~14, so a 30d
+    // request otherwise emits ~15 leading all-zero buckets (a flat-at-zero left half of
+    // the chart that reads as "no/wrong data"). Never show buckets older than the oldest
+    // indexed transfer.
+    const oldest = (db.prepare('SELECT MIN(ts) t FROM transfers').get() as any)?.t ?? 0
+    const from = Math.max(now - days * 86_400_000, oldest || 0)
     const bucketMs = days <= 7 ? 6 * 3600_000 : 24 * 3600_000 // 6h buckets ≤7d, daily beyond
     const catFilter = cat !== 'all' ? ' AND category = ?' : ''
     const catArg = catFilter ? [cat] : []
@@ -780,7 +785,10 @@ export async function registerApi(app: FastifyInstance) {
     // on the request path, blocking the single thread per call (see ARCHITECTURE_REVIEW PF-2)
     return aggCachedAsync(`entseries:${id}:${days}`, async () => {
       const now = Date.now()
-      const from = now - days * 86_400_000
+      // clamp to available history (see computeSeries) so a 30d request over ~14d of data
+      // doesn't front-load the chart with empty zero buckets
+      const oldest = (db.prepare('SELECT MIN(ts) t FROM transfers').get() as any)?.t ?? 0
+      const from = Math.max(now - days * 86_400_000, oldest || 0)
       const rows = (await workerAll(
         `SELECT chain, CAST((ts - ?) / 86400000 AS INTEGER) AS b, SUM(usd) v
          FROM transfers WHERE watch_id = ? AND ts >= ? ${externalFlowClause()}
