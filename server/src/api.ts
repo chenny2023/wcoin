@@ -818,13 +818,27 @@ export async function registerApi(app: FastifyInstance) {
     const ent = db.prepare('SELECT label FROM watchlist WHERE id=?').get(wid) as any
     if (!ent) return { entity: null, sources: [], sinks: [] }
 
+    // volume-suspect operators (wash/treasury pattern, e.g. Rollbit) have anomalous flow
+    // that we hold "under review" everywhere — so the flow diagram must NOT render their
+    // raw counterparty figures (externalFlowClause only strips casino↔casino churn, not a
+    // wash pattern cycling through non-watched addresses, so the number stays absurd).
+    const brands = (await aggCachedAsync('brand:casino', () => aggregateBrands('casino'), 120_000)) as any[]
+    const suspect = new Set<string>()
+    for (const b of brands) if (b.volumeSuspect) { suspect.add(b.brand); for (const m of b.members ?? []) suspect.add(m.label) }
+    if (suspect.has(ent.label)) return { entity: ent.label, days, suspect: true, sources: [], sinks: [] }
+
     const side = async (direction: 'in' | 'out') => {
       const rows = (await workerAll(
-        `SELECT t.counterparty AS addr, w2.label AS label, SUM(t.usd) AS usd, COUNT(*) AS n
-         FROM transfers t
-         LEFT JOIN watchlist w2 ON w2.address = t.counterparty AND w2.active = 1
-         WHERE t.watch_id = ? AND t.direction = ? AND t.ts >= ?
-         GROUP BY t.counterparty ORDER BY usd DESC`,
+        // EXTERNAL flow only — same credible basis as every headline figure. Without
+        // externalFlowClause() the diagram counted internal hot-wallet churn (transfers
+        // between an operator's own watched addresses), so a wash/treasury-pattern brand
+        // like Rollbit showed absurd $13B "deposits/withdrawals". Bare `transfers` (no
+        // alias) so the clause works in both cp_internal and notexists modes.
+        `SELECT transfers.counterparty AS addr, w2.label AS label, SUM(transfers.usd) AS usd, COUNT(*) AS n
+         FROM transfers
+         LEFT JOIN watchlist w2 ON w2.address = transfers.counterparty AND w2.active = 1
+         WHERE transfers.watch_id = ? AND transfers.direction = ? AND transfers.ts >= ? ${externalFlowClause()}
+         GROUP BY transfers.counterparty ORDER BY usd DESC`,
         [wid, direction, since],
       )) as { addr: string; label: string | null; usd: number; n: number }[]
       const named = rows.filter((r) => r.label)

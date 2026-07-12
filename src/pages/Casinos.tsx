@@ -189,6 +189,12 @@ function MoneyFlow({ id }: { id: number }) {
   }, [id])
   if (failed) return null
   if (!data) return <Skeleton className="h-40 w-full" />
+  if (data.suspect)
+    return (
+      <p className="text-[12px] text-white/40">
+        Flow <span className="text-gold-400">under review</span> — this operator's on-chain volume is anomalous (consistent with wash/treasury activity rather than player flow), so we hold its flow figures under review rather than display them.
+      </p>
+    )
   const sources = data.sources, sinks = data.sinks
   const totalIn = sources.reduce((s, n) => s + n.usd, 0)
   const totalOut = sinks.reduce((s, n) => s + n.usd, 0)

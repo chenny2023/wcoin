@@ -419,7 +419,7 @@ export const api = {
   entitySeries: (id: number, days = 30) =>
     getJson<{ chains: string[]; series: ({ t: number } & Record<string, number>)[] }>(`/entity/${id}/series?days=${days}`),
   entityFlow: (id: number, days = 30) =>
-    getJson<{ entity: string | null; days: number; sources: FlowNode[]; sinks: FlowNode[] }>(`/entity/${id}/flow?days=${days}`),
+    getJson<{ entity: string | null; days: number; sources: FlowNode[]; sinks: FlowNode[]; suspect?: boolean }>(`/entity/${id}/flow?days=${days}`),
   flow: (category = 'casino') =>
     getJson<FlowBucket[]>('/flow' + (category && category !== 'all' ? `?category=${category}` : '')),
   streamers: () =>
