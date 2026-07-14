@@ -2058,18 +2058,45 @@ function attributionDataPage(): { title: string; description: string; html: stri
     .join('')
   const title = `How Crypto Casino Wallets Are Attributed — Evidence & Coverage ${YEAR} | Tekel Data`
   const description = `The evidence behind every crypto-casino wallet we track: ${fmtNum(totalWallets)} attributed wallets across ${fmtNum(namedBrands)} named operators, broken down by public evidence class. Fully auditable — every address is verifiable on a block explorer.`
+  const faqs: { q: string; a: string }[] = [
+    {
+      q: 'How does Tekel Data attribute wallets to crypto casinos?',
+      a: `Tekel Data attributes ${fmtNum(totalWallets)} wallets to ${fmtNum(namedBrands)} named operators using tiered public evidence: block-explorer name-tags and confirmed deposits (strongest), public label sets, entity-intelligence leads, and behavioural common-input-ownership clustering expanded from confirmed seed addresses. Every address is independently verifiable on its chain's block explorer.`,
+    },
+    {
+      q: 'What happens to wallets that can\'t be tied to a named operator?',
+      a: 'Casino-like wallets that cannot be tied to a named operator stay unattributed and are excluded from every verified figure — they are never guessed into a brand. Known non-casino infrastructure (DEX routers, settlement contracts) is explicitly denylisted so a mis-tag cannot inflate any operator.',
+    },
+    {
+      q: 'Is the attribution auditable?',
+      a: 'Yes. The full wallet set, evidence classes and exact rules and thresholds are published openly on GitHub under CC BY 4.0. Anyone can open any attributed address on a block explorer and re-check its balance and flow.',
+    },
+  ]
   const body =
     `<p class="sub">A trust-data site should show its work. We attribute <strong>${fmtNum(totalWallets)}</strong> casino wallets to <strong>${fmtNum(namedBrands)}</strong> named operators — and here is exactly what evidence stands behind each, by class.</p>` +
     `<p class="upd">Every address is independently verifiable on its chain's block explorer. The full wallet set, evidence types and methodology are published for audit in our <a href="https://github.com/chenny2023/tekeldata-open-data" rel="noopener" target="_blank">open-data repository (GitHub)</a>.</p>` +
     `<table><thead><tr><th>Evidence class</th><th style="text-align:right">Wallets</th><th style="text-align:right">Operators</th><th>What it means</th></tr></thead><tbody>${rows}</tbody></table>` +
     `<h2>Seed vs derived — and what we exclude</h2><div class="prose"><p>Wallets carrying <strong>direct public evidence</strong> (a block-explorer name-tag, a public label set, a confirmed deposit) are <em>seed</em> wallets. Wallets reached by expanding a seed through <a href="/guide/crypto-casino-hot-wallet-vs-cold-wallet">common-input-ownership clustering</a> are <em>derived</em> — they inherit a brand only because the seed evidence is strong. Casino-like wallets we <strong>cannot</strong> tie to a named operator stay <em>unattributed</em> and are excluded from every verified figure — never guessed into a brand. Known non-casino infrastructure (DEX routers, settlement contracts) is explicitly denylisted so a mis-tag can't inflate any operator.</p></div>` +
     `<h2>Why this matters</h2><div class="prose"><p>Most "on-chain casino" numbers are unfalsifiable — you're asked to trust a dashboard. Ours are the opposite: pick any wallet, open it on a block explorer, and check the balance and flow yourself. That verifiability is the entire point, and it's why we publish the <a href="https://github.com/chenny2023/tekeldata-open-data/blob/main/DATA_DICTIONARY.md" rel="noopener" target="_blank">exact rules and thresholds</a> behind every figure. See also <a href="/guide/how-on-chain-casino-tracking-works">how on-chain tracking works</a> and the <a href="/methodology/address-attribution">attribution methodology</a>.</p></div>` +
+    `<h2>FAQ</h2>${faqs.map((f) => `<div class="prose"><strong>${esc(f.q)}</strong><br>${f.a}</div>`).join('')}` +
     `<h2>Explore</h2><div class="chips"><a class="pill" href="/proof-of-reserves">Proof of reserves</a><a class="pill" href="/rankings/trust">Trust ranking</a><a class="pill" href="/guide/why-on-chain-data-beats-complaint-boards">Why on-chain data beats reviews</a><a class="pill" href="/data">All data</a></div>`
   const upd = Date.now()
   return {
     title,
     description,
-    html: layout({ title, description, canonical: url, jsonLd: [datasetLd('Crypto Casino Wallet Attribution by Evidence Class', description, url, upd, ['attributed wallets by evidence source', 'named operators covered'])], breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: 'Data', url }], h1: `How crypto casino wallets are attributed`, updated: upd, body }),
+    html: layout({
+      title,
+      description,
+      canonical: url,
+      jsonLd: [
+        datasetLd('Crypto Casino Wallet Attribution by Evidence Class', description, url, upd, ['attributed wallets by evidence source', 'named operators covered']),
+        { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faqs.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a.replace(/<[^>]+>/g, '') } })) },
+      ],
+      breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: 'Data', url }],
+      h1: `How crypto casino wallets are attributed`,
+      updated: upd,
+      body,
+    }),
   }
 }
 
@@ -2094,6 +2121,20 @@ function fakeVolumeDataPage(brands: BrandAgg[]): { title: string; description: s
     .join('')
   const title = `How Much Crypto-Casino Volume Is Fake? On-Chain Wash-Trading Data ${YEAR} | Tekel Data`
   const description = `We measured it: roughly ${pct}% of raw on-chain crypto-casino "volume" (${fmtUsd(suspectVol)} of ${fmtUsd(rawTotal)} over 7 days) shows a wash/treasury pattern we hold under review, leaving ${fmtUsd(credibleVol)} of credible player flow. Every operator and the reason is listed — verifiable on-chain.`
+  const faqs: { q: string; a: string }[] = [
+    {
+      q: 'How much crypto-casino volume is fake?',
+      a: `Based on the latest on-chain measurement, roughly ${pct}% of raw crypto-casino "volume" — about ${fmtUsd(suspectVol)} of ${fmtUsd(rawTotal)} over the last 7 days — shows a wash-trading or treasury-market-making pattern that Tekel Data holds "under review", leaving roughly ${fmtUsd(credibleVol)} of credible player flow. The figure is computed live from indexed on-chain transfers and updates continuously.`,
+    },
+    {
+      q: 'How does Tekel Data know volume is wash-traded?',
+      a: 'A brand\'s volume is held under review when it trips machine-readable thresholds: an abnormally large average transfer size (institutional/treasury-scale, not player-scale), very high volume per counterparty (a few addresses cycling large sums), or a hand-verified wash/treasury pattern. Exact thresholds are published in the open-data dictionary on GitHub. This never labels an operator a scam — it means its volume figure is not a reliable activity signal.',
+    },
+    {
+      q: 'Does Tekel Data rank casinos by volume?',
+      a: 'No. Because most raw volume is wash-tradeable, Tekel Data ranks operators by independent blended trust and verifiable on-chain reserves, never by raw volume. A separate verified-volume figure (with suspect flow excluded) is shown for context only.',
+    },
+  ]
   const body =
     `<p class="sub">"Volume" is the number crypto casinos love to advertise — and it's the easiest to fake. We measured how much is real. Over the last 7 days, of <strong>${fmtUsd(rawTotal)}</strong> in raw on-chain volume across the operators we track, <strong>${fmtUsd(suspectVol)} (~${pct}%)</strong> shows a <a href="/guide/wash-trading-in-crypto-casinos-explained">wash / treasury-market-making pattern</a> we hold <span class="gold">under review</span> — leaving only <strong>${fmtUsd(credibleVol)}</strong> of credible player flow.</p>` +
     `<p class="upd">Computed live from indexed on-chain transfers, refreshed continuously. This is why every headline figure on Tekel Data excludes suspect volume — a leaderboard built on raw volume would be ${pct}% noise.</p>` +
@@ -2103,12 +2144,25 @@ function fakeVolumeDataPage(brands: BrandAgg[]): { title: string; description: s
       : `<p class="prose">No operator currently exceeds our suspect-volume thresholds.</p>`) +
     `<h2>How we decide "under review"</h2><div class="prose"><p>We never delete an operator for looking suspicious — we <strong>flag and demote</strong>, and say exactly why. A brand's volume is held under review when it trips machine-readable thresholds: an <em>abnormal average transfer size</em> (transfers far larger than real player deposits), <em>very high volume per counterparty</em> (a handful of addresses cycling the same funds), or a hand-verified wash/treasury pattern. The exact thresholds are published in our <a href="https://github.com/chenny2023/tekeldata-open-data/blob/main/DATA_DICTIONARY.md" rel="noopener" target="_blank">open-data dictionary</a>. None of this labels an operator a scam — it means its <em>volume figure</em> isn't a reliable activity signal.</p></div>` +
     `<h2>Why it matters</h2><div class="prose"><p>Most "top crypto casino" rankings sort by volume. If ~${pct}% of that volume is wash-traded, those rankings are mostly ranking noise — and an operator can buy the #1 spot by cycling its own funds. That's the opacity Tekel exists to cut through: we rank by independent <a href="/rankings/trust">trust</a> and verifiable <a href="/proof-of-reserves">reserves</a>, never raw volume, and we show you the filtered <a href="/highest-volume-crypto-casinos">verified-volume</a> figure instead. Every number here is on-chain — pick any operator and check it yourself.</p></div>` +
+    `<h2>FAQ</h2>${faqs.map((f) => `<div class="prose"><strong>${esc(f.q)}</strong><br>${f.a}</div>`).join('')}` +
     `<h2>Explore</h2><div class="chips"><a class="pill" href="/highest-volume-crypto-casinos">Verified volume ranking</a><a class="pill" href="/guide/wash-trading-in-crypto-casinos-explained">Wash trading explained</a><a class="pill" href="/rankings/trust">Trust ranking</a><a class="pill" href="/data">All data</a></div>`
   const upd = Date.now()
   return {
     title,
     description,
-    html: layout({ title, description, canonical: url, jsonLd: [datasetLd('Crypto-Casino Wash-Trading / Suspect Volume Share', description, url, upd, ['raw vs credible on-chain volume', 'suspect-volume operators and reasons'])], breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: 'Data', url }], h1: `How much crypto-casino volume is fake?`, updated: upd, body }),
+    html: layout({
+      title,
+      description,
+      canonical: url,
+      jsonLd: [
+        datasetLd('Crypto-Casino Wash-Trading / Suspect Volume Share', description, url, upd, ['raw vs credible on-chain volume', 'suspect-volume operators and reasons']),
+        { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faqs.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a.replace(/<[^>]+>/g, '') } })) },
+      ],
+      breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: 'Data', url }],
+      h1: `How much crypto-casino volume is fake?`,
+      updated: upd,
+      body,
+    }),
   }
 }
 
@@ -2187,11 +2241,31 @@ function topicListPage(cfg: {
       return `<tr><td class="n">${i + 1}</td><td><a href="/casino/${cfg.slugOfView(r.v)}">${esc(r.v.name)}</a></td><td class="n">${r.metric}</td><td class="n gold">${bt ? `${bt.score} / 100` : '—'}</td></tr>`
     })
     .join('')
+  // Auto-generated, answer-first FAQ so every ranking page carries extractable Q&A
+  // (visible + FAQPage schema) for AI answer engines. Derived from live data — no
+  // hardcoded volatile numbers; the #1 name is stated but the page is the live source.
+  const top = cfg.rows[0]
+  const topName = top ? esc(top.v.name) : ''
+  const faqs: { q: string; a: string }[] = []
+  if (top)
+    faqs.push({
+      q: cfg.h1.replace(/\s*\(\d.*$/, '') + '?',
+      a: `As of the latest on-chain refresh, ${topName} ranks #1 by ${esc(cfg.metricHead.toLowerCase())} among the ${cfg.rows.length} operators with at least medium-confidence data. This ranking is measured from public blockchain activity and updates roughly every 30 minutes — see the live table on this page for the current order.`,
+    })
+  faqs.push({
+    q: 'How does Tekel Data rank crypto casinos?',
+    a: 'Tekel Data ranks operators from verifiable, independent signals — on-chain reserves and real (churn- and wash-excluded) volume measured directly from public blockchains, plus blended third-party trust (casino.guru, Trustpilot, AskGamblers). We never rank by self-reported figures, and anomalous wash/treasury-pattern volume is flagged "Under review" and excluded.',
+  })
+  faqs.push({
+    q: 'Is this data free and independently verifiable?',
+    a: 'Yes. Tekel Data is free with no login. Every operator figure is derived from public blockchain activity and can be re-checked on a block explorer; the attributed wallet set and methodology are published openly on GitHub under CC BY 4.0.',
+  })
   const body =
     `<p class="sub">${cfg.intro}</p>` +
     `<p class="upd">${cfg.rows.length} operators with ≥medium-confidence data · live on-chain data, refreshed ~every 30 min</p>` +
     `<table><thead><tr><th>#</th><th>Casino</th><th style="text-align:right">${cfg.metricHead}</th><th style="text-align:right">Blended trust</th></tr></thead><tbody>${rowsHtml}</tbody></table>` +
     (cfg.note ? `<p class="prose" style="margin-top:14px">${cfg.note}</p>` : '') +
+    `<h2>FAQ</h2>${faqs.map((f) => `<div class="prose"><strong>${esc(f.q)}</strong><br>${f.a}</div>`).join('')}` +
     `<h2>More rankings</h2><div class="chips"><a class="pill" href="/best-crypto-casinos">Best overall</a><a class="pill" href="/best-usdt-casinos">Best USDT</a><a class="pill" href="/highest-volume-crypto-casinos">Highest volume</a><a class="pill" href="/crypto-casinos-with-proof-of-reserves">Proof of reserves</a><a class="pill" href="/multi-chain-crypto-casinos">Multi-chain</a><a class="pill" href="/data/crypto-casino-deposit-currencies">Currency data</a></div>`
   return {
     title: cfg.title,
@@ -2200,7 +2274,10 @@ function topicListPage(cfg: {
       title: cfg.title,
       description: cfg.description,
       canonical: url,
-      jsonLd: [itemListLd(cfg.rows.map((r) => ({ url: `${SITE}/casino/${cfg.slugOfView(r.v)}`, name: r.v.name })))],
+      jsonLd: [
+        itemListLd(cfg.rows.map((r) => ({ url: `${SITE}/casino/${cfg.slugOfView(r.v)}`, name: r.v.name }))),
+        { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faqs.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a.replace(/<[^>]+>/g, '') } })) },
+      ],
       breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: cfg.h1, url }],
       h1: cfg.h1,
       updated: Date.now(),
