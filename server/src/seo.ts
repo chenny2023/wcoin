@@ -2073,6 +2073,45 @@ function attributionDataPage(): { title: string; description: string; html: stri
   }
 }
 
+// The "how much crypto-casino volume is fake?" exposé — our single most differentiated
+// data story: only Tekel can quantify it, because it needs the volume-suspect detection.
+// All figures computed LIVE at page generation (never hardcoded → never drift).
+function fakeVolumeDataPage(brands: BrandAgg[]): { title: string; description: string; html: string } {
+  const path = '/data/crypto-casino-fake-volume'
+  const url = SITE + path
+  const rawTotal = brands.reduce((s, b) => s + (b.volume7d || 0), 0)
+  const suspect = brands.filter((b) => b.volumeSuspect && (b.volume7d || 0) > 0).sort((a, b) => (b.volume7d || 0) - (a.volume7d || 0))
+  const suspectVol = suspect.reduce((s, b) => s + (b.volume7d || 0), 0)
+  const credibleVol = rawTotal - suspectVol
+  const pct = rawTotal > 0 ? Math.round((suspectVol / rawTotal) * 100) : 0
+  const REASON: Record<string, string> = {
+    abnormal_avg_transfer_size: 'abnormally large average transfer size — institutional/treasury-scale, not player-scale',
+    high_volume_per_counterparty: 'very high volume per counterparty — a few addresses cycling huge sums',
+    manually_flagged_wash_or_treasury_pattern: 'manually flagged wash / treasury-market-making pattern',
+  }
+  const rows = suspect
+    .map((b) => `<tr><td>${esc(b.brand)}</td><td class="n">${fmtUsd(b.volume7d || 0)}</td><td style="font-size:12px;color:var(--dim)">${esc((b.volumeSuspectReasons || []).map((r) => REASON[r] ?? r).join('; ') || 'anomalous flow')}</td></tr>`)
+    .join('')
+  const title = `How Much Crypto-Casino Volume Is Fake? On-Chain Wash-Trading Data ${YEAR} | Tekel Data`
+  const description = `We measured it: roughly ${pct}% of raw on-chain crypto-casino "volume" (${fmtUsd(suspectVol)} of ${fmtUsd(rawTotal)} over 7 days) shows a wash/treasury pattern we hold under review, leaving ${fmtUsd(credibleVol)} of credible player flow. Every operator and the reason is listed — verifiable on-chain.`
+  const body =
+    `<p class="sub">"Volume" is the number crypto casinos love to advertise — and it's the easiest to fake. We measured how much is real. Over the last 7 days, of <strong>${fmtUsd(rawTotal)}</strong> in raw on-chain volume across the operators we track, <strong>${fmtUsd(suspectVol)} (~${pct}%)</strong> shows a <a href="/guide/wash-trading-in-crypto-casinos-explained">wash / treasury-market-making pattern</a> we hold <span class="gold">under review</span> — leaving only <strong>${fmtUsd(credibleVol)}</strong> of credible player flow.</p>` +
+    `<p class="upd">Computed live from indexed on-chain transfers, refreshed continuously. This is why every headline figure on Tekel Data excludes suspect volume — a leaderboard built on raw volume would be ${pct}% noise.</p>` +
+    `<h2>Operators whose volume is held under review</h2>` +
+    (rows
+      ? `<table><thead><tr><th>Operator</th><th style="text-align:right">Raw 7d volume</th><th>Why it's under review</th></tr></thead><tbody>${rows}</tbody></table>`
+      : `<p class="prose">No operator currently exceeds our suspect-volume thresholds.</p>`) +
+    `<h2>How we decide "under review"</h2><div class="prose"><p>We never delete an operator for looking suspicious — we <strong>flag and demote</strong>, and say exactly why. A brand's volume is held under review when it trips machine-readable thresholds: an <em>abnormal average transfer size</em> (transfers far larger than real player deposits), <em>very high volume per counterparty</em> (a handful of addresses cycling the same funds), or a hand-verified wash/treasury pattern. The exact thresholds are published in our <a href="https://github.com/chenny2023/tekeldata-open-data/blob/main/DATA_DICTIONARY.md" rel="noopener" target="_blank">open-data dictionary</a>. None of this labels an operator a scam — it means its <em>volume figure</em> isn't a reliable activity signal.</p></div>` +
+    `<h2>Why it matters</h2><div class="prose"><p>Most "top crypto casino" rankings sort by volume. If ~${pct}% of that volume is wash-traded, those rankings are mostly ranking noise — and an operator can buy the #1 spot by cycling its own funds. That's the opacity Tekel exists to cut through: we rank by independent <a href="/rankings/trust">trust</a> and verifiable <a href="/proof-of-reserves">reserves</a>, never raw volume, and we show you the filtered <a href="/highest-volume-crypto-casinos">verified-volume</a> figure instead. Every number here is on-chain — pick any operator and check it yourself.</p></div>` +
+    `<h2>Explore</h2><div class="chips"><a class="pill" href="/highest-volume-crypto-casinos">Verified volume ranking</a><a class="pill" href="/guide/wash-trading-in-crypto-casinos-explained">Wash trading explained</a><a class="pill" href="/rankings/trust">Trust ranking</a><a class="pill" href="/data">All data</a></div>`
+  const upd = Date.now()
+  return {
+    title,
+    description,
+    html: layout({ title, description, canonical: url, jsonLd: [datasetLd('Crypto-Casino Wash-Trading / Suspect Volume Share', description, url, upd, ['raw vs credible on-chain volume', 'suspect-volume operators and reasons'])], breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: 'Data', url }], h1: `How much crypto-casino volume is fake?`, updated: upd, body }),
+  }
+}
+
 function dataHubPage(): { title: string; description: string; html: string } {
   const url = SITE + '/data'
   const title = `Crypto Casino On-Chain Data & Reports ${YEAR} | Tekel Data`
@@ -2085,6 +2124,7 @@ function dataHubPage(): { title: string; description: string; html: string } {
     `<p><strong><a href="/data/crypto-casino-net-flow">Net flow report</a></strong> — external deposits minus withdrawals per operator over 7 days, a neutral liquidity signal that helps spot operators paying out versus taking in.</p>` +
     `<p><strong><a href="/data/crypto-casino-tokens">Casino tokens report</a></strong> — the native tokens crypto casinos issue, by market cap: live price, change and which run buyback-and-burn.</p>` +
     `<p><strong><a href="/data/crypto-casino-wallet-attribution">Wallet attribution</a></strong> — how many casino wallets we attribute and the public evidence behind each, by class. A "show your work" breakdown, fully auditable on-chain and in our open-data repo.</p>` +
+    `<p><strong><a href="/data/crypto-casino-fake-volume">How much volume is fake?</a></strong> — we measure what share of raw on-chain casino "volume" is wash/treasury-pattern (held under review), with every flagged operator and the reason. The number is high — and it's why we never rank by volume.</p>` +
     `</div>` +
     `<h2>What makes this data different</h2><div class="prose"><p>Most "crypto casino volume" figures you'll see elsewhere are inflated several times over by internal hot-wallet churn, double-counting (a transfer recorded under both watched sides), and a handful of operators' treasury and market-making movements. We strip all of that out — counting only flow whose counterparty is an external user or exchange — and flag anomalous-volume operators rather than featuring them. The result is a smaller but honest number you can actually cite.</p></div>` +
     `<h2>Rankings & live data</h2><div class="chips"><a class="pill" href="/best-crypto-casinos">Best casinos</a><a class="pill" href="/highest-volume-crypto-casinos">Verified volume</a><a class="pill" href="/crypto-casinos-with-proof-of-reserves">Proof of reserves</a><a class="pill" href="/daily">Daily report</a><a class="pill" href="/methodology/address-attribution">Methodology</a></div>` +
@@ -2537,6 +2577,7 @@ export async function generateSeoPages(): Promise<void> {
     .slice(0, 40)
   if (tokenRows.length >= 5) add('/data/crypto-casino-tokens', 'data', casinoTokensPage(tokenRows), 'featured_core')
   add('/data/crypto-casino-wallet-attribution', 'data', attributionDataPage(), 'featured_core')
+  add('/data/crypto-casino-fake-volume', 'data', fakeVolumeDataPage(onchainBrands), 'featured_core')
   add('/data', 'data', dataHubPage(), 'featured_core')
   // Programmatic currency pages — one "Best {stablecoin} Casinos" per token with ≥5
   // operators (stablecoins are cross-chain, so not covered by the per-chain pages).
