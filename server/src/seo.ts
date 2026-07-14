@@ -2454,6 +2454,24 @@ export async function generateSeoPages(): Promise<void> {
       note: `Chain count reflects networks where we currently track wallet activity for the operator; coverage expands over time.`,
     }), 'featured_core')
 
+  // High-intent solvency landing — "can this casino afford to pay me?" — ranked by
+  // reserve-coverage ratio. Distinct from /rankings/coverage: this is the consumer,
+  // solvency-framed page (on-brand for Tekel's transparency positioning). Exclude the
+  // >200× outliers (near-zero recent outflow → meaningless ratio) and suspect brands.
+  const solventTop = topicBase
+    .filter((v) => (v.onchain?.reserves ?? 0) > 0 && v.onchain?.reserveCoverage != null && (v.onchain.reserveCoverage as number) <= 200 && !v.onchain?.volumeSuspect)
+    .sort((a, b) => (b.onchain!.reserveCoverage as number) - (a.onchain!.reserveCoverage as number) || (b.onchain?.reserves ?? 0) - (a.onchain?.reserves ?? 0))
+    .slice(0, 30)
+  if (solventTop.length >= 5)
+    add('/most-solvent-crypto-casinos', 'rankings', topicListPage({
+      path: '/most-solvent-crypto-casinos', h1: `Most solvent crypto casinos ${YEAR}`, slugOfView,
+      title: `Most Solvent Crypto Casinos ${YEAR} — Ranked by On-Chain Reserve Coverage | Tekel Data`,
+      description: `Which crypto casinos can most comfortably cover withdrawals? Ranked by reserve-coverage ratio (mapped on-chain reserves ÷ 7-day outflow) in ${YEAR} — a descriptive liquidity signal you can verify on-chain, not a solvency rating.`,
+      intro: `The question that matters before you deposit: <strong>can this casino afford to pay you?</strong> These operators are ranked by <strong>reserve-coverage ratio</strong> — the mapped on-chain reserves we can read, divided by their 7-day withdrawal outflow. A higher ratio = more weeks of withdrawals covered by verifiable reserves. It's a descriptive liquidity signal you can re-check yourself on a block explorer — <em>not</em> a guarantee of solvency.`,
+      metricHead: 'Coverage (reserves ÷ 7d out)', rows: solventTop.map((v) => ({ v, metric: (v.onchain!.reserveCoverage as number).toFixed(1) + '×' })),
+      note: `Coverage = mapped reserves ÷ 7-day outflow. Reserves are a best-effort estimate from mapped wallets (partial by brand); a very high ratio can also just mean low recent withdrawal activity. This is observed data — <em>not</em> a statement that any operator is or isn't solvent. See <a href="/proof-of-reserves">proof of reserves</a> and the <a href="/methodology/proof-of-reserves">methodology</a>. <strong>18+.</strong>`,
+    }), 'featured_core')
+
   // ── currency page + data-story + guides (all on the credible external-only,
   // suspect/churn-excluded basis, consistent with the rest of the site) ─────────
   const D7w = Date.now() - 7 * 86_400_000
