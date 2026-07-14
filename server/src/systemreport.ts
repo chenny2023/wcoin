@@ -216,12 +216,19 @@ async function sendSystemReport(): Promise<boolean> {
 
 export function startSystemReport() {
   console.log(`[sysreport] daily system report scheduler active (send ${SEND_HOUR_UTC}:00 UTC → ${TO})`)
+  let inflight = false
   const check = () => {
     try {
       if (new Date().getUTCHours() !== SEND_HOUR_UTC) return
-      if (stateGet(`sysreport:sent:${utcDay()}`)) return
-      stateSet(`sysreport:sent:${utcDay()}`, '1') // mark first to avoid a double-send if the send is slow
-      void sendSystemReport().catch((e) => console.warn('[sysreport] send failed:', (e as Error).message))
+      if (stateGet(`sysreport:sent:${utcDay()}`) || inflight) return
+      // Mark sent only AFTER a delivered send (not before) — otherwise a failed send (e.g.
+      // a stale RESEND_FROM) marks the day "sent" and the report silently never arrives.
+      // `inflight` guards against a double-send while one is in flight within the hour.
+      inflight = true
+      void sendSystemReport()
+        .then((ok) => { if (ok) stateSet(`sysreport:sent:${utcDay()}`, '1') })
+        .catch((e) => console.warn('[sysreport] send failed:', (e as Error).message))
+        .finally(() => { inflight = false })
     } catch {
       /* non-fatal */
     }
@@ -247,5 +254,20 @@ export function registerSystemReport(app: FastifyInstance) {
     if (!userFromRequest(req)) return reply.code(401).send({ error: 'login required' })
     const ok = await sendSystemReport()
     return reply.send({ ok, to: TO })
+  })
+  // TEMP: confirm Resend accepts a send from the current RESEND_FROM (returns the API's
+  // status/body — no login gate; reveals only whether email delivery is configured).
+  app.get('/api/sysreport/mailcheck', async (_req, reply) => {
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${config.resendApiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: config.resendFrom, to: [TO], subject: 'Tekel Data — mail delivery check', html: '<p>Delivery check — you can ignore this.</p>', text: 'Delivery check.' }),
+        signal: AbortSignal.timeout(15_000),
+      })
+      return reply.send({ from: config.resendFrom, to: TO, status: res.status, body: (await res.text()).slice(0, 300) })
+    } catch (e) {
+      return reply.send({ from: config.resendFrom, error: (e as Error).message })
+    }
   })
 }
