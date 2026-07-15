@@ -7,7 +7,34 @@ set -e
 : "${DB_PATH:=/app/server/data/wcoin.db}"
 : "${BACKUP_R2_PATH:=wcoin-db}"
 
-if [ -n "$BACKUP_R2_BUCKET" ] && [ -n "$BACKUP_R2_ACCESS_KEY_ID" ] && [ -n "$BACKUP_R2_SECRET_ACCESS_KEY" ]; then
+# ── One-shot reclaim of litestream's local shadow dir ─────────────────────────
+# When R2 replication is denied (403), litestream can never confirm upload so it
+# never truncates its local shadow WAL — it grew to 116GB and filled the volume.
+# Those frames were NEVER replicated (pure junk, no recovery value). Set
+# LITESTREAM_RESET_SHADOW=1 for ONE deploy to delete the stale shadow dir, then
+# remove the flag. Only ever deletes the exact `.<db>-litestream` sidecar; the real
+# DB (wcoin.db / -wal / -shm) is untouched.
+if [ "$LITESTREAM_RESET_SHADOW" = "1" ]; then
+  SHADOW="$(dirname "$DB_PATH")/.$(basename "$DB_PATH")-litestream"
+  case "$SHADOW" in
+    */.*-litestream)
+      if [ -d "$SHADOW" ]; then
+        echo "[entrypoint] LITESTREAM_RESET_SHADOW=1 — removing stale shadow dir $SHADOW"
+        rm -rf "$SHADOW" && echo "[entrypoint] shadow dir removed"
+      else
+        echo "[entrypoint] LITESTREAM_RESET_SHADOW=1 — no shadow dir at $SHADOW (nothing to do)"
+      fi
+      ;;
+    *)
+      echo "[entrypoint] refusing to remove unexpected shadow path: $SHADOW"
+      ;;
+  esac
+fi
+
+# LITESTREAM_OFF=1 disables replication without dropping the R2 creds (so they can
+# be fixed/rotated and re-enabled later). With it set — or with no creds — the app
+# runs directly and manages its own WAL checkpointing (config.backupActive=false).
+if [ "$LITESTREAM_OFF" != "1" ] && [ -n "$BACKUP_R2_BUCKET" ] && [ -n "$BACKUP_R2_ACCESS_KEY_ID" ] && [ -n "$BACKUP_R2_SECRET_ACCESS_KEY" ]; then
   echo "[entrypoint] R2 backup ENABLED (bucket=$BACKUP_R2_BUCKET path=$BACKUP_R2_PATH endpoint=$BACKUP_R2_ENDPOINT)"
   # Render the litestream config with REAL values via shell expansion — do NOT rely
   # on litestream's own ${VAR} interpolation (that was silently leaving the config
@@ -44,6 +71,10 @@ EOF
   fi
   exec litestream replicate -config /tmp/litestream.yml -exec "npm start"
 else
-  echo "[entrypoint] R2 backup disabled (no creds) — starting app directly"
+  if [ "$LITESTREAM_OFF" = "1" ]; then
+    echo "[entrypoint] litestream DISABLED via LITESTREAM_OFF=1 — starting app directly (app self-manages WAL)"
+  else
+    echo "[entrypoint] R2 backup disabled (no creds) — starting app directly"
+  fi
   exec npm start
 fi

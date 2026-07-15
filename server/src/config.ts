@@ -118,7 +118,10 @@ export const config = {
   // Litestream continuous backup is active when R2 creds are set. When active,
   // litestream OWNS WAL checkpointing — the app must not auto-checkpoint or
   // TRUNCATE the WAL (that would drop frames litestream hasn't shipped yet).
-  backupActive: !!(env.BACKUP_R2_BUCKET && env.BACKUP_R2_ACCESS_KEY_ID && env.BACKUP_R2_SECRET_ACCESS_KEY),
+  // LITESTREAM_OFF=1 force-disables backup mode even when creds are present, so the
+  // app resumes self-managing WAL checkpointing (matches docker-entrypoint.sh, which
+  // then skips `litestream replicate`). Used while R2 access is broken (403).
+  backupActive: env.LITESTREAM_OFF !== '1' && !!(env.BACKUP_R2_BUCKET && env.BACKUP_R2_ACCESS_KEY_ID && env.BACKUP_R2_SECRET_ACCESS_KEY),
 
   // Optional Twitch Helix creds for the live streamer module (no fabrication —
   // if unset, the streamer feed is simply empty and the UI says "connect a source")
