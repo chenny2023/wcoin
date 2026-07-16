@@ -33,6 +33,34 @@ export const I18N_LOCALES: LocaleCfg[] = [
   { code: 'pt', hreflang: 'pt-BR', label: 'Português (BR)', homeLabel: 'Início', guidesLabel: 'Guias', faqHeading: 'Perguntas frequentes' },
 ]
 
+// Localized chrome for the per-language /{locale}/guide hub. The guide LIST is built
+// dynamically in seo.ts from whatever GUIDE_I18N slugs exist for the locale, so adding
+// a translated guide auto-appears in its hub — only this framing text is authored here.
+export type HubTx = { title: string; description: string; intro: string; heading: string; moreLabel: string }
+export const GUIDE_HUB_I18N: Record<string, HubTx> = {
+  ja: {
+    title: `仮想通貨カジノガイド — オンチェーンデータで学ぶ | Tekel Data`,
+    description: `検証可能なオンチェーンデータに基づく仮想通貨カジノの実用ガイド：準備金証明、安全性の見極め、オンチェーンでの検証方法。`,
+    intro: `検証可能なオンチェーンデータに基づく実用ガイド——アフィリエイト宣伝ではありません。以下は日本語で読めるガイドです。`,
+    heading: `ガイド一覧`,
+    moreLabel: `さらに多くのガイド（英語）を見る →`,
+  },
+  ko: {
+    title: `암호화폐 카지노 가이드 — 온체인 데이터로 배우기 | Tekel Data`,
+    description: `검증 가능한 온체인 데이터에 기반한 암호화폐 카지노 실용 가이드: 준비금 증명, 안전성 판단, 온체인 검증 방법.`,
+    intro: `검증 가능한 온체인 데이터에 기반한 실용 가이드——제휴 마케팅이 아닙니다. 아래는 한국어로 읽을 수 있는 가이드입니다.`,
+    heading: `가이드 목록`,
+    moreLabel: `더 많은 가이드(영어) 보기 →`,
+  },
+  pt: {
+    title: `Guias de Cassino Cripto — Aprenda com Dados On-Chain | Tekel Data`,
+    description: `Guias práticos de cassinos cripto baseados em dados on-chain verificáveis: prova de reservas, como julgar segurança, verificação on-chain.`,
+    intro: `Guias práticos baseados em dados on-chain verificáveis — não marketing de afiliados. Abaixo, os guias disponíveis em português.`,
+    heading: `Lista de guias`,
+    moreLabel: `Ver mais guias (em inglês) →`,
+  },
+}
+
 // slug → locale.code → translation. Only slugs present here get localized variants.
 export const GUIDE_I18N: Record<string, Record<string, GuideTx>> = {
   'are-crypto-casinos-safe': {

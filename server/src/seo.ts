@@ -8,7 +8,7 @@ import { reviewScores, type ReviewScore } from './collectors/reviews.ts'
 import { reserveSeries, priorReserves } from './reservehistory.ts'
 import { brandRiskEvents, recentRiskEvents, type RiskEvent } from './riskevents.ts'
 import { pingIndexNow } from './indexnow.ts'
-import { GUIDE_I18N, I18N_LOCALES } from './i18n-guides.ts'
+import { GUIDE_I18N, GUIDE_HUB_I18N, I18N_LOCALES } from './i18n-guides.ts'
 import type { TokenInfo } from './collectors/casinotokens.ts'
 import sharp from 'sharp'
 import { createHash } from 'node:crypto'
@@ -47,6 +47,14 @@ function guideHreflang(slug: string): { hreflang: string; href: string }[] | und
   const alts = [{ hreflang: 'en', href: `${SITE}/guide/${slug}` }]
   for (const loc of I18N_LOCALES) if (tx[loc.code]) alts.push({ hreflang: loc.hreflang, href: `${SITE}/${loc.code}/guide/${slug}` })
   alts.push({ hreflang: 'x-default', href: `${SITE}/guide/${slug}` })
+  return alts
+}
+
+// hreflang cluster for the /guide hub itself: English hub + each localized hub.
+function hubHreflang(): { hreflang: string; href: string }[] {
+  const alts = [{ hreflang: 'en', href: `${SITE}/guide` }]
+  for (const loc of I18N_LOCALES) if (GUIDE_HUB_I18N[loc.code]) alts.push({ hreflang: loc.hreflang, href: `${SITE}/${loc.code}/guide` })
+  alts.push({ hreflang: 'x-default', href: `${SITE}/guide` })
   return alts
 }
 // Entity review pages (answer-first per-operator pages: is-X-safe / does-X-pay-out /
@@ -3794,7 +3802,7 @@ export async function generateSeoPages(): Promise<void> {
     related: `See <a href="/guide/are-crypto-casinos-legal">are crypto casinos legal?</a>, <a href="/guide/crypto-casino-kyc-and-anonymity">KYC & anonymity</a>, and <a href="/guide/what-is-a-crypto-casino">what is a crypto casino?</a>`,
   }), 'featured_core')
   add('/guide', 'guide', guidePage({
-    path: '/guide', h1: 'Crypto casino guides',
+    path: '/guide', h1: 'Crypto casino guides', alternates: hubHreflang(),
     title: `Crypto Casino Guides — On-Chain Data, Reserves & Deposits (${YEAR}) | Tekel Data`,
     description: `Practical, data-backed guides to crypto casinos: proof of reserves, deposit currencies (USDT vs Bitcoin), how to verify an operator on-chain, and how to judge safety.`,
     intro: `Practical guides built on verifiable on-chain data — not affiliate marketing. Learn how to read reserves, choose a deposit currency, and check an operator yourself.`,
@@ -3833,9 +3841,34 @@ export async function generateSeoPages(): Promise<void> {
         path: `/${loc.code}/guide/${slug}`,
         h1: t.h1, title: t.title, description: t.description, intro: t.intro,
         sections: t.sections, faqs: t.faqs, related: t.related,
-        lang: loc.hreflang, alternates, homeLabel: loc.homeLabel, guidesLabel: loc.guidesLabel, faqHeading: loc.faqHeading,
+        lang: loc.hreflang, alternates, homeLabel: loc.homeLabel, guidesLabel: loc.guidesLabel, guidesUrl: `${SITE}/${loc.code}/guide`, faqHeading: loc.faqHeading,
       }), 'featured_core')
     }
+  }
+  // per-language /guide hub — indexes the translated guides for that locale (list built
+  // from GUIDE_I18N so new translations auto-appear), closing the loop into a language
+  // sub-site. Links out to the full English library.
+  const hubAlts = hubHreflang()
+  for (const loc of I18N_LOCALES) {
+    const hub = GUIDE_HUB_I18N[loc.code]
+    if (!hub) continue
+    const items = Object.entries(GUIDE_I18N)
+      .filter(([, byLocale]) => byLocale[loc.code])
+      .map(([slug, byLocale]) => {
+        const tx = byLocale[loc.code]
+        return `<p><strong><a href="/${loc.code}/guide/${slug}">${esc(tx.h1)}</a></strong> — ${esc(tx.description)}</p>`
+      })
+    if (!items.length) continue
+    add(`/${loc.code}/guide`, 'guide', guidePage({
+      path: `/${loc.code}/guide`,
+      h1: hub.heading,
+      title: hub.title,
+      description: hub.description,
+      intro: hub.intro,
+      sections: [{ h: hub.heading, body: items.join('') }],
+      related: `<a href="/guide">${esc(hub.moreLabel)}</a>`,
+      lang: loc.hreflang, alternates: hubAlts, homeLabel: loc.homeLabel, guidesLabel: loc.guidesLabel, guidesUrl: `${SITE}/${loc.code}/guide`,
+    }), 'featured_core')
   }
   await yieldLoop()
   // chains
