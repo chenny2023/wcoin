@@ -8,6 +8,7 @@ import { reviewScores, type ReviewScore } from './collectors/reviews.ts'
 import { reserveSeries, priorReserves } from './reservehistory.ts'
 import { brandRiskEvents, recentRiskEvents, type RiskEvent } from './riskevents.ts'
 import { pingIndexNow } from './indexnow.ts'
+import { GUIDE_I18N, I18N_LOCALES } from './i18n-guides.ts'
 import type { TokenInfo } from './collectors/casinotokens.ts'
 import sharp from 'sharp'
 import { createHash } from 'node:crypto'
@@ -35,6 +36,19 @@ import { fileURLToPath } from 'node:url'
 const SITE = 'https://tekeldata.com'
 // current year for rolling leaderboard titles (variable, never hard-coded) — §3.3
 const YEAR = new Date().getUTCFullYear()
+
+// hreflang cluster for a guide slug that has curated translations (i18n-guides.ts):
+// English canonical + each localized variant + x-default→English. Passed to BOTH the
+// English guidePage and every localized one so the cluster is bidirectional. Returns
+// undefined for slugs with no translations (English page keeps its default hreflang).
+function guideHreflang(slug: string): { hreflang: string; href: string }[] | undefined {
+  const tx = GUIDE_I18N[slug]
+  if (!tx) return undefined
+  const alts = [{ hreflang: 'en', href: `${SITE}/guide/${slug}` }]
+  for (const loc of I18N_LOCALES) if (tx[loc.code]) alts.push({ hreflang: loc.hreflang, href: `${SITE}/${loc.code}/guide/${slug}` })
+  alts.push({ hreflang: 'x-default', href: `${SITE}/guide/${slug}` })
+  return alts
+}
 // Entity review pages (answer-first per-operator pages: is-X-safe / does-X-pay-out /
 // X-proof-of-reserves). Highest explicit intent + most AI-citable. `slug` is the URL
 // slug; `match` lowercased-key matches the brand in our views. Shared by the generator
@@ -123,8 +137,13 @@ function layout(opts: {
   body: string
   noindex?: boolean
   ogImage?: string
+  lang?: string // BCP-47 for <html lang>; default 'en'
+  alternates?: { hreflang: string; href: string }[] // hreflang cluster; default en + x-default → canonical
 }): string {
-  const { title, description, canonical, jsonLd = [], breadcrumb, h1, updated, body, noindex, ogImage } = opts
+  const { title, description, canonical, jsonLd = [], breadcrumb, h1, updated, body, noindex, ogImage, lang = 'en', alternates } = opts
+  const altTags = (alternates && alternates.length
+    ? alternates.map((a) => `<link rel="alternate" hreflang="${esc(a.hreflang)}" href="${esc(a.href)}">`).join('')
+    : `<link rel="alternate" hreflang="en" href="${esc(canonical)}"><link rel="alternate" hreflang="x-default" href="${esc(canonical)}">`)
   const crumbLd = {
     '@type': 'BreadcrumbList',
     itemListElement: breadcrumb.map((b, i) => ({ '@type': 'ListItem', position: i + 1, name: b.name, item: b.url })),
@@ -133,13 +152,13 @@ function layout(opts: {
   const crumbHtml = breadcrumb
     .map((b, i) => (i < breadcrumb.length - 1 ? `<a href="${esc(b.url)}">${esc(b.name)}</a> <span>/</span> ` : `<span>${esc(b.name)}</span>`))
     .join('')
-  return `<!doctype html><html lang="en"><head>
+  return `<!doctype html><html lang="${esc(lang)}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(description)}">
 <meta name="robots" content="${noindex ? 'noindex,follow' : 'index,follow,max-image-preview:large'}">
 <link rel="canonical" href="${esc(canonical)}">
-<link rel="alternate" hreflang="en" href="${esc(canonical)}"><link rel="alternate" hreflang="x-default" href="${esc(canonical)}">
+${altTags}
 <meta name="theme-color" content="#0C0C0C">
 <link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/svg+xml" href="/svg/tekel-icon-app.svg"><link rel="apple-touch-icon" href="/png/apple-touch-icon.png">
 <meta property="og:type" content="website"><meta property="og:site_name" content="Tekel Data">
@@ -1984,12 +2003,19 @@ function guidePage(cfg: {
   sections: { h: string; body: string }[]
   faqs?: { q: string; a: string }[]
   related: string
+  // i18n (optional): localized variants set these; English pages omit them.
+  lang?: string
+  alternates?: { hreflang: string; href: string }[]
+  homeLabel?: string
+  guidesLabel?: string
+  guidesUrl?: string
+  faqHeading?: string
 }): { title: string; description: string; html: string } {
   const url = SITE + cfg.path
   const body =
     `<p class="sub">${cfg.intro}</p>` +
     cfg.sections.map((s) => `<h2>${esc(s.h)}</h2><div class="prose">${s.body}</div>`).join('') +
-    (cfg.faqs?.length ? `<h2>FAQ</h2>${cfg.faqs.map((f) => `<div class="prose"><strong>${esc(f.q)}</strong><br>${f.a}</div>`).join('')}` : '') +
+    (cfg.faqs?.length ? `<h2>${esc(cfg.faqHeading ?? 'FAQ')}</h2>${cfg.faqs.map((f) => `<div class="prose"><strong>${esc(f.q)}</strong><br>${f.a}</div>`).join('')}` : '') +
     `<div class="prose" style="margin-top:16px">${cfg.related}</div>`
   const jsonLd: object[] = []
   if (cfg.faqs?.length) jsonLd.push({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: cfg.faqs.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a.replace(/<[^>]+>/g, '') } })) })
@@ -2012,7 +2038,18 @@ function guidePage(cfg: {
   return {
     title: cfg.title,
     description: cfg.description,
-    html: layout({ title: cfg.title, description: cfg.description, canonical: url, jsonLd, breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: 'Guides', url: SITE + '/guide' }, { name: cfg.h1, url }], h1: cfg.h1, updated, body }),
+    html: layout({
+      title: cfg.title,
+      description: cfg.description,
+      canonical: url,
+      jsonLd,
+      breadcrumb: [{ name: cfg.homeLabel ?? 'Home', url: SITE + '/' }, { name: cfg.guidesLabel ?? 'Guides', url: cfg.guidesUrl ?? SITE + '/guide' }, { name: cfg.h1, url }],
+      h1: cfg.h1,
+      updated,
+      body,
+      lang: cfg.lang,
+      alternates: cfg.alternates,
+    }),
   }
 }
 
@@ -2997,7 +3034,7 @@ export async function generateSeoPages(): Promise<void> {
     related: `Browse the <a href="/best-usdt-casinos">best USDT casinos</a>, read <a href="/guide/best-crypto-for-casino-deposits">best crypto for deposits</a> and <a href="/guide/stablecoin-casinos-explained">stablecoin casinos explained</a>, or see the full <a href="/data/crypto-casino-deposit-currencies">on-chain currency breakdown</a>.`,
   }), 'featured_core')
   add('/guide/are-crypto-casinos-safe', 'guide', guidePage({
-    path: '/guide/are-crypto-casinos-safe', h1: 'Are crypto casinos safe?',
+    path: '/guide/are-crypto-casinos-safe', h1: 'Are crypto casinos safe?', alternates: guideHreflang('are-crypto-casinos-safe'),
     title: `Are Crypto Casinos Safe? How to Judge One With On-Chain Data (${YEAR}) | Tekel Data`,
     description: `Are crypto casinos safe? The honest answer and a practical framework: what actually puts your funds at risk, and the on-chain + third-party signals that separate solid operators from risky ones.`,
     intro: `"Are crypto casinos safe?" has no single answer — safety is per-operator, and you can measure it instead of guessing. This guide lays out what actually puts your funds at risk, what licensing does and doesn't protect, why "provably fair" is not the same as solvent, and a concrete pre-deposit checklist built on signals you can verify yourself.`,
@@ -3020,7 +3057,7 @@ export async function generateSeoPages(): Promise<void> {
     related: `See the <a href="/rankings/trust">most-trusted ranking</a>, <a href="/crypto-casinos-with-proof-of-reserves">casinos with proof of reserves</a>, the <a href="/risk">risk registry</a>, and <a href="/guide/crypto-casino-withdrawal-times">crypto casino withdrawal times</a>.`,
   }), 'featured_core')
   add('/guide/how-to-verify-a-crypto-casino', 'guide', guidePage({
-    path: '/guide/how-to-verify-a-crypto-casino', h1: 'How to verify a crypto casino on-chain',
+    path: '/guide/how-to-verify-a-crypto-casino', h1: 'How to verify a crypto casino on-chain', alternates: guideHreflang('how-to-verify-a-crypto-casino'),
     title: `How to Verify a Crypto Casino On-Chain (${YEAR}) — Step by Step | Tekel Data`,
     description: `A step-by-step guide to checking a crypto casino yourself using public blockchain data: finding its wallets, reading reserves, sanity-checking volume, and spotting wash/treasury churn.`,
     intro: `You don't have to take a casino's word for anything — the blockchain is public. This is the exact process we use to verify an operator: finding its wallets, reading reserves on the right explorer for each chain, telling real player flow from treasury churn, and the mistakes that lead people to wrong conclusions.`,
@@ -3776,6 +3813,23 @@ export async function generateSeoPages(): Promise<void> {
   add('/submit/casino', 'submit', submitPage('casino'), 'featured_core') // §5.3
   add('/submit/kol', 'submit', submitPage('kol'), 'featured_core')
   if (unattributed.length) add('/rankings/unattributed-flow', 'rankings', unattributedFlowPage(unattributed))
+  // ── localized guides (curated translations, i18n-guides.ts) ─────────────────────
+  // Served at /{locale}/guide/{slug} with a full bidirectional hreflang cluster. Only
+  // vetted evergreen guides are localized — no bulk machine translation, so no thin
+  // duplicate content. English guides in the set carry the matching hreflang tags.
+  for (const [slug, byLocale] of Object.entries(GUIDE_I18N)) {
+    const alternates = guideHreflang(slug)
+    for (const loc of I18N_LOCALES) {
+      const t = byLocale[loc.code]
+      if (!t) continue
+      add(`/${loc.code}/guide/${slug}`, 'guide', guidePage({
+        path: `/${loc.code}/guide/${slug}`,
+        h1: t.h1, title: t.title, description: t.description, intro: t.intro,
+        sections: t.sections, faqs: t.faqs, related: t.related,
+        lang: loc.hreflang, alternates, homeLabel: loc.homeLabel, guidesLabel: loc.guidesLabel, faqHeading: loc.faqHeading,
+      }), 'featured_core')
+    }
+  }
   await yieldLoop()
   // chains
   for (const cs of chainSet) if (cs) add(`/chains/${cs}`, 'chains', chainPage(cs, onchainBrands, slugOfBrand))
