@@ -2671,7 +2671,14 @@ export async function generateSeoPages(): Promise<void> {
   const SEO_MIN_WORDS = Number(process.env.SEO_MIN_WORDS ?? 250)
   const mainWords = (html: string): number => {
     const m = html.match(/<main[^>]*>([\s\S]*?)<\/main>/)
-    return (m ? m[1] : html).replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/g, ' ').split(/\s+/).filter(Boolean).length
+    const text = (m ? m[1] : html).replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/g, ' ')
+    const tokens = text.split(/\s+/).filter(Boolean).length
+    // Japanese (and Chinese) text has no inter-word spaces, so whitespace tokenisation
+    // undercounts it ~10× and would falsely flag a full translation as thin → noindex.
+    // Count CJK characters toward the length so localized pages are gated on real
+    // content, not spaces. (Korean uses spaces, so its tokens already count.)
+    const cjk = (text.match(/[぀-ヿ㐀-鿿豈-﫿ｦ-ﾟ]/g) || []).length
+    return tokens + cjk
   }
   const add = (path: string, kind: string, pg: { title: string; description: string; html: string }, lifecycle = 'public_indexable') => {
     let lc = lifecycle
