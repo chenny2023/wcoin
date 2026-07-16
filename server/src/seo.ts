@@ -2998,7 +2998,7 @@ export async function generateSeoPages(): Promise<void> {
     }), 'featured_core')
   }
   add('/guide/crypto-casino-proof-of-reserves', 'guide', guidePage({
-    path: '/guide/crypto-casino-proof-of-reserves', h1: 'Crypto casino proof of reserves, explained',
+    path: '/guide/crypto-casino-proof-of-reserves', h1: 'Crypto casino proof of reserves, explained', alternates: guideHreflang('crypto-casino-proof-of-reserves'),
     title: `Crypto Casino Proof of Reserves Explained (${YEAR}) | Tekel Data`,
     description: `What proof of reserves means for a crypto casino, why it matters for solvency, how on-chain reserves are measured and verified, and the limits of the approach.`,
     intro: `"Proof of reserves" is the closest thing a crypto casino has to a public balance sheet — on-chain wallet balances anyone can verify. This guide explains what it actually proves, what it doesn't, the critical difference between proof of reserves and proof of custody, and how to read a reserve figure without fooling yourself.`,
@@ -3127,7 +3127,7 @@ export async function generateSeoPages(): Promise<void> {
     related: `See why fairness is separate from solvency in <a href="/guide/are-crypto-casinos-safe">are crypto casinos safe?</a>, the maths in <a href="/guide/crypto-casino-rtp-and-house-edge">RTP & house edge</a>, and the <a href="/rankings/trust">trust ranking</a>.`,
   }), 'featured_core')
   add('/guide/what-is-a-crypto-casino', 'guide', guidePage({
-    path: '/guide/what-is-a-crypto-casino', h1: 'What is a crypto casino?',
+    path: '/guide/what-is-a-crypto-casino', h1: 'What is a crypto casino?', alternates: guideHreflang('what-is-a-crypto-casino'),
     title: `What Is a Crypto Casino? How They Work (${YEAR}) | Tekel Data`,
     description: `What a crypto casino is, how it differs from a traditional online casino, how deposits and provably-fair games work, and the on-chain trade-offs — explained simply.`,
     intro: `A crypto casino is an online casino that takes deposits and pays winnings in cryptocurrency rather than fiat. That one change has big consequences — here's how they actually work.`,
@@ -3227,7 +3227,7 @@ export async function generateSeoPages(): Promise<void> {
     related: `See <a href="/guide/are-crypto-casinos-safe">are crypto casinos safe?</a>, <a href="/guide/crypto-casino-kyc-and-anonymity">KYC & anonymity</a>, <a href="/guide/crypto-casino-red-flags">crypto casino red flags</a>, and how to <a href="/guide/how-to-verify-a-crypto-casino">verify an operator on-chain</a>.`,
   }), 'featured_core')
   add('/guide/crypto-casino-red-flags', 'guide', guidePage({
-    path: '/guide/crypto-casino-red-flags', h1: 'Crypto casino red flags: warning signs to check',
+    path: '/guide/crypto-casino-red-flags', h1: 'Crypto casino red flags: warning signs to check', alternates: guideHreflang('crypto-casino-red-flags'),
     title: `Crypto Casino Red Flags — Warning Signs Before You Deposit (${YEAR}) | Tekel Data`,
     description: `The warning signs that a crypto casino may not pay out: thin or falling reserves, one-way net flow, opaque ownership, slow-withdrawal patterns and bonus traps. How to spot them with on-chain data.`,
     intro: `No single signal proves an operator is bad — but a cluster of red flags is a reason to slow down. This checklist covers the warning signs worth checking before you deposit: the on-chain solvency signals, the volume tricks, the bonus and conduct traps, how to weigh flags as clusters rather than singles, and — just as important — what is <em>not</em> actually a red flag so you don't scare yourself off a sound operator.`,
@@ -3440,7 +3440,7 @@ export async function generateSeoPages(): Promise<void> {
   }), 'featured_core')
   // ── Phase 3: intent-cluster guides (payout-failure / scam-detection / payment) ──
   add('/guide/how-to-spot-a-crypto-casino-that-wont-pay', 'guide', guidePage({
-    path: '/guide/how-to-spot-a-crypto-casino-that-wont-pay', h1: 'How to spot a crypto casino that won\'t pay winners',
+    path: '/guide/how-to-spot-a-crypto-casino-that-wont-pay', h1: 'How to spot a crypto casino that won\'t pay winners', alternates: guideHreflang('how-to-spot-a-crypto-casino-that-wont-pay'),
     title: `How to Spot a Crypto Casino That Won't Pay (${YEAR}) | Tekel Data`,
     description: `A pre-deposit checklist for identifying crypto casinos likely to block or stall withdrawals — using on-chain reserve/flow signals cross-checked with complaint data. Neutral, verifiable.`,
     intro: `The worst outcome at a crypto casino isn't a losing session — it's winning and not being able to withdraw. Here's a verifiable, pre-deposit checklist that combines on-chain signals with reputation data.`,
