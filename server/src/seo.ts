@@ -2310,6 +2310,15 @@ function industryTrendPage(): { title: string; description: string; html: string
     .prepare('SELECT snapshot_date, tracked_volume_24h, reserves_total, active_casinos, active_chains, net_flow_24h FROM daily_market_snapshot ORDER BY snapshot_date DESC LIMIT 90')
     .all() as { snapshot_date: string; tracked_volume_24h: number; reserves_total: number; active_casinos: number; active_chains: number; net_flow_24h: number }[]
   if (rows.length < 14) return null // need ≥2 weeks of history for a trend
+  // Reserves come from reserve_history (authoritative per-brand daily balances) summed
+  // per day — NOT daily_market_snapshot.reserves_total, whose historical rows are $0
+  // (it used to read the unpopulated arkham_casino table). Map dayNumber → total USD.
+  const resByDay = new Map<number, number>()
+  for (const r of db.prepare('SELECT day, COALESCE(SUM(reserves),0) t FROM reserve_history GROUP BY day').all() as { day: number; t: number }[]) resByDay.set(r.day, r.t)
+  const reservesOf = (dateStr: string, fallback: number) => {
+    const day = Math.floor(Date.parse(dateStr + 'T00:00:00Z') / 86_400_000)
+    return resByDay.get(day) ?? resByDay.get(day - 1) ?? (fallback || 0)
+  }
   const chrono = rows.slice().reverse() // oldest → newest
   const latest = chrono[chrono.length - 1]
   const ago = (n: number) => chrono[Math.max(0, chrono.length - 1 - n)]
@@ -2321,14 +2330,14 @@ function industryTrendPage(): { title: string; description: string; html: string
     const cls = p >= 0 ? 'mint' : 'rose'
     return `<span class="${cls}">${p >= 0 ? '+' : '−'}${Math.abs(p).toFixed(1)}%</span>`
   }
-  const d7 = ago(7)
   const d30 = ago(Math.min(30, spanDays))
   const win = Math.min(30, spanDays)
+  const latestReserves = reservesOf(latest.snapshot_date, latest.reserves_total ?? 0)
   // headline tiles with 7d/30d deltas
   const tiles =
     `<div class="grid">` +
     stat('Verified 24h volume', fmtUsd(latest.tracked_volume_24h ?? 0), 'gold') +
-    stat('Tracked reserves', fmtUsd(latest.reserves_total ?? 0), 'mint') +
+    stat('Tracked reserves', fmtUsd(latestReserves), 'mint') +
     stat('Active operators', fmtNum(latest.active_casinos ?? 0)) +
     stat('Active chains', String(latest.active_chains ?? 0)) +
     `</div>`
@@ -2336,22 +2345,22 @@ function industryTrendPage(): { title: string; description: string; html: string
   const sparkRow = (label: string, series: number[], now: string) =>
     `<tr><td>${esc(label)}</td><td class="n">${now}</td><td>${sparkline(series)}</td><td class="n">${deltaCell(series[series.length - 1], series[Math.max(0, series.length - 1 - 7)])}</td><td class="n">${deltaCell(series[series.length - 1], series[0])}</td></tr>`
   const volSeries = chrono.map((r) => r.tracked_volume_24h ?? 0)
-  const resSeries = chrono.map((r) => r.reserves_total ?? 0)
+  const resSeries = chrono.map((r) => reservesOf(r.snapshot_date, r.reserves_total ?? 0))
   const opsSeries = chrono.map((r) => r.active_casinos ?? 0)
   const trendTable =
     `<table><thead><tr><th>Metric (on-chain, verified)</th><th style="text-align:right">Now</th><th>Trend (${spanDays}d)</th><th style="text-align:right">7d</th><th style="text-align:right">${win}d</th></tr></thead><tbody>` +
     sparkRow('24h verified volume', volSeries, fmtUsd(latest.tracked_volume_24h ?? 0)) +
-    sparkRow('Tracked reserves', resSeries, fmtUsd(latest.reserves_total ?? 0)) +
+    sparkRow('Tracked reserves', resSeries, fmtUsd(latestReserves)) +
     sparkRow('Active operators', opsSeries, fmtNum(latest.active_casinos ?? 0)) +
     `</tbody></table>`
-  const resDir = pct(latest.reserves_total ?? 0, d30.reserves_total ?? 0)
+  const resDir = pct(resSeries[resSeries.length - 1], resSeries[Math.max(0, resSeries.length - 1 - win)])
   const opsDir = (latest.active_casinos ?? 0) - (d30.active_casinos ?? 0)
   const title = `Crypto Casino Industry On-Chain Trends ${YEAR} — Volume, Reserves & Growth | Tekel Data`
-  const description = `Is the crypto-casino industry growing or shrinking? Tracked on-chain: ${fmtUsd(latest.reserves_total ?? 0)} in operator reserves across ${latest.active_casinos ?? 0} active operators as of ${latest.snapshot_date}, with ${win}-day trend. Verified, wash/treasury-excluded, independently checkable.`
+  const description = `Is the crypto-casino industry growing or shrinking? Tracked on-chain: ${fmtUsd(latestReserves)} in operator reserves across ${latest.active_casinos ?? 0} active operators as of ${latest.snapshot_date}, with ${win}-day trend. Verified, wash/treasury-excluded, independently checkable.`
   const faqs: { q: string; a: string }[] = [
     {
       q: 'How big is the crypto casino industry on-chain?',
-      a: `As of ${latest.snapshot_date}, Tekel Data tracks ${fmtUsd(latest.reserves_total ?? 0)} in mapped on-chain reserves across ${latest.active_casinos ?? 0} active crypto-casino operators on ${latest.active_chains ?? 0} chains, with ${fmtUsd(latest.tracked_volume_24h ?? 0)} in verified 24-hour volume. These are wash/treasury-excluded on-chain figures — a floor on real activity, not the inflated "volume" operators advertise — and every number is verifiable on public blockchains.`,
+      a: `As of ${latest.snapshot_date}, Tekel Data tracks ${fmtUsd(latestReserves)} in mapped on-chain reserves across ${latest.active_casinos ?? 0} active crypto-casino operators on ${latest.active_chains ?? 0} chains, with ${fmtUsd(latest.tracked_volume_24h ?? 0)} in verified 24-hour volume. These are wash/treasury-excluded on-chain figures — a floor on real activity, not the inflated "volume" operators advertise — and every number is verifiable on public blockchains.`,
     },
     {
       q: 'Is crypto gambling growing or shrinking?',

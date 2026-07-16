@@ -1,5 +1,6 @@
 import { db, externalFlowClause } from './db.ts'
 import { aggregateBrands } from './aggregate.ts'
+import { priorReserves } from './reservehistory.ts'
 import { workerGet, workerAll } from './readpool.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -141,17 +142,13 @@ export async function generateMarketSnapshot(): Promise<void> {
     [d1, ...suspectArr],
   )) as { label: string; chain: string; direction: string; cnt: number; total: number; largest: number }[]
 
-  // reserves (small tables — main thread is fine)
-  const reservesTotal =
-    (db.prepare("SELECT COALESCE(SUM(reserves_usd),0) t FROM arkham_casino WHERE entity_id!='' AND reserves_usd IS NOT NULL").get() as any).t ?? 0
-  const prevReserves =
-    (db
-      .prepare(
-        `SELECT COALESCE(SUM(r),0) t FROM (
-           SELECT (SELECT reserves_usd FROM arkham_reserve_history h WHERE h.key=a.key AND h.ts<=? ORDER BY h.ts DESC LIMIT 1) r
-           FROM arkham_casino a WHERE a.entity_id!='' AND a.reserves_usd IS NOT NULL)`,
-      )
-      .get(d7) as any).t ?? 0
+  // reserves — sum the SAME live aggregate the reserves report uses (attributed brands'
+  // mapped on-chain wallet balances), NOT the arkham_casino table, which is unpopulated
+  // and left reserves_total at $0 across every daily snapshot (also broke /reports/daily
+  // and the digest). Prior total comes from the per-brand reserve_history snapshots.
+  const brandsWithReserves = verified.filter((b) => b.reserves > 0)
+  const reservesTotal = brandsWithReserves.reduce((s, b) => s + b.reserves, 0)
+  const prevReserves = brandsWithReserves.reduce((s, b) => s + (priorReserves(b.brand, 7)?.reserves ?? 0), 0)
   const reserveChange7d = prevReserves > 0 ? (reservesTotal - prevReserves) / prevReserves : null
 
   const liveStreamers = (db.prepare('SELECT COUNT(*) n FROM streamers WHERE live=1').get() as any).n ?? 0
