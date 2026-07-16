@@ -5,7 +5,7 @@ import { workerAll } from './readpool.ts'
 import { runDataQualityChecks } from './dataquality.ts'
 import { brandKey, brandName, matchCasinoMeta, type CasinoMeta } from './casinometa.ts'
 import { reviewScores, type ReviewScore } from './collectors/reviews.ts'
-import { reserveSeries } from './reservehistory.ts'
+import { reserveSeries, priorReserves } from './reservehistory.ts'
 import { brandRiskEvents, recentRiskEvents, type RiskEvent } from './riskevents.ts'
 import { pingIndexNow } from './indexnow.ts'
 import type { TokenInfo } from './collectors/casinotokens.ts'
@@ -2058,6 +2058,80 @@ function netFlowReportPage(rows: { v: CasinoView; slug: string; net: number; inf
   }
 }
 
+// Reserve-drawdown story — the sharpest solvency-watch signal we uniquely hold: how
+// each operator's on-chain reserves have moved over ~7d (balance now vs the snapshot
+// ~7d ago from reserve_history). This is NOT net flow (deposits−withdrawals) — it's the
+// actual wallet-balance trend. Neutral, descriptive, guarded: high/medium-confidence
+// attributed brands only, wash/treasury-suspect excluded, no insolvency verdict.
+function reserveDrawdownPage(brands: BrandAgg[], slugOfBrand: (b: BrandAgg) => string): { title: string; description: string; html: string } {
+  const path = '/data/crypto-casino-reserve-drawdown'
+  const url = SITE + path
+  type Row = { brand: string; slug: string; now: number; prev: number; deltaPct: number; deltaUsd: number; coverage: number | null }
+  const rows: Row[] = []
+  for (const b of brands) {
+    if (b.category !== 'casino' || !b.attributed || b.volumeSuspect) continue
+    if (b.confidence === 'low') continue
+    if (!(b.reserves > 0)) continue
+    const p = priorReserves(b.brand, 7)
+    if (!p || !(p.reserves > 0)) continue // need ≥7d of history with a real prior balance
+    const deltaUsd = b.reserves - p.reserves
+    const deltaPct = (deltaUsd / p.reserves) * 100
+    rows.push({ brand: b.brand, slug: slugOfBrand(b), now: b.reserves, prev: p.reserves, deltaPct, deltaUsd, coverage: b.reserveCoverage })
+  }
+  // rank most-negative first (biggest drawdown), then include the risers below
+  rows.sort((a, b) => a.deltaPct - b.deltaPct)
+  const draining = rows.filter((r) => r.deltaPct <= -5) // material decline only
+  const growing = rows.filter((r) => r.deltaPct >= 5).sort((a, b) => b.deltaPct - a.deltaPct)
+  const rowHtml = (r: Row) =>
+    `<tr><td><a href="/casino/${r.slug}">${esc(r.brand)}</a></td><td class="n">${fmtUsd(r.prev)}</td><td class="n">${fmtUsd(r.now)}</td><td class="n ${r.deltaPct < 0 ? 'rose' : 'mint'}">${r.deltaPct >= 0 ? '+' : '−'}${Math.abs(r.deltaPct).toFixed(1)}%</td></tr>`
+  const title = `Which Crypto Casinos Are Draining Their Reserves? On-Chain Data ${YEAR} | Tekel Data`
+  const description = `We track each crypto casino's on-chain reserve balance day by day. Here are the operators whose mapped reserves fell most over the last 7 days — a neutral solvency-watch signal, verifiable on-chain and wash/treasury-excluded. Not an insolvency verdict.`
+  const faqs: { q: string; a: string }[] = [
+    {
+      q: 'Which crypto casinos are draining their reserves?',
+      a: `${draining.length ? `As of the latest on-chain snapshot, ${esc(draining[0].brand)} shows the largest 7-day reserve decline (${draining[0].deltaPct.toFixed(1)}%) among the operators Tekel Data maps, followed by others in the table on this page.` : 'No mapped operator currently shows a material (≥5%) 7-day reserve decline.'} These figures are wallet-balance changes read directly from public blockchains and update continuously. A falling reserve balance is a signal to watch, not proof an operator is insolvent — pair it with net flow and coverage.`,
+    },
+    {
+      q: 'Does a falling reserve mean a crypto casino is insolvent?',
+      a: 'No. Reserves show assets, not liabilities, so a drop is not proof of insolvency — it can also reflect honouring large withdrawals, treasury rebalancing, or moving funds to an unmapped wallet. Tekel Data reports it as a descriptive on-chain signal and never labels an operator insolvent. Read it alongside net flow and reserve coverage, and verify the wallets yourself on a block explorer.',
+    },
+    {
+      q: 'How does Tekel Data measure reserve drawdown?',
+      a: 'Tekel Data snapshots each mapped operator\'s total on-chain reserve balance daily, then compares the current balance to the snapshot from ~7 days ago. Only high/medium-confidence attributed operators with real prior history are shown, and wash/treasury-suspect operators are excluded. Every balance is verifiable on public block explorers.',
+    },
+  ]
+  const body =
+    `<p class="sub">Reserves are the clearest on-chain solvency signal — and unlike volume, a balance can't be faked. We snapshot every mapped operator's total on-chain reserves daily. Below: whose reserves <strong>fell the most</strong> over the last 7 days. This is a signal to watch, <em>not</em> an insolvency verdict — reserves show assets, not liabilities.</p>` +
+    `<p class="upd">${rows.length} operators with ≥7 days of reserve history · high/medium-confidence attributed operators only, wash/treasury-suspect excluded · live wallet balances, refreshed continuously.</p>` +
+    (draining.length
+      ? `<h2>Reserves shrinking (last 7 days)</h2><table><thead><tr><th>Operator</th><th style="text-align:right">Reserves 7d ago</th><th style="text-align:right">Reserves now</th><th style="text-align:right">Change</th></tr></thead><tbody>${draining.map(rowHtml).join('')}</tbody></table>`
+      : `<h2>Reserves shrinking (last 7 days)</h2><p class="prose">No mapped operator currently shows a material (≥5%) 7-day reserve decline — a healthy sign across the set we track.</p>`) +
+    (growing.length
+      ? `<h2>Reserves growing (last 7 days)</h2><table><thead><tr><th>Operator</th><th style="text-align:right">Reserves 7d ago</th><th style="text-align:right">Reserves now</th><th style="text-align:right">Change</th></tr></thead><tbody>${growing.slice(0, 15).map(rowHtml).join('')}</tbody></table>`
+      : '') +
+    `<h2>How to read this</h2><div class="prose"><p>A shrinking reserve balance can mean an operator is <strong>honouring withdrawals</strong> (healthy) or <strong>moving funds out</strong> (worth watching) — the two look identical on the balance line alone. That's why we never call it a verdict. To tell them apart, cross-read the <a href="/data/crypto-casino-net-flow">net-flow report</a> (are withdrawals actually going to players?) and the operator's <a href="/proof-of-reserves">proof-of-reserves</a> trend, and follow <a href="/guide/how-to-verify-a-crypto-casino">how to verify a casino on-chain</a>. Funds can also move to wallets we haven't mapped yet, which would show as a drawdown here even if total holdings are unchanged.</p></div>` +
+    `<h2>FAQ</h2>${faqs.map((f) => `<div class="prose"><strong>${esc(f.q)}</strong><br>${f.a}</div>`).join('')}` +
+    `<h2>Explore</h2><div class="chips"><a class="pill" href="/proof-of-reserves">Proof of reserves</a><a class="pill" href="/most-solvent-crypto-casinos">Most solvent</a><a class="pill" href="/data/crypto-casino-net-flow">Net flow</a><a class="pill" href="/data/crypto-casino-reserves">Reserves by chain</a><a class="pill" href="/data">All data</a></div>`
+  const upd = Date.now()
+  return {
+    title,
+    description,
+    html: layout({
+      title,
+      description,
+      canonical: url,
+      jsonLd: [
+        datasetLd('Crypto Casino On-Chain Reserve Drawdown (7-day)', description, url, upd, ['reserves 7 days ago (USD)', 'reserves now (USD)', '7-day reserve change (%)']),
+        { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faqs.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a.replace(/<[^>]+>/g, '') } })) },
+      ],
+      breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: 'Data', url }],
+      h1: `Which crypto casinos are draining their reserves?`,
+      updated: upd,
+      body,
+    }),
+  }
+}
+
 // /data hub — indexes the on-chain data stories (hub-spoke for the data cluster).
 // Wallet-attribution transparency data page — a differentiated "show your work" story
 // no affiliate tracker has: how many casino wallets we attribute, by evidence class,
@@ -2206,6 +2280,7 @@ function dataHubPage(): { title: string; description: string; html: string } {
     `<p><strong><a href="/data/crypto-casino-deposit-currencies">Deposit currency breakdown</a></strong> — where crypto-casino money actually moves across chains. The headline finding: stablecoins (USDT on Tron and Ethereum) dominate deposits and withdrawals, while native Bitcoin is a small share of real deposit flow.</p>` +
     `<p><strong><a href="/data/crypto-casino-reserves">Reserves report</a></strong> — how much operators hold on-chain, aggregated and broken down by chain and by operator. Proof of reserves at an industry level: wallet balances anyone can verify, not self-reported claims.</p>` +
     `<p><strong><a href="/data/crypto-casino-net-flow">Net flow report</a></strong> — external deposits minus withdrawals per operator over 7 days, a neutral liquidity signal that helps spot operators paying out versus taking in.</p>` +
+    `<p><strong><a href="/data/crypto-casino-reserve-drawdown">Which casinos are draining their reserves?</a></strong> — daily on-chain reserve-balance snapshots ranked by 7-day change, so you can see whose reserves are shrinking. A solvency-watch signal (not a verdict), and a balance can't be faked the way volume can.</p>` +
     `<p><strong><a href="/data/crypto-casino-tokens">Casino tokens report</a></strong> — the native tokens crypto casinos issue, by market cap: live price, change and which run buyback-and-burn.</p>` +
     `<p><strong><a href="/data/crypto-casino-wallet-attribution">Wallet attribution</a></strong> — how many casino wallets we attribute and the public evidence behind each, by class. A "show your work" breakdown, fully auditable on-chain and in our open-data repo.</p>` +
     `<p><strong><a href="/data/crypto-casino-fake-volume">How much volume is fake?</a></strong> — we measure what share of raw on-chain casino "volume" is wash/treasury-pattern (held under review), with every flagged operator and the reason. The number is high — and it's why we never rank by volume.</p>` +
@@ -2685,6 +2760,12 @@ export async function generateSeoPages(): Promise<void> {
   if (tokenRows.length >= 5) add('/data/crypto-casino-tokens', 'data', casinoTokensPage(tokenRows), 'featured_core')
   add('/data/crypto-casino-wallet-attribution', 'data', attributionDataPage(), 'featured_core')
   add('/data/crypto-casino-fake-volume', 'data', fakeVolumeDataPage(onchainBrands), 'featured_core')
+  // reserve-drawdown story — needs ≥5 operators with ≥7d of reserve history to be
+  // meaningful (early on the history table is too thin to publish).
+  {
+    const drawdownEligible = onchainBrands.filter((b) => b.attributed && b.confidence !== 'low' && !b.volumeSuspect && b.reserves > 0 && priorReserves(b.brand, 7)?.reserves).length
+    if (drawdownEligible >= 5) add('/data/crypto-casino-reserve-drawdown', 'data', reserveDrawdownPage(onchainBrands, slugOfBrand), 'featured_core')
+  }
   add('/data', 'data', dataHubPage(), 'featured_core')
   // Programmatic currency pages — one "Best {stablecoin} Casinos" per token with ≥5
   // operators (stablecoins are cross-chain, so not covered by the per-chain pages).

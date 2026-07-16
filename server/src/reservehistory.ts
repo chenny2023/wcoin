@@ -51,6 +51,15 @@ export function priorCoverage(brand: string, daysAgo = 7): number | null {
   return row ? row.coverage : null
 }
 
+// the reserves we snapshotted ~daysAgo days back (newest snapshot at or before that
+// day) — for the reserve-drawdown story. null until that much history exists.
+const priorResQ = db.prepare('SELECT reserves, day FROM reserve_history WHERE brand_key=? AND day<=? ORDER BY day DESC LIMIT 1')
+export function priorReserves(brand: string, daysAgo = 7): { reserves: number; day: number } | null {
+  const day = Math.floor(Date.now() / DAY) - daysAgo
+  const row = priorResQ.get(brandKey(brand), day) as { reserves: number; day: number } | undefined
+  return row ? { reserves: row.reserves, day: row.day } : null
+}
+
 // daily {day, reserves, outflow7d, coverage} series for one brand (most recent N days)
 export function reserveSeries(brand: string, days = 60): { t: number; reserves: number; outflow7d: number; coverage: number }[] {
   const key = brandKey(brand)
