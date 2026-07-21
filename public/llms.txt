@@ -32,6 +32,7 @@ Tekel Data tracks crypto-casino and on-chain-gambling activity across 11+ blockc
 ## Primary pages (server-rendered, citable)
 
 - Home / overview: https://tekeldata.com/
+- How big is the crypto casino market (size & concentration): https://tekeldata.com/data/crypto-casino-market-overview
 - How much crypto-casino volume is fake (wash-trading data): https://tekeldata.com/data/crypto-casino-fake-volume
 - Wallet-attribution transparency (evidence behind every figure): https://tekeldata.com/data/crypto-casino-wallet-attribution
 - Best crypto casinos (trust-ranked): https://tekeldata.com/best-crypto-casinos

@@ -2206,6 +2206,77 @@ function reserveDrawdownPage(brands: BrandAgg[], slugOfBrand: (b: BrandAgg) => s
   }
 }
 
+// Market-size & concentration story — the macro "state of crypto gambling" numbers,
+// aggregated from the verified operator set: how many operators we track, total
+// tracked reserves and verified (wash-excluded) volume, and how concentrated the
+// market is (top-N share). High-intent, highly citable ("how big is the market",
+// "how many crypto casinos are there") — all figures verifiable, suspect excluded.
+function marketOverviewPage(brands: BrandAgg[]): { title: string; description: string; html: string } {
+  const path = '/data/crypto-casino-market-overview'
+  const url = SITE + path
+  // universe = attributed, ≥medium-confidence casino operators with real on-chain footprint
+  const ops = brands.filter((b) => b.category === 'casino' && b.attributed && b.confidence !== 'low' && (b.reserves > 0 || (!b.volumeSuspect && b.volume7d > 0)))
+  const withReserves = ops.filter((b) => b.reserves > 0).sort((a, b) => b.reserves - a.reserves)
+  const withVol = ops.filter((b) => !b.volumeSuspect && b.volume7d > 0).sort((a, b) => b.volume7d - a.volume7d)
+  const totalReserves = withReserves.reduce((s, b) => s + b.reserves, 0)
+  const totalVol = withVol.reduce((s, b) => s + b.volume7d, 0)
+  const chains = new Set<string>()
+  for (const b of ops) for (const c of b.chains ?? []) chains.add(c)
+  const topShare = (rows: BrandAgg[], n: number, total: number, metric: (b: BrandAgg) => number) => (total > 0 ? (rows.slice(0, n).reduce((s, b) => s + metric(b), 0) / total) * 100 : 0)
+  const r5 = Math.round(topShare(withReserves, 5, totalReserves, (b) => b.reserves))
+  const r10 = Math.round(topShare(withReserves, 10, totalReserves, (b) => b.reserves))
+  const v5 = Math.round(topShare(withVol, 5, totalVol, (b) => b.volume7d))
+  const leaderR = withReserves[0]
+  const leaderV = withVol[0]
+  const opRows = withReserves
+    .slice(0, 15)
+    .map((b, i) => `<tr><td class="n">${i + 1}</td><td>${esc(b.brand)}</td><td class="n">${fmtUsd(b.reserves)}</td><td class="n">${totalReserves > 0 ? ((b.reserves / totalReserves) * 100).toFixed(1) : '0'}%</td></tr>`)
+    .join('')
+  const title = `How Big Is the Crypto Casino Market? On-Chain Size & Concentration ${YEAR} | Tekel Data`
+  const description = `The crypto-casino market in numbers: ${fmtNum(ops.length)} tracked operators, ${fmtUsd(totalReserves)} in verifiable on-chain reserves and ${fmtUsd(totalVol)} of verified 7-day volume across ${chains.size} chains — with the top 5 holding ~${r5}% of reserves. All on-chain, wash-excluded.`
+  const faqs: { q: string; a: string }[] = [
+    {
+      q: 'How big is the crypto casino market?',
+      a: `Across the operators Tekel Data maps on-chain, we currently track ${fmtUsd(totalReserves)} in verifiable reserves and ${fmtUsd(totalVol)} of verified (wash-excluded) player volume over the last 7 days, spread across ${chains.size} blockchains. This is a floor, not a ceiling — it covers only wallets we've attributed with at least medium confidence, and excludes anomalous wash/treasury volume. Figures update continuously.`,
+    },
+    {
+      q: 'How many crypto casinos are there?',
+      a: `Tekel Data currently tracks ${fmtNum(ops.length)} crypto-casino operators with attributed on-chain activity and at least medium-confidence data. The true number of live brands is larger — many are too small, too new, or too opaque to attribute reliably, and we deliberately exclude those we can't verify rather than pad the count.`,
+    },
+    {
+      q: 'How concentrated is the crypto casino market?',
+      a: `Highly concentrated. The five largest operators by mapped reserves hold roughly ${r5}% of all tracked on-chain reserves, and the top ten about ${r10}%.${leaderR ? ` ${esc(leaderR.brand)} is currently the single largest by mapped reserves.` : ''} By verified volume the top five account for around ${v5}%. See the live table on this page for the current breakdown.`,
+    },
+  ]
+  const body =
+    `<p class="sub">The crypto-casino industry loves big, unverifiable numbers. Here are the ones you can actually check — aggregated from every operator we map on-chain, with wash/treasury volume stripped out. As of the latest refresh: <strong>${fmtNum(ops.length)}</strong> tracked operators, <strong>${fmtUsd(totalReserves)}</strong> in verifiable reserves, and <strong>${fmtUsd(totalVol)}</strong> of verified 7-day volume across <strong>${chains.size}</strong> chains.</p>` +
+    `<p class="upd">≥medium-confidence attributed operators only · reserves and volume read live from public blockchains · anomalous wash/treasury volume excluded · refreshed continuously.</p>` +
+    `<div class="grid">${stat('Tracked operators', fmtNum(ops.length))}${stat('Verifiable reserves', fmtUsd(totalReserves), 'mint')}${stat('Verified volume (7d)', fmtUsd(totalVol))}${stat('Chains', String(chains.size))}</div>` +
+    `<h2>How concentrated is the market?</h2><div class="prose"><p>On-chain gambling is <strong>top-heavy</strong>: the five largest operators by mapped reserves hold roughly <strong>${r5}%</strong> of all tracked reserves, and the top ten about <strong>${r10}%</strong>. By verified volume the top five account for around <strong>${v5}%</strong>. A long tail of smaller operators shares the rest. That concentration matters for players — the biggest brands aren't automatically the safest, but they are the most scrutinised and the easiest to verify on-chain.</p></div>` +
+    (opRows ? `<h2>Largest operators by tracked reserves</h2><table><thead><tr><th>#</th><th>Operator</th><th style="text-align:right">Mapped reserves</th><th style="text-align:right">Share</th></tr></thead><tbody>${opRows}</tbody></table>` : '') +
+    `<h2>Why these numbers are lower than headlines</h2><div class="prose"><p>Most "crypto casino market size" figures are raw throughput — inflated several times over by internal hot-wallet churn, double-counting and treasury/market-making movement. We count only external-facing flow and hold anomalous-volume operators <a href="/data/crypto-casino-fake-volume">under review</a>, so our numbers are smaller but honest. They're also a <strong>floor</strong>: reserves and volume we haven't attributed yet aren't included. Pick any operator and verify it on a block explorer.</p></div>` +
+    `<h2>FAQ</h2>${faqs.map((f) => `<div class="prose"><strong>${esc(f.q)}</strong><br>${f.a}</div>`).join('')}` +
+    `<h2>Explore</h2><div class="chips"><a class="pill" href="/data/crypto-casino-reserves">Reserves by chain</a><a class="pill" href="/data/crypto-casino-fake-volume">How much volume is fake</a><a class="pill" href="/rankings/trust">Trust ranking</a><a class="pill" href="/proof-of-reserves">Proof of reserves</a><a class="pill" href="/data">All data</a></div>`
+  const upd = Date.now()
+  return {
+    title,
+    description,
+    html: layout({
+      title,
+      description,
+      canonical: url,
+      jsonLd: [
+        datasetLd('Crypto Casino Market Size & Concentration', description, url, upd, ['tracked operators', 'total on-chain reserves (USD)', 'verified 7-day volume (USD)', 'top-5 reserve concentration (%)']),
+        { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faqs.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a.replace(/<[^>]+>/g, '') } })) },
+      ],
+      breadcrumb: [{ name: 'Home', url: SITE + '/' }, { name: 'Data', url }],
+      h1: `How big is the crypto casino market?`,
+      updated: upd,
+      body,
+    }),
+  }
+}
+
 // /data hub — indexes the on-chain data stories (hub-spoke for the data cluster).
 // Wallet-attribution transparency data page — a differentiated "show your work" story
 // no affiliate tracker has: how many casino wallets we attribute, by evidence class,
@@ -2451,6 +2522,7 @@ function dataHubPage(): { title: string; description: string; html: string } {
   const body =
     `<p class="sub">Original, verifiable on-chain data on the crypto-casino industry — not affiliate marketing. Every figure is external-facing flow with wash and treasury churn excluded, so it reflects money players actually move.</p>` +
     `<h2>Reports</h2><div class="prose">` +
+    `<p><strong><a href="/data/crypto-casino-market-overview">How big is the crypto casino market?</a></strong> — the macro numbers you can actually verify: how many operators we track, total on-chain reserves and verified volume, and how concentrated the market is (the top few operators hold most of it).</p>` +
     `<p><strong><a href="/data/crypto-casino-deposit-currencies">Deposit currency breakdown</a></strong> — where crypto-casino money actually moves across chains. The headline finding: stablecoins (USDT on Tron and Ethereum) dominate deposits and withdrawals, while native Bitcoin is a small share of real deposit flow.</p>` +
     `<p><strong><a href="/data/crypto-casino-reserves">Reserves report</a></strong> — how much operators hold on-chain, aggregated and broken down by chain and by operator. Proof of reserves at an industry level: wallet balances anyone can verify, not self-reported claims.</p>` +
     `<p><strong><a href="/data/crypto-casino-net-flow">Net flow report</a></strong> — external deposits minus withdrawals per operator over 7 days, a neutral liquidity signal that helps spot operators paying out versus taking in.</p>` +
@@ -2946,6 +3018,9 @@ export async function generateSeoPages(): Promise<void> {
   add('/data/crypto-casino-wallet-attribution', 'data', attributionDataPage(), 'featured_core')
   add('/data/crypto-casino-fake-volume', 'data', fakeVolumeDataPage(onchainBrands), 'featured_core')
   { const itp = industryTrendPage(); if (itp) add('/data/crypto-casino-industry-trends', 'data', itp, 'featured_core') }
+  // market-size & concentration story — needs a real operator set to be meaningful
+  if (onchainBrands.filter((b) => b.attributed && b.confidence !== 'low' && b.reserves > 0).length >= 5)
+    add('/data/crypto-casino-market-overview', 'data', marketOverviewPage(onchainBrands), 'featured_core')
   // reserve-drawdown story — needs ≥5 operators with ≥7d of reserve history to be
   // meaningful (early on the history table is too thin to publish).
   {
