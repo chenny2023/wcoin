@@ -401,7 +401,7 @@ export const GUIDE_I18N: Record<string, Record<string, GuideTx>> = {
     },
     tr: {
       h1: 'Kripto casino nedir?',
-      title: `Kripto Casino Nedir? Nasıl Çalışırlar (${YEAR}) | Tekel Data`,
+      title: `Kripto Casino Nedir? Nasıl Çalışırlar | Tekel Data`,
       description: `Kripto casinonun ne olduğu, geleneksel bir çevrimiçi casinodan nasıl ayrıldığı, para yatırma ve provably-fair oyunların nasıl işlediği ve zincir üstü ödünleşimler — sade bir şekilde açıklanıyor.`,
       intro: `Kripto casino, para yatırmayı kabul eden ve kazançları itibari para yerine kripto parayla ödeyen bir çevrimiçi casinodur. Bu tek değişikliğin büyük sonuçları var — işte gerçekte nasıl çalıştıkları.`,
       sections: [
